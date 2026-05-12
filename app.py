@@ -34,7 +34,7 @@ def webhook():
         conversations[from_number] = conversations[from_number][-20:]
 
     response = client.messages.create(
-        model="claude-sonnet-4-20250514",
+        model="claude-haiku-4-5-20251001",
         max_tokens=200,
         system=SYSTEM,
         messages=conversations[from_number]
