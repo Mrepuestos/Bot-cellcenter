@@ -69,11 +69,12 @@ def webhook():
 
             msg_timestamp = msg.get("timestamp", 0)
             ahora = time.time()
+            antiguedad = int(ahora - msg_timestamp)
 
-            print("MSG timestamp: " + str(msg_timestamp) + " | BOT start: " + str(int(BOT_START_TIME)) + " | Antiguedad: " + str(int(ahora - msg_timestamp)) + "s")
+            print("Antiguedad del mensaje: " + str(antiguedad) + "s")
 
-            if msg_timestamp < BOT_START_TIME or (ahora - msg_timestamp) > 300:
-                print("Mensaje ignorado por antiguo")
+            if msg_timestamp < BOT_START_TIME or antiguedad > 3600:
+                print("Mensaje ignorado - muy antiguo: " + str(antiguedad) + "s")
                 continue
 
             from_number = msg.get("from", "")
