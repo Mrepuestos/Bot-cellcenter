@@ -73,8 +73,9 @@ def webhook():
 
             # Ignorar mensajes anteriores al inicio del bot
             msg_timestamp = msg.get("timestamp", 0)
-            if msg_timestamp < BOT_START_TIME:
-                continue
+print(f"MSG timestamp: {msg_timestamp} | BOT start: {BOT_START_TIME} | Diferencia: {msg_timestamp - BOT_START_TIME}")
+if msg_timestamp < BOT_START_TIME:
+    continue
 
             from_number = msg.get("from", "")
             if not from_number:
