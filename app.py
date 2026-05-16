@@ -27,6 +27,7 @@ def consultar_odoo(producto_nombre):
     try:
         common = xmlrpc.client.ServerProxy(f"{ODOO_URL}/xmlrpc/2/common")
         uid = common.authenticate(ODOO_DB, ODOO_USER, ODOO_API_KEY, {})
+        print(f"Odoo UID: {uid}")
         if not uid:
             return None
 
@@ -37,6 +38,7 @@ def consultar_odoo(producto_nombre):
             [[['name', 'ilike', producto_nombre]]],
             {'fields': ['name', 'list_price', 'qty_available'], 'limit': 5}
         )
+        print(f"Productos encontrados: {productos}")
         return productos
     except Exception as e:
         print(f"Error consultando Odoo: {e}")
