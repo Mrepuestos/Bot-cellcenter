@@ -10,8 +10,7 @@ app = Flask(__name__)
 BOT_START_TIME = time.time()
 
 NUMEROS_AUTORIZADOS = [
-    "584149202844",
-    "584126093756"
+    "584149202844"
 ]
 
 # Números de asesores
