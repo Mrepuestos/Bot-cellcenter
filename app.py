@@ -4,6 +4,7 @@ import anthropic
 import os
 import time
 import xmlrpc.client
+import random
 
 app = Flask(__name__)
 
@@ -15,6 +16,7 @@ NUMEROS_AUTORIZADOS = [
 
 ASESOR_TECNICO = "584241564298"
 ASESOR_ACCESORIOS = "584126093756"
+ASESOR_STOCK = "584126093756"
 
 WHAPI_TOKEN = os.environ.get("WHAPI_TOKEN", "")
 WHAPI_API_URL = os.environ.get("WHAPI_API_URL", "https://gate.whapi.cloud")
@@ -23,7 +25,6 @@ ODOO_DB = os.environ.get("ODOO_DB", "")
 ODOO_USER = os.environ.get("ODOO_USER", "")
 ODOO_API_KEY = os.environ.get("ODOO_API_KEY", "")
 
-# Tabla de conversión: precio USD Odoo → precio USD para calcular Bs
 TABLA_PRECIOS = {
     11: 15,
     12: 16,
@@ -36,8 +37,19 @@ TABLA_PRECIOS = {
     24: 32
 }
 
-# Cache de tasa BCV
 tasa_bcv_cache = {"tasa": 515.0, "fecha": ""}
+
+stock_bajo_pendiente = {}
+
+FRASES_STOCK_BAJO = [
+    "¡Ojo! Solo nos quedan {stock} unidad(es) de esta pantalla. ¿La apartas?",
+    "Quedan pocas, solo {stock} en inventario. ¿Te interesa asegurarla?",
+    "Stock limitado, únicamente {stock} disponible(s). ¿La reservamos?",
+    "Casi agotada, solo {stock} unidad(es). ¿Quieres que te la guardemos?",
+    "Últimas {stock} unidad(es) disponibles. ¿La separamos para ti?"
+]
+
+PALABRAS_SI = ["si", "sí", "yes", "claro", "dale", "ok", "okay", "quiero", "aparta", "reserva", "separa", "confirmado", "afirmativo"]
 
 
 def obtener_tasa_bcv():
@@ -142,6 +154,12 @@ def notificar_asesor(asesor: str, tema: str, numero_cliente: str):
     send_whapi_message(asesor, mensaje)
 
 
+def notificar_stock_bajo(numero_cliente: str, producto: str, stock: int):
+    numero_formateado = "+" + numero_cliente.replace("@s.whatsapp.net", "")
+    mensaje = f"⚠️ *Stock bajo - Cliente interesado*\nProducto: *{producto}*\nStock: {stock} unidad(es)\nCliente: {numero_formateado}\n\nEl cliente confirmó que quiere apartar esta pantalla."
+    send_whapi_message(ASESOR_STOCK, mensaje)
+
+
 SYSTEM = """Eres un vendedor directo de Cell Center 4620, tienda de celulares en Venezuela.
 
 Detecta automáticamente qué necesita el cliente y responde según el tema:
@@ -198,9 +216,19 @@ def webhook():
             if not body:
                 continue
 
+            # Verificar si hay stock bajo pendiente de confirmación
+            if from_number in stock_bajo_pendiente:
+                if any(palabra in body.lower() for palabra in PALABRAS_SI):
+                    info = stock_bajo_pendiente.pop(from_number)
+                    notificar_stock_bajo(from_number, info["producto"], info["stock"])
+                else:
+                    stock_bajo_pendiente.pop(from_number)
+
             # Consultar Odoo
             productos = consultar_odoo(body)
             contexto_odoo = ""
+            stock_bajo_info = None
+
             if productos:
                 contexto_odoo = "\n\nINFORMACIÓN DEL INVENTARIO:\n"
                 for p in productos:
@@ -211,6 +239,12 @@ def webhook():
                     nombre = partes[-1] if len(partes) > 0 else p['name']
                     marca = partes[1] if len(partes) > 1 else ''
                     contexto_odoo += f"- {marca} {nombre}: ${precio_tabla} USD / Bs. {precio_bs:,} | Stock: {stock} unidades\n"
+
+                    if stock_bajo_info is None and 1 <= stock <= 2:
+                        stock_bajo_info = {
+                            "producto": f"{marca} {nombre}",
+                            "stock": stock
+                        }
             else:
                 contexto_odoo = "\n\nNo se encontró el producto en el inventario de pantallas."
 
@@ -239,6 +273,11 @@ def webhook():
             elif "DERIVAR_ACCESORIOS" in reply:
                 notificar_asesor(ASESOR_ACCESORIOS, "accesorios", from_number)
                 reply = "Un momento, un asesor te atenderá enseguida 👋"
+
+            elif stock_bajo_info:
+                frase = random.choice(FRASES_STOCK_BAJO).format(stock=stock_bajo_info["stock"])
+                reply = reply + "\n\n" + frase
+                stock_bajo_pendiente[from_number] = stock_bajo_info
 
             conversations[from_number].append({"role": "assistant", "content": reply})
             send_whapi_message(from_number, reply)
