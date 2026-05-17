@@ -14,6 +14,10 @@ NUMEROS_AUTORIZADOS = [
     "584126093756"
 ]
 
+# Números de asesores
+ASESOR_TECNICO = "584241564298"   # Servicio técnico y celulares
+ASESOR_ACCESORIOS = "584126093756"  # Accesorios
+
 TASA_BCV = float(os.environ.get("TASA_BCV", "36.5"))
 WHAPI_TOKEN = os.environ.get("WHAPI_TOKEN", "")
 WHAPI_API_URL = os.environ.get("WHAPI_API_URL", "https://gate.whapi.cloud")
@@ -22,16 +26,15 @@ ODOO_DB = os.environ.get("ODOO_DB", "")
 ODOO_USER = os.environ.get("ODOO_USER", "")
 ODOO_API_KEY = os.environ.get("ODOO_API_KEY", "")
 
-# Correcciones ortográficas comunes
 CORRECCIONES = {
     "samsug": "samsung", "samsum": "samsung", "samsun": "samsung",
-    "redmi": "redmi", "remi": "redmi", "xiaomi": "redmi",
+    "remi": "redmi", "xiaomi": "redmi",
     "infnix": "infinix", "infinik": "infinix", "ifninx": "infinix",
     "iph": "iphone", "aifon": "iphone", "aiphone": "iphone",
     "huawe": "huawei", "huawey": "huawei", "huawai": "huawei",
-    "tecnho": "tecno", "tekno": "tecno", "tecno": "tecno",
-    "motorola": "motorola", "motoral": "motorola", "motarola": "motorola",
-    "nte": "note", "notte": "note", "not": "note",
+    "tecnho": "tecno", "tekno": "tecno",
+    "motoral": "motorola", "motarola": "motorola",
+    "nte": "note", "notte": "note",
     "alkatel": "alcatel", "alcater": "alcatel",
     "onor": "honor", "onour": "honor"
 }
@@ -48,13 +51,11 @@ def consultar_odoo(mensaje):
     try:
         common = xmlrpc.client.ServerProxy(f"{ODOO_URL}/xmlrpc/2/common")
         uid = common.authenticate(ODOO_DB, ODOO_USER, ODOO_API_KEY, {})
-        print(f"Odoo UID: {uid}")
         if not uid:
             return None
 
         models = xmlrpc.client.ServerProxy(f"{ODOO_URL}/xmlrpc/2/object")
 
-        # Primero obtener todos los productos
         todos = models.execute_kw(
             ODOO_DB, uid, ODOO_API_KEY,
             'product.product', 'search_read',
@@ -62,15 +63,9 @@ def consultar_odoo(mensaje):
             {'fields': ['name', 'list_price', 'qty_available'], 'limit': 500}
         )
 
-        # Corregir el mensaje del cliente
         mensaje_corregido = corregir_texto(mensaje)
-
-        # Dividir en palabras clave
         palabras = [p for p in mensaje_corregido.split() if len(p) > 1]
 
-        print(f"Buscando palabras: {palabras}")
-
-        # Filtrar productos que contengan alguna palabra clave
         encontrados = []
         for producto in todos:
             nombre_lower = producto['name'].lower()
@@ -79,34 +74,12 @@ def consultar_odoo(mensaje):
                 producto['_score'] = coincidencias
                 encontrados.append(producto)
 
-        # Ordenar por mayor coincidencia
         encontrados.sort(key=lambda x: x['_score'], reverse=True)
-
-        print(f"Productos encontrados: {encontrados[:5]}")
         return encontrados[:5]
 
     except Exception as e:
         print(f"Error consultando Odoo: {e}")
         return None
-
-
-SYSTEM = f"""Eres un vendedor directo de Cell Center, tienda de celulares en Venezuela.
-Solo manejas pantallas por ahora.
-Responde corto y directo, máximo 2 líneas.
-Muestra siempre ambos precios: USD y bolívares (tasa BCV: {TASA_BCV}).
-No inventes precios.
-
-El sistema consultará el inventario de Odoo automáticamente y te dará el precio y stock real.
-Usa SOLO esa información para responder. No inventes precios ni stock.
-
-Si el inventario dice stock 0, dilo claramente.
-Si no se encuentra el producto, dilo y ofrece contactar a un asesor.
-
-Ignora la parte "Repuesto/Marca/" del nombre, solo muestra el modelo al cliente.
-Ejemplo: "Repuesto/Samsung/A12" → muestra como "Samsung A12"."""
-
-conversations = {}
-client = anthropic.Anthropic()
 
 
 def send_whapi_message(to: str, text: str):
@@ -121,6 +94,35 @@ def send_whapi_message(to: str, text: str):
         r.raise_for_status()
     except Exception as e:
         print(f"Error enviando mensaje Whapi: {e}")
+
+
+def notificar_asesor(asesor: str, tema: str, numero_cliente: str):
+    numero_formateado = "+" + numero_cliente.replace("@s.whatsapp.net", "")
+    mensaje = f"🔔 *Mensaje pendiente*\nUn cliente está esperando respuesta sobre *{tema}*.\nNúmero: {numero_formateado}"
+    send_whapi_message(asesor, mensaje)
+
+
+SYSTEM = f"""Eres un vendedor directo de Cell Center 4620, tienda de celulares en Venezuela.
+
+Detecta automáticamente qué necesita el cliente y responde según el tema:
+
+1. PANTALLAS: Si pregunta por pantallas o repuestos, consulta el inventario que se te proporcionará y responde con precio en USD y bolívares (tasa BCV: {TASA_BCV}) y stock disponible. No inventes precios.
+
+2. CELULARES: Si pregunta por comprar un celular responde exactamente: "DERIVAR_TECNICO"
+
+3. SERVICIO TÉCNICO: Si pregunta por reparaciones, servicio técnico o diagnóstico responde exactamente: "DERIVAR_TECNICO"
+
+4. ACCESORIOS: Si pregunta por accesorios, fundas, vidrios templados, cargadores, etc. responde exactamente: "DERIVAR_ACCESORIOS"
+
+5. OTROS TEMAS: Si pregunta algo que no tiene que ver con la tienda, responde amablemente que solo manejas productos y servicios de Cell Center 4620.
+
+Responde siempre corto y directo, máximo 2-3 líneas.
+Si el inventario dice stock 0, dilo claramente.
+Si no encuentras el producto en inventario, dilo y ofrece contactar a un asesor.
+Ignora la parte "Repuesto/Marca/" del nombre, muestra solo Marca + Modelo al cliente."""
+
+conversations = {}
+client = anthropic.Anthropic()
 
 
 @app.route('/webhook', methods=['POST'])
@@ -165,11 +167,12 @@ def webhook():
                     precio_usd = p['list_price']
                     precio_bs = int(precio_usd * TASA_BCV)
                     stock = int(p['qty_available'])
-                    nombre = p['name'].split('/')[-1]
-                    marca = p['name'].split('/')[1] if '/' in p['name'] else ''
+                    partes = p['name'].split('/')
+                    nombre = partes[-1] if len(partes) > 0 else p['name']
+                    marca = partes[1] if len(partes) > 1 else ''
                     contexto_odoo += f"- {marca} {nombre}: ${precio_usd} USD / Bs. {precio_bs:,} | Stock: {stock} unidades\n"
             else:
-                contexto_odoo = "\n\nNo se encontró el producto en el inventario."
+                contexto_odoo = "\n\nNo se encontró el producto en el inventario de pantallas."
 
             if from_number not in conversations:
                 conversations[from_number] = []
@@ -188,8 +191,17 @@ def webhook():
             )
 
             reply = response.content[0].text
-            conversations[from_number].append({"role": "assistant", "content": reply})
 
+            # Detectar si hay que derivar a un asesor
+            if "DERIVAR_TECNICO" in reply:
+                notificar_asesor(ASESOR_TECNICO, "celulares o servicio técnico", from_number)
+                reply = "Un momento, un asesor te atenderá enseguida 👋"
+
+            elif "DERIVAR_ACCESORIOS" in reply:
+                notificar_asesor(ASESOR_ACCESORIOS, "accesorios", from_number)
+                reply = "Un momento, un asesor te atenderá enseguida 👋"
+
+            conversations[from_number].append({"role": "assistant", "content": reply})
             send_whapi_message(from_number, reply)
 
         return jsonify({"status": "ok"}), 200
