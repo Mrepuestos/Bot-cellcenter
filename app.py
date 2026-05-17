@@ -101,8 +101,11 @@ def consultar_odoo(mensaje):
     try:
         common = xmlrpc.client.ServerProxy(f"{ODOO_URL}/xmlrpc/2/common")
         uid = common.authenticate(ODOO_DB, ODOO_USER, ODOO_API_KEY, {})
+        print(f"Odoo UID: {uid}")
         if not uid:
+            print("ERROR: No se pudo autenticar en Odoo")
             return None
+
         models = xmlrpc.client.ServerProxy(f"{ODOO_URL}/xmlrpc/2/object")
         todos = models.execute_kw(
             ODOO_DB, uid, ODOO_API_KEY,
@@ -110,8 +113,14 @@ def consultar_odoo(mensaje):
             [[['name', 'like', 'Repuesto']]],
             {'fields': ['name', 'list_price', 'qty_available'], 'limit': 500}
         )
+        print(f"Total productos en Odoo: {len(todos)}")
+        if todos:
+            print(f"Ejemplo producto: {todos[0]['name']}")
+
         mensaje_corregido = corregir_texto(mensaje)
         palabras = [p for p in mensaje_corregido.split() if len(p) > 1]
+        print(f"Palabras buscadas: {palabras}")
+
         encontrados = []
         for producto in todos:
             nombre_lower = producto['name'].lower()
@@ -119,8 +128,11 @@ def consultar_odoo(mensaje):
             if coincidencias > 0:
                 producto['_score'] = coincidencias
                 encontrados.append(producto)
+
+        print(f"Productos encontrados: {len(encontrados)}")
         encontrados.sort(key=lambda x: x['_score'], reverse=True)
         return encontrados[:5]
+
     except Exception as e:
         print(f"Error consultando Odoo: {e}")
         return None
