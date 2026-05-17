@@ -13,17 +13,58 @@ NUMEROS_AUTORIZADOS = [
     "584149202844"
 ]
 
-# Números de asesores
-ASESOR_TECNICO = "584241564298"   # Servicio técnico y celulares
-ASESOR_ACCESORIOS = "584126093756"  # Accesorios
+ASESOR_TECNICO = "584241564298"
+ASESOR_ACCESORIOS = "584126093756"
 
-TASA_BCV = float(os.environ.get("TASA_BCV", "36.5"))
 WHAPI_TOKEN = os.environ.get("WHAPI_TOKEN", "")
 WHAPI_API_URL = os.environ.get("WHAPI_API_URL", "https://gate.whapi.cloud")
 ODOO_URL = os.environ.get("ODOO_URL", "")
 ODOO_DB = os.environ.get("ODOO_DB", "")
 ODOO_USER = os.environ.get("ODOO_USER", "")
 ODOO_API_KEY = os.environ.get("ODOO_API_KEY", "")
+
+# Tabla de conversión: precio USD Odoo → precio USD para calcular Bs
+TABLA_PRECIOS = {
+    11: 15,
+    12: 16,
+    13: 17,
+    14: 19,
+    15: 20,
+    17: 23,
+    19: 26,
+    21: 28,
+    24: 32
+}
+
+# Cache de tasa BCV
+tasa_bcv_cache = {"tasa": 515.0, "fecha": ""}
+
+
+def obtener_tasa_bcv():
+    try:
+        fecha_hoy = time.strftime("%Y-%m-%d")
+        if tasa_bcv_cache["fecha"] == fecha_hoy:
+            return tasa_bcv_cache["tasa"]
+
+        r = requests.get("https://pydolarve.org/api/v1/dollar?page=bcv", timeout=5)
+        data = r.json()
+        tasa = float(data["monitors"]["usd"]["price"])
+        tasa_bcv_cache["tasa"] = tasa
+        tasa_bcv_cache["fecha"] = fecha_hoy
+        print(f"Tasa BCV actualizada: {tasa}")
+        return tasa
+    except Exception as e:
+        print(f"Error obteniendo tasa BCV: {e}")
+        return tasa_bcv_cache["tasa"]
+
+
+def calcular_precio_bs(precio_usd_odoo):
+    precio_int = int(precio_usd_odoo)
+    precio_tabla = TABLA_PRECIOS.get(precio_int, round(precio_usd_odoo * 1.35))
+    tasa = obtener_tasa_bcv()
+    precio_bs = round(precio_tabla * tasa)
+    return precio_tabla, precio_bs
+
 
 CORRECCIONES = {
     "samsug": "samsung", "samsum": "samsung", "samsun": "samsung",
@@ -101,11 +142,11 @@ def notificar_asesor(asesor: str, tema: str, numero_cliente: str):
     send_whapi_message(asesor, mensaje)
 
 
-SYSTEM = f"""Eres un vendedor directo de Cell Center 4620, tienda de celulares en Venezuela.
+SYSTEM = """Eres un vendedor directo de Cell Center 4620, tienda de celulares en Venezuela.
 
 Detecta automáticamente qué necesita el cliente y responde según el tema:
 
-1. PANTALLAS: Si pregunta por pantallas o repuestos, consulta el inventario que se te proporcionará y responde con precio en USD y bolívares (tasa BCV: {TASA_BCV}) y stock disponible. No inventes precios.
+1. PANTALLAS: Si pregunta por pantallas o repuestos, consulta el inventario que se te proporcionará y responde con precio en USD y bolívares y stock disponible. No inventes precios.
 
 2. CELULARES: Si pregunta por comprar un celular responde exactamente: "DERIVAR_TECNICO"
 
@@ -164,12 +205,12 @@ def webhook():
                 contexto_odoo = "\n\nINFORMACIÓN DEL INVENTARIO:\n"
                 for p in productos:
                     precio_usd = p['list_price']
-                    precio_bs = int(precio_usd * TASA_BCV)
+                    precio_tabla, precio_bs = calcular_precio_bs(precio_usd)
                     stock = int(p['qty_available'])
                     partes = p['name'].split('/')
                     nombre = partes[-1] if len(partes) > 0 else p['name']
                     marca = partes[1] if len(partes) > 1 else ''
-                    contexto_odoo += f"- {marca} {nombre}: ${precio_usd} USD / Bs. {precio_bs:,} | Stock: {stock} unidades\n"
+                    contexto_odoo += f"- {marca} {nombre}: ${precio_tabla} USD / Bs. {precio_bs:,} | Stock: {stock} unidades\n"
             else:
                 contexto_odoo = "\n\nNo se encontró el producto en el inventario de pantallas."
 
@@ -191,7 +232,6 @@ def webhook():
 
             reply = response.content[0].text
 
-            # Detectar si hay que derivar a un asesor
             if "DERIVAR_TECNICO" in reply:
                 notificar_asesor(ASESOR_TECNICO, "celulares o servicio técnico", from_number)
                 reply = "Un momento, un asesor te atenderá enseguida 👋"
