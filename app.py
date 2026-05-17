@@ -38,7 +38,6 @@ TABLA_PRECIOS = {
 }
 
 tasa_bcv_cache = {"tasa": 515.0, "fecha": ""}
-
 stock_bajo_pendiente = {}
 
 FRASES_STOCK_BAJO = [
@@ -57,7 +56,6 @@ def obtener_tasa_bcv():
         fecha_hoy = time.strftime("%Y-%m-%d")
         if tasa_bcv_cache["fecha"] == fecha_hoy:
             return tasa_bcv_cache["tasa"]
-
         r = requests.get("https://pydolarve.org/api/v1/dollar?page=bcv", timeout=5)
         data = r.json()
         tasa = float(data["monitors"]["usd"]["price"])
@@ -105,19 +103,15 @@ def consultar_odoo(mensaje):
         uid = common.authenticate(ODOO_DB, ODOO_USER, ODOO_API_KEY, {})
         if not uid:
             return None
-
         models = xmlrpc.client.ServerProxy(f"{ODOO_URL}/xmlrpc/2/object")
-
         todos = models.execute_kw(
             ODOO_DB, uid, ODOO_API_KEY,
             'product.product', 'search_read',
             [[['name', 'like', 'Repuesto']]],
             {'fields': ['name', 'list_price', 'qty_available'], 'limit': 500}
         )
-
         mensaje_corregido = corregir_texto(mensaje)
         palabras = [p for p in mensaje_corregido.split() if len(p) > 1]
-
         encontrados = []
         for producto in todos:
             nombre_lower = producto['name'].lower()
@@ -125,10 +119,8 @@ def consultar_odoo(mensaje):
             if coincidencias > 0:
                 producto['_score'] = coincidencias
                 encontrados.append(producto)
-
         encontrados.sort(key=lambda x: x['_score'], reverse=True)
         return encontrados[:5]
-
     except Exception as e:
         print(f"Error consultando Odoo: {e}")
         return None
@@ -216,7 +208,6 @@ def webhook():
             if not body:
                 continue
 
-            # Verificar si hay stock bajo pendiente de confirmación
             if from_number in stock_bajo_pendiente:
                 if any(palabra in body.lower() for palabra in PALABRAS_SI):
                     info = stock_bajo_pendiente.pop(from_number)
@@ -224,7 +215,6 @@ def webhook():
                 else:
                     stock_bajo_pendiente.pop(from_number)
 
-            # Consultar Odoo
             productos = consultar_odoo(body)
             contexto_odoo = ""
             stock_bajo_info = None
@@ -239,7 +229,6 @@ def webhook():
                     nombre = partes[-1] if len(partes) > 0 else p['name']
                     marca = partes[1] if len(partes) > 1 else ''
                     contexto_odoo += f"- {marca} {nombre}: ${precio_tabla} USD / Bs. {precio_bs:,} | Stock: {stock} unidades\n"
-
                     if stock_bajo_info is None and 1 <= stock <= 2:
                         stock_bajo_info = {
                             "producto": f"{marca} {nombre}",
@@ -269,11 +258,9 @@ def webhook():
             if "DERIVAR_TECNICO" in reply:
                 notificar_asesor(ASESOR_TECNICO, "celulares o servicio técnico", from_number)
                 reply = "Un momento, un asesor te atenderá enseguida 👋"
-
             elif "DERIVAR_ACCESORIOS" in reply:
                 notificar_asesor(ASESOR_ACCESORIOS, "accesorios", from_number)
                 reply = "Un momento, un asesor te atenderá enseguida 👋"
-
             elif stock_bajo_info:
                 frase = random.choice(FRASES_STOCK_BAJO).format(stock=stock_bajo_info["stock"])
                 reply = reply + "\n\n" + frase
