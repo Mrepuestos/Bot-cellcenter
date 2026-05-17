@@ -111,7 +111,7 @@ def consultar_odoo(mensaje):
         todos = models.execute_kw(
             ODOO_DB, uid, ODOO_API_KEY,
             'product.product', 'search_read',
-            [[['name', 'like', 'Repuesto']]],
+            [[]],
             {'fields': ['name', 'list_price', 'qty_available'], 'limit': 500}
         )
         print(f"Total productos en Odoo: {len(todos)}")
@@ -182,7 +182,7 @@ Detecta automáticamente qué necesita el cliente y responde según el tema:
 Responde siempre corto y directo, máximo 2-3 líneas.
 Si el inventario dice stock 0, dilo claramente.
 Si no encuentras el producto en inventario, dilo y ofrece contactar a un asesor.
-Ignora la parte "Repuesto/Marca/" del nombre, muestra solo Marca + Modelo al cliente."""
+Muestra el nombre del producto tal como aparece en el inventario."""
 
 conversations = {}
 client = anthropic.Anthropic()
@@ -238,17 +238,15 @@ def webhook():
                     precio_usd = p['list_price']
                     precio_tabla, precio_bs = calcular_precio_bs(precio_usd)
                     stock = int(p['qty_available'])
-                    partes = p['name'].split('/')
-                    nombre = partes[-1] if len(partes) > 0 else p['name']
-                    marca = partes[1] if len(partes) > 1 else ''
-                    contexto_odoo += f"- {marca} {nombre}: ${precio_tabla} USD / Bs. {precio_bs:,} | Stock: {stock} unidades\n"
+                    nombre = p['name']
+                    contexto_odoo += f"- {nombre}: ${precio_tabla} USD / Bs. {precio_bs:,} | Stock: {stock} unidades\n"
                     if stock_bajo_info is None and 1 <= stock <= 2:
                         stock_bajo_info = {
-                            "producto": f"{marca} {nombre}",
+                            "producto": nombre,
                             "stock": stock
                         }
             else:
-                contexto_odoo = "\n\nNo se encontró el producto en el inventario de pantallas."
+                contexto_odoo = "\n\nNo se encontró el producto en el inventario."
 
             if from_number not in conversations:
                 conversations[from_number] = []
