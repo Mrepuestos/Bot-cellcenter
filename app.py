@@ -241,7 +241,7 @@ def webhook():
                     precio_tabla, precio_bs = calcular_precio_bs(precio_usd)
                     stock = int(p['qty_available'])
                     nombre = p['name']
-                    contexto_odoo += f"- {nombre}: ${precio_tabla} USD / Bs. {precio_bs:,} | Stock: {stock} unidades\n"
+                    contexto_odoo += f"- {nombre}: ${int(precio_usd)} USD / Bs. {precio_bs:,} | Stock: {stock} unidades\n"
                     if stock_bajo_info is None and 1 <= stock <= 2:
                         stock_bajo_info = {
                             "producto": nombre,
