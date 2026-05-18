@@ -121,7 +121,6 @@ def consultar_odoo(mensaje):
         palabras = [p for p in mensaje_corregido.split() if len(p) >= 1 and p not in PALABRAS_IGNORAR]
         print(f"Palabras buscadas: {palabras}")
 
-        # Buscar también sin espacios para manejar inconsistencias
         mensaje_sin_espacios = mensaje_corregido.replace(" ", "").lower()
 
         encontrados = []
@@ -129,10 +128,8 @@ def consultar_odoo(mensaje):
             nombre_lower = producto['name'].lower()
             nombre_sin_espacios = nombre_lower.replace(" ", "")
 
-            # Búsqueda normal por palabras
             coincidencias = sum(1 for p in palabras if p in nombre_lower)
 
-            # Búsqueda sin espacios — da score alto si coincide bien
             if mensaje_sin_espacios and len(mensaje_sin_espacios) > 2:
                 if mensaje_sin_espacios in nombre_sin_espacios or nombre_sin_espacios in mensaje_sin_espacios:
                     coincidencias += 3
@@ -142,6 +139,9 @@ def consultar_odoo(mensaje):
                 encontrados.append(producto)
 
         print(f"Productos encontrados: {len(encontrados)}")
+        for p in encontrados[:3]:
+            print(f"Producto: {p['name']} | Stock: {p['qty_available']}")
+
         encontrados.sort(key=lambda x: x['_score'], reverse=True)
         return encontrados[:3]
 
