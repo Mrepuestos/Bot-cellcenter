@@ -41,15 +41,7 @@ TABLA_PRECIOS = {
 tasa_bcv_cache = {"tasa": 515.0, "fecha": ""}
 stock_bajo_pendiente = {}
 
-FRASES_STOCK_BAJO = [
-    "¡Ojo! Solo nos quedan {stock} unidad(es) de esta pantalla. ¿La apartas?",
-    "Quedan pocas, solo {stock} en inventario. ¿Te interesa asegurarla?",
-    "Stock limitado, únicamente {stock} disponible(s). ¿La reservamos?",
-    "Casi agotada, solo {stock} unidad(es). ¿Quieres que te la guardemos?",
-    "Últimas {stock} unidad(es) disponibles. ¿La separamos para ti?"
-]
-
-PALABRAS_SI = ["si", "sí", "yes", "claro", "dale", "ok", "okay", "quiero", "aparta", "reserva", "separa", "confirmado", "afirmativo"]
+PALABRAS_SI = ["si", "sí", "yes", "claro", "dale", "ok", "okay", "quiero", "aparta", "reserva", "separa", "confirmado", "afirmativo", "me interesa", "la quiero"]
 
 PALABRAS_IGNORAR = {"pantalla", "de", "el", "la", "los", "las", "un", "una", "para", "del", "con", "por", "que", "precio", "cuanto", "tienes", "tienen", "hay", "stock", "y", "tendrás", "cuales", "son", "disponibles"}
 
@@ -180,8 +172,18 @@ SYSTEM = """Eres un vendedor directo de Cell Center 4620, tienda de celulares en
 
 Detecta automáticamente qué necesita el cliente y responde según el tema:
 
-1. PANTALLAS: Si pregunta por pantallas o repuestos, consulta el inventario que se te proporcionará y responde con precio en USD y bolívares. No inventes precios.
-Si el producto está agotado (stock 0) o no existe en inventario, solo informa que no está disponible actualmente. NO sugieras otros productos ni otras marcas como alternativa.
+1. PANTALLAS: Si pregunta por pantallas o repuestos, consulta el inventario que se te proporcionará y responde con precio en USD y bolívares. No inventes precios. No menciones la cantidad de stock disponible al cliente.
+
+Si el stock es 3 o más: responde solo el precio y que está disponible. Sin mencionar cantidad ni alertas.
+
+Si el stock es 1 o 2: después de dar el precio, avisa de forma natural que quedan muy pocas unidades SIN decir la cantidad exacta, y pregunta si quiere reservarla. Varía mucho las palabras que usas, nunca repitas la misma frase. Ejemplos de frases variadas:
+- "Por cierto, este modelo está casi agotado. ¿Te la reservamos?"
+- "Te comento que nos queda muy poco de este modelo. ¿La apartamos para ti?"
+- "Ojo, tenemos existencia muy limitada de esta pantalla. ¿La separamos?"
+- "Este modelo está por agotarse. ¿Quieres que te la guardemos?"
+- "Aviso que la disponibilidad de este modelo es muy poca. ¿Te interesa asegurarla?"
+
+Si el stock es 0 o no existe: solo informa que no está disponible. NO sugieras alternativas.
 
 2. CELULARES: Si pregunta por comprar un celular responde exactamente: "DERIVAR_TECNICO"
 
@@ -189,10 +191,9 @@ Si el producto está agotado (stock 0) o no existe en inventario, solo informa q
 
 4. ACCESORIOS: Si pregunta por accesorios, fundas, vidrios templados, cargadores, etc. responde exactamente: "DERIVAR_ACCESORIOS"
 
-5. OTROS TEMAS: Si pregunta algo que no tiene que ver con la tienda, responde amablemente que solo manejas productos y servicios de Cell Center 4620.
+5. OTROS TEMAS: responde amablemente que solo manejas productos y servicios de Cell Center 4620.
 
 Responde siempre corto y directo, máximo 2-3 líneas.
-Si no encuentras el producto en inventario, dilo sin sugerir alternativas.
 Muestra el nombre del producto tal como aparece en el inventario."""
 
 conversations = {}
@@ -283,9 +284,8 @@ def webhook():
             elif "DERIVAR_ACCESORIOS" in reply:
                 notificar_asesor(ASESOR_ACCESORIOS, "accesorios", from_number)
                 reply = "Un momento, un asesor te atenderá enseguida 👋"
-            elif stock_bajo_info:
-                frase = random.choice(FRASES_STOCK_BAJO).format(stock=stock_bajo_info["stock"])
-                reply = reply + "\n\n" + frase
+
+            if stock_bajo_info:
                 stock_bajo_pendiente[from_number] = stock_bajo_info
 
             conversations[from_number].append({"role": "assistant", "content": reply})
