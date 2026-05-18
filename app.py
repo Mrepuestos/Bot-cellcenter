@@ -11,7 +11,8 @@ app = Flask(__name__)
 BOT_START_TIME = time.time()
 
 NUMEROS_AUTORIZADOS = [
-    "584149202844"
+    "584149202844",
+    "584123680624"
 ]
 
 ASESOR_TECNICO = "584241564298"
@@ -50,15 +51,17 @@ FRASES_STOCK_BAJO = [
 
 PALABRAS_SI = ["si", "sí", "yes", "claro", "dale", "ok", "okay", "quiero", "aparta", "reserva", "separa", "confirmado", "afirmativo"]
 
+PALABRAS_IGNORAR = ["pantalla", "de", "el", "la", "los", "las", "un", "una", "para", "del", "con", "por", "que", "precio", "cuanto", "tienes", "tienen", "hay", "stock"]
+
 
 def obtener_tasa_bcv():
     try:
         fecha_hoy = time.strftime("%Y-%m-%d")
         if tasa_bcv_cache["fecha"] == fecha_hoy:
             return tasa_bcv_cache["tasa"]
-        r = requests.get("https://pydolarve.org/api/v1/dollar?page=bcv", timeout=5)
+        r = requests.get("https://ve.dolarapi.com/v1/dolares/oficial", timeout=5)
         data = r.json()
-        tasa = float(data["monitors"]["usd"]["price"])
+        tasa = float(data["promedio"])
         tasa_bcv_cache["tasa"] = tasa
         tasa_bcv_cache["fecha"] = fecha_hoy
         print(f"Tasa BCV actualizada: {tasa}")
@@ -118,7 +121,7 @@ def consultar_odoo(mensaje):
             print(f"Ejemplo producto: {todos[0]['name']}")
 
         mensaje_corregido = corregir_texto(mensaje)
-        palabras = [p for p in mensaje_corregido.split() if len(p) >= 1]
+        palabras = [p for p in mensaje_corregido.split() if len(p) >= 1 and p not in PALABRAS_IGNORAR]
         print(f"Palabras buscadas: {palabras}")
 
         encontrados = []
