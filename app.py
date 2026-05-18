@@ -5,6 +5,8 @@ import os
 import time
 import xmlrpc.client
 import random
+from datetime import datetime
+import pytz
 
 app = Flask(__name__)
 
@@ -82,6 +84,18 @@ def calcular_precio_bs(precio_usd_odoo):
     tasa = obtener_tasa_bcv()
     precio_bs = round(precio_tabla * tasa)
     return precio_tabla, precio_bs
+
+
+def esta_abierto():
+    tz = pytz.timezone("America/Caracas")
+    ahora = datetime.now(tz)
+    dia = ahora.weekday()  # 0=lunes, 6=domingo
+    hora = ahora.hour + ahora.minute / 60
+
+    if dia == 6:  # domingo
+        return 9.0 <= hora < 14.0
+    else:  # lunes a sábado
+        return 8.5 <= hora < 17.5
 
 
 def corregir_texto(texto):
@@ -168,7 +182,12 @@ def notificar_stock_bajo(numero_cliente: str, producto: str, stock: int):
     send_whapi_message(ASESOR_STOCK, mensaje)
 
 
-SYSTEM = """Eres un vendedor directo de Cell Center 4620, tienda de celulares en Venezuela.
+def get_system_prompt():
+    abierto = esta_abierto()
+    estado_tienda = "ABIERTA" if abierto else "CERRADA"
+
+    return f"""Eres un vendedor directo de Cell Center 4620, tienda de celulares en Venezuela.
+La tienda está actualmente: {estado_tienda}
 
 Detecta automáticamente qué necesita el cliente y responde según el tema:
 
@@ -194,12 +213,17 @@ REGLAS IMPORTANTES:
 
 4. ACCESORIOS: responde exactamente: "DERIVAR_ACCESORIOS"
 
-5. HORARIO: Si pregunta por horario responde:
-"Lunes a sábado: 8:30am - 5:30pm. Domingos y feriados: 9:00am - 2:00pm 🕐"
+5. HORARIO O SI ESTAMOS ABIERTOS: Si preguntan si estamos trabajando, abiertos, en tienda o por el horario:
+- Si la tienda está ABIERTA: responde que sí están en tienda y el horario es lunes a sábado 8:30am-5:30pm, domingos y feriados 9:00am-2:00pm.
+- Si la tienda está CERRADA: avisa que estamos fuera de horario pero que puedes ayudar con preguntas. Varía las frases:
+  "En este momento estamos cerrados, pero aquí estoy para responder tus preguntas. Nuestro horario es lunes a sábado 8:30am-5:30pm, domingos y feriados 9:00am-2:00pm."
+  "La tienda está cerrada por ahora, aunque puedo ayudarte con lo que necesites. Abrimos lunes a sábado 8:30am-5:30pm, domingos y feriados 9:00am-2:00pm."
+  "Estamos fuera de horario, pero no te preocupes, estoy aquí para atenderte. Nuestro horario es lunes a sábado 8:30am-5:30pm, domingos y feriados 9:00am-2:00pm."
 
 6. OTROS TEMAS: responde amablemente que solo manejas productos y servicios de Cell Center 4620.
 
 Responde siempre corto y directo. Muestra el nombre del producto tal como aparece en el inventario."""
+
 
 conversations = {}
 client = anthropic.Anthropic()
@@ -277,7 +301,7 @@ def webhook():
             response = client.messages.create(
                 model="claude-haiku-4-5-20251001",
                 max_tokens=300,
-                system=SYSTEM,
+                system=get_system_prompt(),
                 messages=conversations[from_number]
             )
 
