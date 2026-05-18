@@ -51,7 +51,20 @@ FRASES_STOCK_BAJO = [
 
 PALABRAS_SI = ["si", "sí", "yes", "claro", "dale", "ok", "okay", "quiero", "aparta", "reserva", "separa", "confirmado", "afirmativo"]
 
-PALABRAS_IGNORAR = ["pantalla", "de", "el", "la", "los", "las", "un", "una", "para", "del", "con", "por", "que", "precio", "cuanto", "tienes", "tienen", "hay", "stock"]
+PALABRAS_IGNORAR = {"pantalla", "de", "el", "la", "los", "las", "un", "una", "para", "del", "con", "por", "que", "precio", "cuanto", "tienes", "tienen", "hay", "stock", "y", "tendrás", "cuales", "son", "disponibles"}
+
+CORRECCIONES = {
+    "samsug": "samsung", "samsum": "samsung", "samsun": "samsung",
+    "remi": "redmi", "xiaomi": "redmi",
+    "infnix": "infinix", "infinik": "infinix", "ifninx": "infinix",
+    "iph": "iphone", "aifon": "iphone", "aiphone": "iphone",
+    "huawe": "huawei", "huawey": "huawei", "huawai": "huawei",
+    "tecnho": "tecno", "tekno": "tecno",
+    "motoral": "motorola", "motarola": "motorola",
+    "nte": "note", "notte": "note",
+    "alkatel": "alcatel", "alcater": "alcatel",
+    "onor": "honor", "onour": "honor"
+}
 
 
 def obtener_tasa_bcv():
@@ -79,20 +92,6 @@ def calcular_precio_bs(precio_usd_odoo):
     return precio_tabla, precio_bs
 
 
-CORRECCIONES = {
-    "samsug": "samsung", "samsum": "samsung", "samsun": "samsung",
-    "remi": "redmi", "xiaomi": "redmi",
-    "infnix": "infinix", "infinik": "infinix", "ifninx": "infinix",
-    "iph": "iphone", "aifon": "iphone", "aiphone": "iphone",
-    "huawe": "huawei", "huawey": "huawei", "huawai": "huawei",
-    "tecnho": "tecno", "tekno": "tecno",
-    "motoral": "motorola", "motarola": "motorola",
-    "nte": "note", "notte": "note",
-    "alkatel": "alcatel", "alcater": "alcatel",
-    "onor": "honor", "onour": "honor"
-}
-
-
 def corregir_texto(texto):
     texto_lower = texto.lower()
     for error, correcto in CORRECCIONES.items():
@@ -117,17 +116,27 @@ def consultar_odoo(mensaje):
             {'fields': ['name', 'list_price', 'qty_available'], 'limit': 500}
         )
         print(f"Total productos en Odoo: {len(todos)}")
-        if todos:
-            print(f"Ejemplo producto: {todos[0]['name']}")
 
         mensaje_corregido = corregir_texto(mensaje)
         palabras = [p for p in mensaje_corregido.split() if len(p) >= 1 and p not in PALABRAS_IGNORAR]
         print(f"Palabras buscadas: {palabras}")
 
+        # Buscar también sin espacios para manejar inconsistencias
+        mensaje_sin_espacios = mensaje_corregido.replace(" ", "").lower()
+
         encontrados = []
         for producto in todos:
             nombre_lower = producto['name'].lower()
+            nombre_sin_espacios = nombre_lower.replace(" ", "")
+
+            # Búsqueda normal por palabras
             coincidencias = sum(1 for p in palabras if p in nombre_lower)
+
+            # Búsqueda sin espacios — da score alto si coincide bien
+            if mensaje_sin_espacios and len(mensaje_sin_espacios) > 2:
+                if mensaje_sin_espacios in nombre_sin_espacios or nombre_sin_espacios in mensaje_sin_espacios:
+                    coincidencias += 3
+
             if coincidencias > 0:
                 producto['_score'] = coincidencias
                 encontrados.append(producto)
