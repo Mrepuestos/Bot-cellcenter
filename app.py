@@ -134,7 +134,7 @@ def consultar_odoo(mensaje):
 
         print(f"Productos encontrados: {len(encontrados)}")
         encontrados.sort(key=lambda x: x['_score'], reverse=True)
-        return encontrados[:5]
+        return encontrados[:3]
 
     except Exception as e:
         print(f"Error consultando Odoo: {e}")
