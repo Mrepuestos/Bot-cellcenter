@@ -118,7 +118,7 @@ def consultar_odoo(mensaje):
             print(f"Ejemplo producto: {todos[0]['name']}")
 
         mensaje_corregido = corregir_texto(mensaje)
-        palabras = [p for p in mensaje_corregido.split() if len(p) > 1]
+        palabras = [p for p in mensaje_corregido.split() if len(p) >= 1]
         print(f"Palabras buscadas: {palabras}")
 
         encontrados = []
