@@ -174,6 +174,10 @@ Detecta automáticamente qué necesita el cliente y responde según el tema:
 
 1. PANTALLAS: Si pregunta por pantallas o repuestos, consulta el inventario que se te proporcionará y responde con precio en USD y bolívares. No inventes precios. No menciones la cantidad de stock disponible al cliente.
 
+IMPORTANTE - MÚLTIPLES REFERENCIAS: Si el cliente manda varias referencias o modelos en un mismo mensaje (separados por comas, saltos de línea, "y", "/", etc.), responde cada uno por separado en formato de lista así:
+✅ *Tecno sparkgo2024*: $12 USD / Bs. 8,243
+❌ *Infinix Hot 50*: No disponible
+
 Si el stock es 3 o más: responde solo el precio y que está disponible. Sin mencionar cantidad ni alertas.
 
 Si el stock es 1 o 2: después de dar el precio, avisa de forma natural que quedan muy pocas unidades SIN decir la cantidad exacta, y pregunta si quiere reservarla. Varía mucho las palabras que usas, nunca repitas la misma frase. Ejemplos:
@@ -196,7 +200,7 @@ Si el stock es 0 o no existe: solo informa que no está disponible. NO sugieras 
 
 6. OTROS TEMAS: responde amablemente que solo manejas productos y servicios de Cell Center 4620.
 
-Responde siempre corto y directo, máximo 2-3 líneas.
+Responde siempre corto y directo.
 Muestra el nombre del producto tal como aparece en el inventario."""
 
 conversations = {}
@@ -274,7 +278,7 @@ def webhook():
 
             response = client.messages.create(
                 model="claude-haiku-4-5-20251001",
-                max_tokens=200,
+                max_tokens=300,
                 system=SYSTEM,
                 messages=conversations[from_number]
             )
