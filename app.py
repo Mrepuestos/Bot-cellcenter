@@ -45,34 +45,8 @@ stock_bajo_pendiente = {}
 
 PALABRAS_SI = ["si","sí","yes","claro","dale","ok","okay","quiero","aparta","reserva","separa","confirmado","afirmativo","me interesa","la quiero"]
 
-PALABRAS_IGNORAR = {
-    "de","el","la","los","las","un","una","para","del","con","por","que","y","o","a","en","al","lo","le","se","su","sus","es","son",
-    "tienes","tienen","hay","tendrás","tengo","tiene","das","dar","dame","dime","sabe","saben","quiero","quieres","puedes","puede","necesito",
-    "pantalla","precio","cuanto","cuánto","stock","disponibles","disponible","cuales","hola","buenas","buen","buenos","dias","día","dia","tardes","noches","saludos",
-    "favor","porfavor","porfa","gracias","please","podria","podría",
-    "mano","hermano","brother","bro","amigo","amiga","chamo","chama","pana","compañero","compañera","jefe","jefa","señor","señora","estimado","estimada","maestro","profe","socio","vale","papi","mami",
-    "me","mi","mis","tu","tus","nos","nuestro","nuestra","alguna","alguno","algún","otro","otra",
-    "ese","esa","esto","esta","aqui","acá","allá","cuando","como","donde","quien","qué","mas","más","muy","bien","mal","solo","también","tampoco",
-    "d","q","x","k"
-}
 
-SEPARADORES_MODELOS = {"y", "and", "tambien", "también", "ademas", "además"}
-
-CORRECCIONES = {
-    "samsug":"samsung","samsum":"samsung","samsun":"samsung",
-    "remi":"redmi","xiaomi":"redmi",
-    "infnix":"infinix","infinik":"infinix","ifninx":"infinix",
-    "iph":"iphone","aifon":"iphone","aiphone":"iphone",
-    "huawe":"huawei","huawey":"huawei","huawai":"huawei",
-    "tecnho":"tecno","tekno":"tecno",
-    "motoral":"motorola","motarola":"motorola",
-    "nte":"note","notte":"note",
-    "alkatel":"alcatel","alcater":"alcatel",
-    "onor":"honor","onour":"honor"
-}
-
-MARCAS = {"samsung","redmi","infinix","iphone","huawei","tecno","motorola","alcatel","honor","realme","xiaomi"}
-
+# ── Utilidades generales ──────────────────────────────────────────────────────
 
 def limpiar_html(texto):
     if not texto:
@@ -80,10 +54,6 @@ def limpiar_html(texto):
     texto_limpio = re.sub(r'<[^>]+>', ' ', str(texto))
     texto_limpio = texto_limpio.replace('&amp;','&').replace('&lt;','<').replace('&gt;','>').replace('&nbsp;',' ')
     return re.sub(r'\s+', ' ', texto_limpio).strip()
-
-
-def limpiar_puntuacion(texto):
-    return re.sub(r'[^\w\s]', ' ', texto)
 
 
 def obtener_tasa_bcv():
@@ -146,170 +116,7 @@ def guardar_historial(numero, historial):
         print(f"Error guardando historial: {e}")
 
 
-def corregir_texto(texto):
-    texto_lower = limpiar_puntuacion(texto.lower())
-    for error, correcto in CORRECCIONES.items():
-        texto_lower = texto_lower.replace(error, correcto)
-    return texto_lower
-
-
-def es_coincidencia_exacta_palabra(palabra, nombre_lower):
-    return bool(re.search(r'(?<![a-z0-9])' + re.escape(palabra) + r'(?![a-z0-9])', nombre_lower))
-
-
-def calcular_score(palabras, nombre_lower, mensaje_sin_espacios):
-    nombre_sin_espacios = nombre_lower.replace(" ", "")
-
-    if len(palabras) > 1:
-        if not all(es_coincidencia_exacta_palabra(p, nombre_lower) for p in palabras):
-            return 0
-
-    coincidencias = sum(1 for p in palabras if es_coincidencia_exacta_palabra(p, nombre_lower))
-
-    if mensaje_sin_espacios and len(mensaje_sin_espacios) > 2:
-        if nombre_sin_espacios == mensaje_sin_espacios:
-            coincidencias += 5
-        elif nombre_sin_espacios.startswith(mensaje_sin_espacios) or nombre_sin_espacios.endswith(mensaje_sin_espacios):
-            coincidencias += 3
-        elif mensaje_sin_espacios in nombre_sin_espacios:
-            coincidencias += 2
-        elif nombre_sin_espacios in mensaje_sin_espacios:
-            coincidencias += 2
-
-    if palabras and all(es_coincidencia_exacta_palabra(p, nombre_lower) for p in palabras):
-        coincidencias += 2
-
-    return coincidencias
-
-
-def es_inicio_modelo(palabra):
-    """Detecta si una palabra parece ser inicio de un modelo — marca o alfanumérico corto"""
-    if palabra in MARCAS:
-        return True
-    if re.match(r'^[a-z0-9]{1,4}$', palabra) and not palabra.isdigit():
-        return True
-    if re.match(r'^[a-z]+\d+', palabra):
-        return True
-    return False
-
-
-def dividir_en_referencias(mensaje):
-    """Divide mensaje con múltiples modelos en referencias individuales"""
-    mensaje_corregido = corregir_texto(mensaje)
-
-    # Separar por saltos de línea primero
-    partes = re.split(r'\n', mensaje_corregido)
-    referencias = []
-
-    for parte in partes:
-        parte = parte.strip()
-        if not parte:
-            continue
-
-        palabras = parte.split()
-        grupo_actual = []
-
-        for i, palabra in enumerate(palabras):
-            if palabra in SEPARADORES_MODELOS and grupo_actual:
-                # Verificar si lo que sigue parece un modelo nuevo
-                siguiente_palabras = palabras[i+1:i+3] if i+1 < len(palabras) else []
-                siguiente_es_modelo = any(es_inicio_modelo(p) for p in siguiente_palabras)
-
-                if siguiente_es_modelo:
-                    ref = " ".join(grupo_actual).strip()
-                    palabras_ref = [p for p in ref.split() if p not in PALABRAS_IGNORAR]
-                    if palabras_ref:
-                        referencias.append(ref)
-                    grupo_actual = []
-                else:
-                    grupo_actual.append(palabra)
-            else:
-                grupo_actual.append(palabra)
-
-        if grupo_actual:
-            ref = " ".join(grupo_actual).strip()
-            palabras_ref = [p for p in ref.split() if p not in PALABRAS_IGNORAR]
-            if palabras_ref:
-                referencias.append(ref)
-
-    return referencias if referencias else [mensaje_corregido]
-
-
-def buscar_compatible_individual(todos, mensaje_sin_espacios, palabras):
-    for producto in todos:
-        if int(producto['qty_available']) <= 0:
-            continue
-        notas = limpiar_html(producto.get('description') or "")
-        if 'COMPATIBLE:' not in notas.upper():
-            continue
-        for linea in notas.split('\n'):
-            if 'COMPATIBLE:' not in linea.upper():
-                continue
-            modelos_str = linea.upper().replace('COMPATIBLE:', '').strip()
-            for modelo in modelos_str.split(','):
-                modelo = limpiar_puntuacion(modelo.strip().lower())
-                if not modelo:
-                    continue
-                modelo_sin_espacios = modelo.replace(" ", "")
-                palabras_modelo = [p for p in modelo.split() if p not in PALABRAS_IGNORAR and len(p) > 1]
-
-                coincide = False
-                if mensaje_sin_espacios and modelo_sin_espacios:
-                    if mensaje_sin_espacios == modelo_sin_espacios:
-                        coincide = True
-                    elif mensaje_sin_espacios in modelo_sin_espacios or modelo_sin_espacios in mensaje_sin_espacios:
-                        coincide = True
-
-                if not coincide and palabras:
-                    palabras_filtradas = [p for p in palabras if len(p) > 1]
-                    if palabras_filtradas and all(p in modelo for p in palabras_filtradas):
-                        coincide = True
-
-                if not coincide and palabras and palabras_modelo:
-                    palabras_filtradas = [p for p in palabras if len(p) > 1]
-                    if palabras_filtradas:
-                        coincidencias = sum(1 for p in palabras_filtradas if p in modelo)
-                        if coincidencias >= len(palabras_filtradas) * 0.7:
-                            coincide = True
-
-                if coincide:
-                    producto_copia = dict(producto)
-                    producto_copia['_compatible_con'] = modelo
-                    print(f"Compatible encontrado: {producto['name']} es compatible con {modelo}")
-                    return producto_copia
-    return None
-
-
-def buscar_en_odoo(todos, referencia):
-    mensaje_corregido = corregir_texto(referencia)
-    palabras = [p for p in mensaje_corregido.split() if len(p) >= 1 and p not in PALABRAS_IGNORAR]
-    mensaje_sin_espacios = mensaje_corregido.replace(" ", "").lower()
-
-    if not palabras:
-        return None, None
-
-    encontrados = []
-    for producto in todos:
-        nombre_lower = producto['name'].lower()
-        score = calcular_score(palabras, nombre_lower, mensaje_sin_espacios)
-        if score > 0:
-            producto_copia = dict(producto)
-            producto_copia['_score'] = score
-            encontrados.append(producto_copia)
-
-    encontrados.sort(key=lambda x: x['_score'], reverse=True)
-    resultado = encontrados[:3] if encontrados else []
-    con_stock = [p for p in resultado if int(p['qty_available']) > 0]
-
-    if con_stock:
-        return con_stock[0], None
-
-    compatible = buscar_compatible_individual(todos, mensaje_sin_espacios, palabras)
-    if compatible:
-        return None, compatible
-
-    return resultado[0] if resultado else None, None
-
+# ── Búsqueda inteligente con Claude ──────────────────────────────────────────
 
 def consultar_odoo(mensaje):
     try:
@@ -328,73 +135,93 @@ def consultar_odoo(mensaje):
         )
         print(f"Total productos en Odoo: {len(todos)}")
 
-        referencias = dividir_en_referencias(mensaje)
-        print(f"Referencias detectadas: {referencias}")
+        catalogo = []
+        for p in todos:
+            notas = limpiar_html(p.get('description') or "")
+            compatible_con = ""
+            if 'COMPATIBLE:' in notas.upper():
+                for linea in notas.split('\n'):
+                    if 'COMPATIBLE:' in linea.upper():
+                        compatible_con = linea.replace('COMPATIBLE:', '').replace('Compatible:', '').strip()
+                        break
+            catalogo.append({
+                "id": p['id'],
+                "nombre": p['name'],
+                "stock": int(p['qty_available']),
+                "precio_usd": p['list_price'],
+                "compatible_con": compatible_con
+            })
 
-        if len(referencias) == 1:
-            mensaje_corregido = corregir_texto(mensaje)
-            palabras = [p for p in mensaje_corregido.split() if len(p) >= 1 and p not in PALABRAS_IGNORAR]
-            print(f"Palabras buscadas: {palabras}")
-            mensaje_sin_espacios = mensaje_corregido.replace(" ", "").lower()
+        catalogo_json = json.dumps(catalogo, ensure_ascii=False)
 
-            encontrados = []
-            for producto in todos:
-                nombre_lower = producto['name'].lower()
-                score = calcular_score(palabras, nombre_lower, mensaje_sin_espacios)
-                if score > 0:
-                    producto['_score'] = score
-                    encontrados.append(producto)
+        prompt = f"""Eres un buscador de productos para una tienda de pantallas de celulares en Venezuela.
 
-            encontrados.sort(key=lambda x: x['_score'], reverse=True)
-            resultado_final = encontrados[:5] if len(encontrados) <= 5 else encontrados[:3]
+Mensaje del cliente: "{mensaje}"
 
-            for p in resultado_final:
-                print(f"Producto: {p['name']} | Stock: {p['qty_available']} | Score: {p['_score']}")
+Catálogo completo:
+{catalogo_json}
 
-            con_stock = [p for p in resultado_final if int(p['qty_available']) > 0]
-            sin_stock = [p for p in resultado_final if int(p['qty_available']) <= 0]
-            sin_resultados = not resultado_final
+Instrucciones:
+- Identifica qué producto(s) busca el cliente, aunque haya errores tipográficos, abreviaciones o lenguaje informal.
+- Si el cliente pide varios modelos (ej: "samsung a03 y redmi 9a"), devuelve todos.
+- Primero busca coincidencia directa por nombre. Si no existe, busca en el campo "compatible_con".
+- Si usas "compatible_con", marca ese producto con "es_compatible": true y pon en "modelo_pedido" el modelo que pidió el cliente.
+- Si no encuentras nada, devuelve "encontrados": [].
 
-            print(f"Con stock: {len(con_stock)} | Sin stock: {len(sin_stock)} | Sin resultados: {sin_resultados}")
+Responde ÚNICAMENTE con este JSON sin texto adicional ni markdown:
+{{"encontrados": [{{"id": 123, "nombre": "nombre exacto", "stock": 5, "precio_usd": 12.0, "es_compatible": false, "modelo_pedido": "samsung a03"}}]}}"""
 
-            if con_stock:
-                return con_stock, None
+        respuesta = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=1000,
+            messages=[{"role": "user", "content": prompt}]
+        )
 
-            print("Buscando compatibilidades...")
-            compatible = buscar_compatible_individual(todos, mensaje_sin_espacios, palabras)
-            if compatible:
-                return None, [compatible]
-            elif sin_resultados:
-                return None, None
+        texto = respuesta.content[0].text.strip()
+        texto = re.sub(r'^```json\s*', '', texto)
+        texto = re.sub(r'^```\s*', '', texto)
+        texto = re.sub(r'\s*```$', '', texto)
+        print(f"Claude búsqueda: {texto}")
+
+        resultado_claude = json.loads(texto)
+        encontrados = resultado_claude.get("encontrados", [])
+
+        if not encontrados:
+            print("Claude no encontró productos")
+            return None, None
+
+        odoo_por_id = {p['id']: p for p in todos}
+        productos_normales = []
+        productos_compatibles = []
+
+        for item in encontrados:
+            pid = item.get("id")
+            producto_odoo = odoo_por_id.get(pid)
+            if not producto_odoo:
+                continue
+
+            producto_copia = dict(producto_odoo)
+            producto_copia['_referencia'] = item.get("modelo_pedido", "")
+
+            if item.get("es_compatible"):
+                producto_copia['_compatible_con'] = item.get("modelo_pedido", "")
+                productos_compatibles.append(producto_copia)
+                print(f"Compatible: {producto_odoo['name']} para {item.get('modelo_pedido')}")
             else:
-                return sin_stock, None
+                productos_normales.append(producto_copia)
+                print(f"Encontrado: {producto_odoo['name']} | Stock: {producto_odoo['qty_available']}")
 
-        resultados_multiples = []
-        compatibles_multiples = []
+        return (productos_normales if productos_normales else None,
+                productos_compatibles if productos_compatibles else None)
 
-        for ref in referencias:
-            print(f"Buscando referencia: {ref}")
-            producto, compatible = buscar_en_odoo(todos, ref)
-
-            if producto and int(producto['qty_available']) > 0:
-                producto['_referencia'] = ref
-                resultados_multiples.append(producto)
-            elif compatible:
-                compatible['_referencia'] = ref
-                compatibles_multiples.append(compatible)
-            elif producto:
-                producto['_referencia'] = ref
-                resultados_multiples.append(producto)
-
-        if resultados_multiples or compatibles_multiples:
-            return resultados_multiples if resultados_multiples else None, compatibles_multiples if compatibles_multiples else None
-
+    except json.JSONDecodeError as e:
+        print(f"Error parseando JSON de Claude búsqueda: {e}")
         return None, None
-
     except Exception as e:
         print(f"Error consultando Odoo: {e}")
         return None, None
 
+        # ── Mensajería y asesores ─────────────────────────────────────────────────────
 
 def send_whapi_message(to: str, text: str):
     url = f"{WHAPI_API_URL}/messages/text"
@@ -414,6 +241,8 @@ def notificar_stock_bajo(numero_cliente: str, producto: str, stock: int):
     numero_formateado = "+" + numero_cliente.replace("@s.whatsapp.net", "")
     send_whapi_message(ASESOR_STOCK, f"⚠️ *Stock bajo - Cliente interesado*\nProducto: *{producto}*\nStock: {stock} unidad(es)\nCliente: {numero_formateado}\n\nEl cliente confirmó que quiere apartar esta pantalla.")
 
+
+# ── System prompt ─────────────────────────────────────────────────────────────
 
 def get_system_prompt():
     estado_tienda = "ABIERTA" if esta_abierto() else "CERRADA"
@@ -459,6 +288,8 @@ Responde siempre corto y directo. Muestra el nombre exacto del producto como apa
 client = anthropic.Anthropic()
 
 
+# ── Webhook ───────────────────────────────────────────────────────────────────
+
 @app.route('/webhook', methods=['POST'])
 def webhook():
     try:
@@ -493,87 +324,87 @@ def webhook():
 
             numero_limpio = from_number.replace("@s.whatsapp.net", "").replace("+", "")
             if numero_limpio not in NUMEROS_AUTORIZADOS:
-               print("Número no autorizado: " + numero_limpio)
-‎                continue
-‎
-‎            body = msg.get("text", {}).get("body", "").strip()
-‎            if not body:
-‎                continue
-‎
-‎            if from_number in stock_bajo_pendiente:
-‎                if any(palabra in body.lower() for palabra in PALABRAS_SI):
-‎                    info = stock_bajo_pendiente.pop(from_number)
-‎                    notificar_stock_bajo(from_number, info["producto"], info["stock"])
-‎                else:
-‎                    stock_bajo_pendiente.pop(from_number)
-‎
-‎            productos, compatibles = consultar_odoo(body)
-‎            contexto_odoo = ""
-‎            stock_bajo_info = None
-‎
-‎            if productos:
-‎                contexto_odoo = "\n\nINFORMACIÓN DEL INVENTARIO:\n"
-‎                for p in productos:
-‎                    precio_usd, precio_bs = calcular_precio_bs(p['list_price'])
-‎                    stock = int(p['qty_available'])
-‎                    nombre = p['name']
-‎                    contexto_odoo += f"- {nombre}: ${precio_usd} USD / Bs. {precio_bs:,} | Stock: {stock} unidades\n"
-‎                    if stock_bajo_info is None and 1 <= stock <= 2:
-‎                        stock_bajo_info = {"producto": nombre, "stock": stock}
-‎
-‎            if compatibles:
-‎                contexto_odoo += "\n\nPRODUCTOS COMPATIBLES (modelo exacto no disponible):\n"
-‎                for p in compatibles:
-‎                    precio_usd, precio_bs = calcular_precio_bs(p['list_price'])
-‎                    stock = int(p['qty_available'])
-‎                    nombre = p['name']
-‎                    compatible_con = p.get('_compatible_con', '')
-‎                    contexto_odoo += f"- {nombre} (compatible con {compatible_con}): ${precio_usd} USD / Bs. {precio_bs:,} | Stock: {stock} unidades\n"
-‎                    if stock_bajo_info is None and 1 <= stock <= 2:
-‎                        stock_bajo_info = {"producto": nombre, "stock": stock}
-‎
-‎            if not productos and not compatibles:
-‎                contexto_odoo = "\n\nNo se encontró el producto en el inventario."
-‎
-‎            historial = cargar_historial(from_number)
-‎            historial.append({"role": "user", "content": body + contexto_odoo})
-‎            if len(historial) > 4:
-‎                historial = historial[-4:]
-‎
-‎            response = client.messages.create(
-‎                model="claude-haiku-4-5-20251001",
-‎                max_tokens=300,
-‎                system=get_system_prompt(),
-‎                messages=historial
-‎            )
-‎
-‎            reply = response.content[0].text
-‎
-‎            if "DERIVAR_TECNICO" in reply:
-‎                notificar_asesor(ASESOR_TECNICO, "celulares o servicio técnico", from_number)
-‎                reply = "Un momento, un asesor te atenderá enseguida 👋"
-‎            elif "DERIVAR_ACCESORIOS" in reply:
-‎                notificar_asesor(ASESOR_ACCESORIOS, "accesorios", from_number)
-‎                reply = "Un momento, un asesor te atenderá enseguida 👋"
-‎
-‎            if stock_bajo_info:
-‎                stock_bajo_pendiente[from_number] = stock_bajo_info
-‎
-‎            historial.append({"role": "assistant", "content": reply})
-‎            guardar_historial(from_number, historial)
-‎            send_whapi_message(from_number, reply)
-‎
-‎        return jsonify({"status": "ok"}), 200
-‎
-‎    except Exception as e:
-‎        print(f"Error en webhook: {e}")
-‎        return jsonify({"status": "error", "detail": str(e)}), 200
-‎
-‎
-‎@app.route('/', methods=['GET'])
-‎def health():
-‎    return "Cell Center Bot activo ✅", 200
-‎
-‎
-‎if __name__ == '__main__':
-‎    app.run(host='0.0.0.0', port=10000)
+                print("Número no autorizado: " + numero_limpio)
+                continue
+
+            body = msg.get("text", {}).get("body", "").strip()
+            if not body:
+                continue
+
+            if from_number in stock_bajo_pendiente:
+                if any(palabra in body.lower() for palabra in PALABRAS_SI):
+                    info = stock_bajo_pendiente.pop(from_number)
+                    notificar_stock_bajo(from_number, info["producto"], info["stock"])
+                else:
+                    stock_bajo_pendiente.pop(from_number)
+
+            productos, compatibles = consultar_odoo(body)
+            contexto_odoo = ""
+            stock_bajo_info = None
+
+            if productos:
+                contexto_odoo = "\n\nINFORMACIÓN DEL INVENTARIO:\n"
+                for p in productos:
+                    precio_usd, precio_bs = calcular_precio_bs(p['list_price'])
+                    stock = int(p['qty_available'])
+                    nombre = p['name']
+                    contexto_odoo += f"- {nombre}: ${precio_usd} USD / Bs. {precio_bs:,} | Stock: {stock} unidades\n"
+                    if stock_bajo_info is None and 1 <= stock <= 2:
+                        stock_bajo_info = {"producto": nombre, "stock": stock}
+
+            if compatibles:
+                contexto_odoo += "\n\nPRODUCTOS COMPATIBLES (modelo exacto no disponible):\n"
+                for p in compatibles:
+                    precio_usd, precio_bs = calcular_precio_bs(p['list_price'])
+                    stock = int(p['qty_available'])
+                    nombre = p['name']
+                    compatible_con = p.get('_compatible_con', '')
+                    contexto_odoo += f"- {nombre} (compatible con {compatible_con}): ${precio_usd} USD / Bs. {precio_bs:,} | Stock: {stock} unidades\n"
+                    if stock_bajo_info is None and 1 <= stock <= 2:
+                        stock_bajo_info = {"producto": nombre, "stock": stock}
+
+            if not productos and not compatibles:
+                contexto_odoo = "\n\nNo se encontró el producto en el inventario."
+
+            historial = cargar_historial(from_number)
+            historial.append({"role": "user", "content": body + contexto_odoo})
+            if len(historial) > 4:
+                historial = historial[-4:]
+
+            response = client.messages.create(
+                model="claude-haiku-4-5-20251001",
+                max_tokens=300,
+                system=get_system_prompt(),
+                messages=historial
+            )
+
+            reply = response.content[0].text
+
+            if "DERIVAR_TECNICO" in reply:
+                notificar_asesor(ASESOR_TECNICO, "celulares o servicio técnico", from_number)
+                reply = "Un momento, un asesor te atenderá enseguida 👋"
+            elif "DERIVAR_ACCESORIOS" in reply:
+                notificar_asesor(ASESOR_ACCESORIOS, "accesorios", from_number)
+                reply = "Un momento, un asesor te atenderá enseguida 👋"
+
+            if stock_bajo_info:
+                stock_bajo_pendiente[from_number] = stock_bajo_info
+
+            historial.append({"role": "assistant", "content": reply})
+            guardar_historial(from_number, historial)
+            send_whapi_message(from_number, reply)
+
+        return jsonify({"status": "ok"}), 200
+
+    except Exception as e:
+        print(f"Error en webhook: {e}")
+        return jsonify({"status": "error", "detail": str(e)}), 200
+
+
+@app.route('/', methods=['GET'])
+def health():
+    return "Cell Center Bot activo ✅", 200
+
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=10000)
