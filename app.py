@@ -392,9 +392,16 @@ def webhook():
             if not from_number:
                 continue
 
+            print(f"From recibido: {from_number}")
+
             # Ignorar mensajes de grupos
             if "@g.us" in from_number:
                 print(f"Mensaje de grupo ignorado: {from_number}")
+                continue
+
+            # Ignorar mensajes de broadcast
+            if "broadcast" in from_number.lower():
+                print(f"Mensaje broadcast ignorado: {from_number}")
                 continue
 
             numero_limpio = from_number.replace("@s.whatsapp.net", "").replace("+", "")
