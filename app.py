@@ -51,7 +51,7 @@ stock_bajo_pendiente = {}
 
 PALABRAS_SI = ["si", "sí", "yes", "claro", "dale", "ok", "okay", "quiero", "aparta", "reserva", "separa", "confirmado", "afirmativo", "me interesa", "la quiero"]
 
-PALABRAS_IGNORAR = {"pantalla", "de", "el", "la", "los", "las", "un", "una", "para", "del", "con", "por", "que", "precio", "cuanto", "tienes", "tienen", "hay", "stock", "y", "tendrás", "cuales", "son", "disponibles", "tienes"}
+PALABRAS_IGNORAR = {"pantalla", "de", "el", "la", "los", "las", "un", "una", "para", "del", "con", "por", "que", "precio", "cuanto", "tienes", "tienen", "hay", "stock", "y", "tendrás", "cuales", "son", "disponibles"}
 
 CORRECCIONES = {
     "samsug": "samsung", "samsum": "samsung", "samsun": "samsung",
@@ -142,6 +142,13 @@ def corregir_texto(texto):
     return texto_lower
 
 
+def es_coincidencia_exacta_palabra(palabra, nombre_lower):
+    """Verifica que la palabra coincida como palabra completa, no como parte de otra"""
+    import re
+    patron = r'(?<![a-z0-9])' + re.escape(palabra) + r'(?![a-z0-9])'
+    return bool(re.search(patron, nombre_lower))
+
+
 def consultar_odoo(mensaje):
     try:
         common = xmlrpc.client.ServerProxy(f"{ODOO_URL}/xmlrpc/2/common")
@@ -171,20 +178,20 @@ def consultar_odoo(mensaje):
             nombre_lower = producto['name'].lower()
             nombre_sin_espacios = nombre_lower.replace(" ", "")
 
-            # Score por palabras coincidentes
-            coincidencias = sum(1 for p in palabras if p in nombre_lower)
+            # Score por palabras coincidentes como palabras completas
+            coincidencias = sum(1 for p in palabras if es_coincidencia_exacta_palabra(p, nombre_lower))
 
-            # Bonus por coincidencia sin espacios
+            # Bonus por coincidencia exacta sin espacios
             if mensaje_sin_espacios and len(mensaje_sin_espacios) > 2:
-                if mensaje_sin_espacios in nombre_sin_espacios or nombre_sin_espacios in mensaje_sin_espacios:
-                    coincidencias += 3
+                if nombre_sin_espacios == mensaje_sin_espacios:
+                    coincidencias += 5
+                elif mensaje_sin_espacios in nombre_sin_espacios:
+                    # Solo dar bonus si la coincidencia es al inicio o final
+                    if nombre_sin_espacios.startswith(mensaje_sin_espacios) or nombre_sin_espacios.endswith(mensaje_sin_espacios):
+                        coincidencias += 2
 
-            # Bonus por coincidencia exacta del nombre completo
-            if nombre_sin_espacios == mensaje_sin_espacios:
-                coincidencias += 5
-
-            # Bonus si todas las palabras buscadas están en el nombre
-            if palabras and all(p in nombre_lower for p in palabras):
+            # Bonus si todas las palabras buscadas están en el nombre como palabras completas
+            if palabras and all(es_coincidencia_exacta_palabra(p, nombre_lower) for p in palabras):
                 coincidencias += 2
 
             if coincidencias > 0:
@@ -194,8 +201,6 @@ def consultar_odoo(mensaje):
         print(f"Productos encontrados: {len(encontrados)}")
         encontrados.sort(key=lambda x: x['_score'], reverse=True)
 
-        # Si hay pocos resultados muy específicos mostrar hasta 5
-        # Si hay muchos resultados genéricos limitar a 3
         limite = 5 if len(encontrados) <= 5 else 3
         resultado_final = encontrados[:limite]
 
