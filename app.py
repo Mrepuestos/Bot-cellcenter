@@ -157,21 +157,21 @@ def es_coincidencia_exacta_palabra(palabra, nombre_lower):
     return bool(re.search(patron, nombre_lower))
 
 
-def producto_coincide_exacto(palabras, mensaje_sin_espacios, nombre_lower):
-    """Verifica si el producto es una coincidencia exacta con lo buscado"""
-    nombre_sin_espacios = nombre_lower.replace(" ", "")
-
-    # Coincidencia exacta completa
-    if nombre_sin_espacios == mensaje_sin_espacios:
-        return True
-
-    # Todas las palabras coinciden exactamente
-    if palabras and all(es_coincidencia_exacta_palabra(p, nombre_lower) for p in palabras):
-        # Verificar que el nombre no tenga palabras extra significativas
-        palabras_nombre = [p for p in nombre_lower.split() if p not in PALABRAS_IGNORAR]
-        if len(palabras_nombre) <= len(palabras) + 1:
+def hay_coincidencia_exacta_con_stock(resultado_final, palabras, mensaje_sin_espacios):
+    """Verifica si algún producto tiene coincidencia exacta Y tiene stock"""
+    for p in resultado_final:
+        if int(p['qty_available']) <= 0:
+            continue
+        nombre_lower = p['name'].lower()
+        nombre_sin_espacios = nombre_lower.replace(" ", "")
+        # Coincidencia exacta por nombre sin espacios
+        if nombre_sin_espacios == mensaje_sin_espacios:
             return True
-
+        # Todas las palabras coinciden y el nombre es similar en longitud
+        if palabras and all(es_coincidencia_exacta_palabra(p2, nombre_lower) for p2 in palabras):
+            palabras_nombre = [w for w in nombre_lower.split() if w not in PALABRAS_IGNORAR]
+            if abs(len(palabras_nombre) - len(palabras)) <= 1:
+                return True
     return False
 
 
@@ -203,12 +203,14 @@ def buscar_compatibles(todos, mensaje_sin_espacios, palabras):
                 modelo_sin_espacios = modelo.replace(" ", "")
 
                 coincide = False
-                if mensaje_sin_espacios and modelo_sin_espacios and mensaje_sin_espacios == modelo_sin_espacios:
-                    coincide = True
-                elif mensaje_sin_espacios and modelo_sin_espacios and mensaje_sin_espacios in modelo_sin_espacios:
-                    coincide = True
-                elif palabras and len(palabras) >= 2 and all(p in modelo for p in palabras):
-                    coincide = True
+                if mensaje_sin_espacios and modelo_sin_espacios:
+                    if mensaje_sin_espacios == modelo_sin_espacios:
+                        coincide = True
+                    elif mensaje_sin_espacios in modelo_sin_espacios or modelo_sin_espacios in mensaje_sin_espacios:
+                        coincide = True
+                if not coincide and palabras and len(palabras) >= 1:
+                    if all(p in modelo for p in palabras):
+                        coincide = True
 
                 if coincide:
                     producto['_compatible_con'] = modelo
@@ -270,36 +272,28 @@ def consultar_odoo(mensaje):
         for p in resultado_final:
             print(f"Producto: {p['name']} | Stock: {p['qty_available']} | Score: {p['_score']}")
 
-        # Verificar si el producto exacto buscado existe y tiene stock
-        exacto_con_stock = any(
-            producto_coincide_exacto(palabras, mensaje_sin_espacios, p['name'].lower()) and int(p['qty_available']) > 0
-            for p in resultado_final
-        )
-
-        exacto_sin_stock = any(
-            producto_coincide_exacto(palabras, mensaje_sin_espacios, p['name'].lower()) and int(p['qty_available']) == 0
-            for p in resultado_final
-        )
-
+        # Verificar si hay coincidencia exacta con stock
+        exacto_con_stock = hay_coincidencia_exacta_con_stock(resultado_final, palabras, mensaje_sin_espacios)
         sin_resultados = not resultado_final
         todos_agotados = resultado_final and all(int(p['qty_available']) == 0 for p in resultado_final)
 
-        # Buscar compatibles si el producto exacto no tiene stock o no existe
+        print(f"Exacto con stock: {exacto_con_stock} | Sin resultados: {sin_resultados} | Todos agotados: {todos_agotados}")
+
+        # Buscar compatibles si no hay exacto con stock
         compatibles = []
-        if sin_resultados or todos_agotados or (exacto_sin_stock and not exacto_con_stock):
-            print("Buscando en compatibilidades...")
+        if not exacto_con_stock:
+            print("No hay coincidencia exacta con stock, buscando compatibilidades...")
             compatibles = buscar_compatibles(todos, mensaje_sin_espacios, palabras)
 
         # Decidir qué retornar
         if exacto_con_stock:
-            # Hay producto exacto con stock — mostrar normalmente
             return resultado_final, None
-        elif compatibles and (sin_resultados or todos_agotados or exacto_sin_stock):
-            # No hay exacto con stock pero hay compatible
+        elif compatibles:
             return None, compatibles
+        elif sin_resultados:
+            return None, None
         else:
-            # Mostrar lo que encontró aunque esté agotado
-            return resultado_final if resultado_final else None, None
+            return resultado_final, None
 
     except Exception as e:
         print(f"Error consultando Odoo: {e}")
@@ -492,7 +486,7 @@ def webhook():
         return jsonify({"status": "error", "detail": str(e)}), 200
 
 
-@app.route('/', methods='GET'])
+@app.route('/', methods=['GET'])
 def health():
     return "Cell Center Bot activo ✅", 200
 
