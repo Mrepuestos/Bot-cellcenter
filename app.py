@@ -162,7 +162,7 @@ def consultar_odoo(mensaje):
             ODOO_DB, uid, ODOO_API_KEY,
             'product.product', 'search_read',
             [[]],
-            {'fields': ['name', 'list_price', 'qty_available', 'description_picking'], 'limit': 500}
+            {'fields': ['name', 'list_price', 'qty_available', 'description'], 'limit': 500}
         )
         print(f"Total productos en Odoo: {len(todos)}")
 
@@ -199,25 +199,25 @@ def consultar_odoo(mensaje):
         for p in resultado_final:
             print(f"Producto: {p['name']} | Stock: {p['qty_available']} | Score: {p['_score']}")
 
-        # Verificar si todos los resultados tienen stock 0
         todos_agotados = resultado_final and all(int(p['qty_available']) == 0 for p in resultado_final)
         sin_resultados = not resultado_final
 
-        # Buscar compatibilidades si no hay resultados o todos están agotados
         compatibles = []
         if sin_resultados or todos_agotados:
             print("Buscando en compatibilidades...")
             for producto in todos:
-                notas = producto.get('description_picking') or ""
+                notas = producto.get('description') or ""
+                if isinstance(notas, dict):
+                    notas = str(notas)
                 if 'COMPATIBLE:' in notas.upper():
                     for linea in notas.split('\n'):
                         if 'COMPATIBLE:' in linea.upper():
                             modelos_str = linea.upper().replace('COMPATIBLE:', '').strip()
                             modelos_lista = [m.strip().lower() for m in modelos_str.split(',')]
+                            print(f"Revisando compatibles de {producto['name']}: {modelos_lista}")
 
                             for modelo in modelos_lista:
                                 modelo_sin_espacios = modelo.replace(" ", "")
-                                palabras_modelo = [p for p in modelo.split() if p not in PALABRAS_IGNORAR]
 
                                 coincide = False
                                 if mensaje_sin_espacios and modelo_sin_espacios and mensaje_sin_espacios in modelo_sin_espacios:
@@ -231,8 +231,6 @@ def consultar_odoo(mensaje):
                                     print(f"Compatible encontrado: {producto['name']} es compatible con {modelo}")
                                     break
 
-        # Si todos agotados y hay compatibles, usar compatibles
-        # Si todos agotados y no hay compatibles, mostrar agotados
         if todos_agotados and compatibles:
             return None, compatibles
         elif todos_agotados and not compatibles:
