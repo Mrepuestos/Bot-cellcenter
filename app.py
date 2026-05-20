@@ -53,27 +53,21 @@ stock_bajo_pendiente = {}
 PALABRAS_SI = ["si", "sí", "yes", "claro", "dale", "ok", "okay", "quiero", "aparta", "reserva", "separa", "confirmado", "afirmativo", "me interesa", "la quiero"]
 
 PALABRAS_IGNORAR = {
-    # Artículos y preposiciones
     "de", "el", "la", "los", "las", "un", "una", "para", "del", "con", "por", "que",
     "y", "o", "a", "en", "al", "lo", "le", "se", "su", "sus", "es", "son",
-    # Verbos comunes
     "tienes", "tienen", "hay", "tendrás", "tengo", "tiene", "das", "dar", "dame",
     "dime", "sabe", "saben", "quiero", "quieres", "puedes", "puede", "necesito",
-    # Preguntas y saludos
     "pantalla", "precio", "cuanto", "cuánto", "stock", "disponibles", "disponible",
     "cuales", "son", "hola", "buenas", "buen", "buenos", "dias", "día", "dia",
-    "tardes", "noches", "buenas", "saludos",
-    # Palabras de cortesía
+    "tardes", "noches", "saludos",
     "favor", "porfavor", "porfa", "gracias", "please", "podria", "podría",
-    # Tratamientos y apodos
     "mano", "hermano", "brother", "bro", "amigo", "amiga", "chamo", "chama",
     "pana", "compañero", "compañera", "jefe", "jefa", "señor", "señora",
-    "estimado", "estimada", "maestro", "profe", "socio", "vale",
-    # Otras palabras irrelevantes
+    "estimado", "estimada", "maestro", "profe", "socio", "vale", "papi", "mami",
     "me", "mi", "mis", "tu", "tus", "nos", "nuestro", "nuestra",
-    "tendrás", "cuales", "alguna", "alguno", "algún", "otro", "otra",
+    "alguna", "alguno", "algún", "otro", "otra",
     "ese", "esa", "esto", "esta", "aqui", "acá", "allá", "cuando",
-    "como", "donde", "quien", "qué", "si", "no", "mas", "más",
+    "como", "donde", "quien", "qué", "mas", "más",
     "muy", "bien", "mal", "solo", "también", "tampoco"
 }
 
@@ -411,13 +405,12 @@ def webhook():
             if not from_number:
                 continue
 
-            # Ignorar mensajes de grupos y broadcasts
             chat_id = msg.get("chat_id", "") or msg.get("chatId", "") or ""
             if "@g.us" in from_number or "@g.us" in chat_id:
-                print(f"Mensaje de grupo ignorado")
+                print("Mensaje de grupo ignorado")
                 continue
             if "broadcast" in from_number.lower() or "broadcast" in chat_id.lower():
-                print(f"Mensaje broadcast ignorado")
+                print("Mensaje broadcast ignorado")
                 continue
 
             numero_limpio = from_number.replace("@s.whatsapp.net", "").replace("+", "")
@@ -493,4 +486,11 @@ def webhook():
                 notificar_asesor(ASESOR_ACCESORIOS, "accesorios", from_number)
                 reply = "Un momento, un asesor te atenderá enseguida 👋"
 
-            if stock_bajo_info
+            if stock_bajo_info:
+                stock_bajo_pendiente[from_number] = stock_bajo_info
+
+            historial.append({"role": "assistant", "content": reply})
+            guardar_historial(from_number, historial)
+            send_whapi_message(from_number, reply)
+
+    
