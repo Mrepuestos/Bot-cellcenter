@@ -186,6 +186,10 @@ def hay_coincidencia_exacta_con_stock(resultado_final, palabras, mensaje_sin_esp
             palabras_nombre = [w for w in nombre_lower.split() if w not in PALABRAS_IGNORAR]
             if abs(len(palabras_nombre) - len(palabras)) <= 1:
                 return True
+        # Si hay solo un resultado con stock, considerarlo válido
+        productos_con_stock = [x for x in resultado_final if int(x['qty_available']) > 0]
+        if len(productos_con_stock) == 1 and p in productos_con_stock:
+            return True
     return False
 
 
@@ -269,6 +273,8 @@ def consultar_odoo(mensaje):
                     coincidencias += 5
                 elif nombre_sin_espacios.startswith(mensaje_sin_espacios) or nombre_sin_espacios.endswith(mensaje_sin_espacios):
                     coincidencias += 2
+                elif mensaje_sin_espacios in nombre_sin_espacios:
+                    coincidencias += 1
 
             if palabras and all(es_coincidencia_exacta_palabra(p, nombre_lower) for p in palabras):
                 coincidencias += 2
@@ -484,13 +490,3 @@ def webhook():
                 reply = "Un momento, un asesor te atenderá enseguida 👋"
             elif "DERIVAR_ACCESORIOS" in reply:
                 notificar_asesor(ASESOR_ACCESORIOS, "accesorios", from_number)
-                reply = "Un momento, un asesor te atenderá enseguida 👋"
-
-            if stock_bajo_info:
-                stock_bajo_pendiente[from_number] = stock_bajo_info
-
-            historial.append({"role": "assistant", "content": reply})
-            guardar_historial(from_number, historial)
-            send_whapi_message(from_number, reply)
-
-    
