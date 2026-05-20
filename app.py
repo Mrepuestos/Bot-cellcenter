@@ -190,7 +190,6 @@ def buscar_compatibles(todos, mensaje_sin_espacios, palabras):
 
             modelos_str = linea.upper().replace('COMPATIBLE:', '').strip()
             modelos_lista = [m.strip().lower() for m in modelos_str.split(',')]
-            print(f"Revisando compatibles de {producto['name']}: {modelos_lista}")
 
             for modelo in modelos_lista:
                 modelo = modelo.strip()
@@ -272,11 +271,8 @@ def consultar_odoo(mensaje):
         sin_resultados = not resultado_final
         todos_agotados = resultado_final and all(int(p['qty_available']) == 0 for p in resultado_final)
 
-        print(f"Exacto con stock: {exacto_con_stock} | Sin resultados: {sin_resultados} | Todos agotados: {todos_agotados}")
-
         compatibles = []
         if not exacto_con_stock:
-            print("No hay coincidencia exacta con stock, buscando compatibilidades...")
             compatibles = buscar_compatibles(todos, mensaje_sin_espacios, palabras)
 
         if exacto_con_stock:
@@ -375,9 +371,6 @@ def webhook():
         messages_list = data.get("messages", [])
 
         for msg in messages_list:
-            # Print completo del mensaje para diagnostico
-            print(f"MSG completo: {json.dumps(msg)[:500]}")
-
             if msg.get("from_me", False):
                 continue
             if msg.get("type", "") != "text":
@@ -395,16 +388,11 @@ def webhook():
             if not from_number:
                 continue
 
-            print(f"From recibido: {from_number}")
-
-            # Ignorar mensajes de grupos
+            # Ignorar mensajes de grupos y broadcasts
             chat_id = msg.get("chat_id", "") or msg.get("chatId", "") or ""
-            print(f"Chat ID: {chat_id}")
-
             if "@g.us" in from_number or "@g.us" in chat_id:
                 print(f"Mensaje de grupo ignorado")
                 continue
-
             if "broadcast" in from_number.lower() or "broadcast" in chat_id.lower():
                 print(f"Mensaje broadcast ignorado")
                 continue
