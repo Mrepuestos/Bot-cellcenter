@@ -105,11 +105,11 @@ def esta_abierto():
 
 def cargar_historial(numero):
     try:
-        resultado = supabase.table("clientes").select("historial").eq("numero", numero).execute()
+        import json
+        resultado = supabase.table("Clientes").select("historial").eq("numero", numero).execute()
         if resultado.data:
             historial_str = resultado.data[0].get("historial", "")
             if historial_str:
-                import json
                 return json.loads(historial_str)
         return []
     except Exception as e:
@@ -121,14 +121,14 @@ def guardar_historial(numero, historial):
     try:
         import json
         historial_str = json.dumps(historial[-20:])
-        resultado = supabase.table("clientes").select("numero").eq("numero", numero).execute()
+        resultado = supabase.table("Clientes").select("numero").eq("numero", numero).execute()
         if resultado.data:
-            supabase.table("clientes").update({
+            supabase.table("Clientes").update({
                 "historial": historial_str,
                 "ultima_visita": datetime.utcnow().isoformat()
             }).eq("numero", numero).execute()
         else:
-            supabase.table("clientes").insert({
+            supabase.table("Clientes").insert({
                 "numero": numero,
                 "historial": historial_str,
                 "ultima_visita": datetime.utcnow().isoformat()
