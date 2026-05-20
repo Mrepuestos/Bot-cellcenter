@@ -55,6 +55,8 @@ PALABRAS_IGNORAR = {
     "ese","esa","esto","esta","aqui","acá","allá","cuando","como","donde","quien","qué","mas","más","muy","bien","mal","solo","también","tampoco"
 }
 
+SEPARADORES_MODELOS = {"y", "and", "tambien", "también", "ademas", "además"}
+
 CORRECCIONES = {
     "samsug":"samsung","samsum":"samsung","samsun":"samsung",
     "remi":"redmi","xiaomi":"redmi",
@@ -67,6 +69,8 @@ CORRECCIONES = {
     "alkatel":"alcatel","alcater":"alcatel",
     "onor":"honor","onour":"honor"
 }
+
+MARCAS = {"samsung","redmi","infinix","iphone","huawei","tecno","motorola","alcatel","honor","realme","xiaomi"}
 
 
 def limpiar_html(texto):
@@ -177,8 +181,82 @@ def calcular_score(palabras, nombre_lower, mensaje_sin_espacios):
     return coincidencias
 
 
-def buscar_compatibles(todos, mensaje_sin_espacios, palabras):
-    compatibles = []
+def dividir_en_referencias(mensaje):
+    """Divide un mensaje con múltiples modelos en referencias individuales"""
+    mensaje_corregido = corregir_texto(mensaje)
+
+    # Separar por saltos de línea primero
+    partes = re.split(r'\n', mensaje_corregido)
+
+    referencias = []
+    for parte in partes:
+        parte = parte.strip()
+        if not parte:
+            continue
+
+        # Separar por palabras separadoras (y, and, también)
+        # Solo separar si la siguiente palabra es una marca conocida
+        palabras = parte.split()
+        grupo_actual = []
+
+        for i, palabra in enumerate(palabras):
+            if palabra in SEPARADORES_MODELOS:
+                # Verificar si la siguiente palabra es una marca
+                siguiente_es_marca = (i + 1 < len(palabras) and palabras[i+1].lower() in MARCAS)
+                if siguiente_es_marca and grupo_actual:
+                    ref = " ".join(grupo_actual).strip()
+                    if ref:
+                        referencias.append(ref)
+                    grupo_actual = []
+                else:
+                    grupo_actual.append(palabra)
+            else:
+                grupo_actual.append(palabra)
+
+        if grupo_actual:
+            ref = " ".join(grupo_actual).strip()
+            if ref:
+                referencias.append(ref)
+
+    return referencias if referencias else [mensaje_corregido]
+
+
+def buscar_en_odoo(todos, referencia):
+    """Busca una referencia específica en el inventario"""
+    mensaje_corregido = corregir_texto(referencia)
+    palabras = [p for p in mensaje_corregido.split() if len(p) >= 1 and p not in PALABRAS_IGNORAR]
+    mensaje_sin_espacios = mensaje_corregido.replace(" ", "").lower()
+
+    if not palabras:
+        return None, None
+
+    encontrados = []
+    for producto in todos:
+        nombre_lower = producto['name'].lower()
+        score = calcular_score(palabras, nombre_lower, mensaje_sin_espacios)
+        if score > 0:
+            producto_copia = dict(producto)
+            producto_copia['_score'] = score
+            encontrados.append(producto_copia)
+
+    encontrados.sort(key=lambda x: x['_score'], reverse=True)
+    resultado = encontrados[:3] if encontrados else []
+
+    con_stock = [p for p in resultado if int(p['qty_available']) > 0]
+
+    if con_stock:
+        return con_stock[0], None
+
+    # Buscar compatibles
+    compatible = buscar_compatible_individual(todos, mensaje_sin_espacios, palabras)
+    if compatible:
+        return None, compatible
+
+    return resultado[0] if resultado else None, None
+
+
+def buscar_compatible_individual(todos, mensaje_sin_espacios, palabras):
+    """Busca UN compatible para una referencia específica"""
     for producto in todos:
         if int(producto['qty_available']) <= 0:
             continue
@@ -202,18 +280,16 @@ def buscar_compatibles(todos, mensaje_sin_espacios, palabras):
                         coincide = True
                     elif mensaje_sin_espacios in modelo_sin_espacios or modelo_sin_espacios in mensaje_sin_espacios:
                         coincide = True
-
                 if not coincide and palabras and palabras_modelo:
                     if all(p in modelo for p in palabras):
                         coincide = True
 
                 if coincide:
-                    producto['_compatible_con'] = modelo
-                    if producto not in compatibles:
-                        compatibles.append(producto)
+                    producto_copia = dict(producto)
+                    producto_copia['_compatible_con'] = modelo
                     print(f"Compatible encontrado: {producto['name']} es compatible con {modelo}")
-                    break
-    return compatibles
+                    return producto_copia
+    return None
 
 def consultar_odoo(mensaje):
     try:
@@ -232,43 +308,70 @@ def consultar_odoo(mensaje):
         )
         print(f"Total productos en Odoo: {len(todos)}")
 
-        mensaje_corregido = corregir_texto(mensaje)
-        palabras = [p for p in mensaje_corregido.split() if len(p) >= 1 and p not in PALABRAS_IGNORAR]
-        print(f"Palabras buscadas: {palabras}")
-        mensaje_sin_espacios = mensaje_corregido.replace(" ", "").lower()
+        referencias = dividir_en_referencias(mensaje)
+        print(f"Referencias detectadas: {referencias}")
 
-        encontrados = []
-        for producto in todos:
-            nombre_lower = producto['name'].lower()
-            score = calcular_score(palabras, nombre_lower, mensaje_sin_espacios)
-            if score > 0:
-                producto['_score'] = score
-                encontrados.append(producto)
+        # Si hay una sola referencia usar búsqueda normal
+        if len(referencias) == 1:
+            mensaje_corregido = corregir_texto(mensaje)
+            palabras = [p for p in mensaje_corregido.split() if len(p) >= 1 and p not in PALABRAS_IGNORAR]
+            print(f"Palabras buscadas: {palabras}")
+            mensaje_sin_espacios = mensaje_corregido.replace(" ", "").lower()
 
-        encontrados.sort(key=lambda x: x['_score'], reverse=True)
-        resultado_final = encontrados[:5] if len(encontrados) <= 5 else encontrados[:3]
+            encontrados = []
+            for producto in todos:
+                nombre_lower = producto['name'].lower()
+                score = calcular_score(palabras, nombre_lower, mensaje_sin_espacios)
+                if score > 0:
+                    producto['_score'] = score
+                    encontrados.append(producto)
 
-        for p in resultado_final:
-            print(f"Producto: {p['name']} | Stock: {p['qty_available']} | Score: {p['_score']}")
+            encontrados.sort(key=lambda x: x['_score'], reverse=True)
+            resultado_final = encontrados[:5] if len(encontrados) <= 5 else encontrados[:3]
 
-        con_stock = [p for p in resultado_final if int(p['qty_available']) > 0]
-        sin_stock = [p for p in resultado_final if int(p['qty_available']) <= 0]
-        sin_resultados = not resultado_final
+            for p in resultado_final:
+                print(f"Producto: {p['name']} | Stock: {p['qty_available']} | Score: {p['_score']}")
 
-        print(f"Con stock: {len(con_stock)} | Sin stock: {len(sin_stock)} | Sin resultados: {sin_resultados}")
+            con_stock = [p for p in resultado_final if int(p['qty_available']) > 0]
+            sin_stock = [p for p in resultado_final if int(p['qty_available']) <= 0]
+            sin_resultados = not resultado_final
 
-        if con_stock:
-            return con_stock, None
+            print(f"Con stock: {len(con_stock)} | Sin stock: {len(sin_stock)} | Sin resultados: {sin_resultados}")
 
-        print("Buscando compatibilidades...")
-        compatibles = buscar_compatibles(todos, mensaje_sin_espacios, palabras)
+            if con_stock:
+                return con_stock, None
 
-        if compatibles:
-            return None, compatibles
-        elif sin_resultados:
-            return None, None
-        else:
-            return sin_stock, None
+            print("Buscando compatibilidades...")
+            compatible = buscar_compatible_individual(todos, mensaje_sin_espacios, palabras)
+            if compatible:
+                return None, [compatible]
+            elif sin_resultados:
+                return None, None
+            else:
+                return sin_stock, None
+
+        # Múltiples referencias — buscar cada una por separado
+        resultados_multiples = []
+        compatibles_multiples = []
+
+        for ref in referencias:
+            print(f"Buscando referencia: {ref}")
+            producto, compatible = buscar_en_odoo(todos, ref)
+
+            if producto and int(producto['qty_available']) > 0:
+                producto['_referencia'] = ref
+                resultados_multiples.append(producto)
+            elif compatible:
+                compatible['_referencia'] = ref
+                compatibles_multiples.append(compatible)
+            elif producto:
+                producto['_referencia'] = ref
+                resultados_multiples.append(producto)
+
+        if resultados_multiples or compatibles_multiples:
+            return resultados_multiples if resultados_multiples else None, compatibles_multiples if compatibles_multiples else None
+
+        return None, None
 
     except Exception as e:
         print(f"Error consultando Odoo: {e}")
@@ -306,6 +409,7 @@ REGLA PRINCIPAL: Cuando el inventario muestre productos con stock mayor a 0, SIE
 MÚLTIPLES REFERENCIAS en un mensaje, responde en lista:
 ✅ *Modelo*: $12 USD / Bs. 8,243
 ❌ *Modelo*: No disponible
+✅ *Modelo compatible con X*: $12 USD / Bs. 8,243
 
 COMPATIBILIDADES: Si el inventario dice "PRODUCTOS COMPATIBLES", responde SOLO con ese producto compatible:
 "No tenemos la pantalla para [modelo pedido], pero tenemos una compatible: *[nombre producto]*: $XX USD / Bs. XX,XXX"
@@ -398,8 +502,9 @@ def webhook():
                     contexto_odoo += f"- {nombre}: ${precio_usd} USD / Bs. {precio_bs:,} | Stock: {stock} unidades\n"
                     if stock_bajo_info is None and 1 <= stock <= 2:
                         stock_bajo_info = {"producto": nombre, "stock": stock}
-            elif compatibles:
-                contexto_odoo = "\n\nPRODUCTOS COMPATIBLES (el modelo exacto no está en inventario):\n"
+
+            if compatibles:
+                contexto_odoo += "\n\nPRODUCTOS COMPATIBLES (modelo exacto no disponible):\n"
                 for p in compatibles:
                     precio_usd, precio_bs = calcular_precio_bs(p['list_price'])
                     stock = int(p['qty_available'])
@@ -408,7 +513,8 @@ def webhook():
                     contexto_odoo += f"- {nombre} (compatible con {compatible_con}): ${precio_usd} USD / Bs. {precio_bs:,} | Stock: {stock} unidades\n"
                     if stock_bajo_info is None and 1 <= stock <= 2:
                         stock_bajo_info = {"producto": nombre, "stock": stock}
-            else:
+
+            if not productos and not compatibles:
                 contexto_odoo = "\n\nNo se encontró el producto en el inventario."
 
             historial = cargar_historial(from_number)
