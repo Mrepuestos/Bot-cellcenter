@@ -172,7 +172,6 @@ def consultar_odoo(mensaje):
 
         mensaje_sin_espacios = mensaje_corregido.replace(" ", "").lower()
 
-        # Buscar coincidencias directas
         encontrados = []
         for producto in todos:
             nombre_lower = producto['name'].lower()
@@ -200,38 +199,48 @@ def consultar_odoo(mensaje):
         for p in resultado_final:
             print(f"Producto: {p['name']} | Stock: {p['qty_available']} | Score: {p['_score']}")
 
-        # Si no se encontró nada buscar en compatibilidades
+        # Verificar si todos los resultados tienen stock 0
+        todos_agotados = resultado_final and all(int(p['qty_available']) == 0 for p in resultado_final)
+        sin_resultados = not resultado_final
+
+        # Buscar compatibilidades si no hay resultados o todos están agotados
         compatibles = []
-        if not resultado_final:
-            print("No encontrado directamente, buscando en compatibilidades...")
+        if sin_resultados or todos_agotados:
+            print("Buscando en compatibilidades...")
             for producto in todos:
                 notas = producto.get('description_picking') or ""
                 if 'COMPATIBLE:' in notas.upper():
-                    linea_compatible = ""
                     for linea in notas.split('\n'):
                         if 'COMPATIBLE:' in linea.upper():
-                            linea_compatible = linea
-                            break
-                    modelos_compatibles = linea_compatible.upper().replace('COMPATIBLE:', '').strip()
-                    modelos_lista = [m.strip().lower() for m in modelos_compatibles.split(',')]
+                            modelos_str = linea.upper().replace('COMPATIBLE:', '').strip()
+                            modelos_lista = [m.strip().lower() for m in modelos_str.split(',')]
 
-                    for modelo in modelos_lista:
-                        modelo_sin_espacios = modelo.replace(" ", "")
-                        palabras_modelo = [p for p in modelo.split() if p not in PALABRAS_IGNORAR]
+                            for modelo in modelos_lista:
+                                modelo_sin_espacios = modelo.replace(" ", "")
+                                palabras_modelo = [p for p in modelo.split() if p not in PALABRAS_IGNORAR]
 
-                        coincide = False
-                        if mensaje_sin_espacios and modelo_sin_espacios and mensaje_sin_espacios in modelo_sin_espacios:
-                            coincide = True
-                        elif palabras and all(p in modelo for p in palabras):
-                            coincide = True
+                                coincide = False
+                                if mensaje_sin_espacios and modelo_sin_espacios and mensaje_sin_espacios in modelo_sin_espacios:
+                                    coincide = True
+                                elif palabras and all(p in modelo for p in palabras):
+                                    coincide = True
 
-                        if coincide:
-                            producto['_compatible_con'] = modelo
-                            compatibles.append(producto)
-                            print(f"Compatible encontrado: {producto['name']} es compatible con {modelo}")
-                            break
+                                if coincide and int(producto['qty_available']) > 0:
+                                    producto['_compatible_con'] = modelo
+                                    compatibles.append(producto)
+                                    print(f"Compatible encontrado: {producto['name']} es compatible con {modelo}")
+                                    break
 
-        return resultado_final if resultado_final else None, compatibles if compatibles else None
+        # Si todos agotados y hay compatibles, usar compatibles
+        # Si todos agotados y no hay compatibles, mostrar agotados
+        if todos_agotados and compatibles:
+            return None, compatibles
+        elif todos_agotados and not compatibles:
+            return resultado_final, None
+        elif sin_resultados and compatibles:
+            return None, compatibles
+        else:
+            return resultado_final, None
 
     except Exception as e:
         print(f"Error consultando Odoo: {e}")
