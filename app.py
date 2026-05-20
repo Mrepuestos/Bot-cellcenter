@@ -131,8 +131,13 @@ def corregir_texto(texto):
 def es_coincidencia_exacta_palabra(palabra, nombre_lower):
     return bool(re.search(r'(?<![a-z0-9])' + re.escape(palabra) + r'(?![a-z0-9])', nombre_lower))
 
-def buscar_compatibles(todos, mensaje_sin_espacios, palabras):
+def buscar_compatibles(todos, mensaje_original, palabras_originales):
+    """Busca productos que tengan exactamente el modelo buscado en sus notas COMPATIBLE"""
     compatibles = []
+    mensaje_limpio = limpiar_puntuacion(mensaje_original.lower())
+    palabras = [p for p in mensaje_limpio.split() if p not in PALABRAS_IGNORAR and len(p) > 1]
+    msg_sin_espacios = mensaje_limpio.replace(" ", "")
+
     for producto in todos:
         if int(producto['qty_available']) <= 0:
             continue
@@ -142,21 +147,33 @@ def buscar_compatibles(todos, mensaje_sin_espacios, palabras):
         for linea in notas.split('\n'):
             if 'COMPATIBLE:' not in linea.upper():
                 continue
-            for modelo in linea.upper().replace('COMPATIBLE:','').strip().split(','):
-                modelo = modelo.strip().lower()
-                if not modelo:
+            modelos_str = linea.upper().replace('COMPATIBLE:','').strip()
+            for modelo in modelos_str.split(','):
+                modelo_limpio = limpiar_puntuacion(modelo.strip().lower())
+                if not modelo_limpio:
                     continue
-                modelo_sin_espacios = modelo.replace(" ","")
-                coincide = (mensaje_sin_espacios and modelo_sin_espacios and
-                           (mensaje_sin_espacios == modelo_sin_espacios or
-                            mensaje_sin_espacios in modelo_sin_espacios or
-                            modelo_sin_espacios in mensaje_sin_espacios))
-                if not coincide and palabras:
-                    coincide = all(p in modelo for p in palabras)
+                modelo_sin_espacios = modelo_limpio.replace(" ", "")
+                palabras_modelo = [p for p in modelo_limpio.split() if p not in PALABRAS_IGNORAR and len(p) > 1]
+
+                # Coincidencia estricta: todas las palabras del modelo deben estar en el mensaje
+                # Y todas las palabras del mensaje deben estar en el modelo
+                coincide = False
+                if msg_sin_espacios and modelo_sin_espacios:
+                    if msg_sin_espacios == modelo_sin_espacios:
+                        coincide = True
+                    elif msg_sin_espacios in modelo_sin_espacios or modelo_sin_espacios in msg_sin_espacios:
+                        coincide = True
+
+                if not coincide and palabras and palabras_modelo:
+                    # Todas las palabras del mensaje deben estar en el modelo
+                    if all(p in modelo_limpio for p in palabras):
+                        coincide = True
+
                 if coincide:
-                    producto['_compatible_con'] = modelo
-                    compatibles.append(producto)
-                    print(f"Compatible encontrado: {producto['name']} es compatible con {modelo}")
+                    producto['_compatible_con'] = modelo_limpio
+                    if producto not in compatibles:
+                        compatibles.append(producto)
+                    print(f"Compatible encontrado: {producto['name']} es compatible con {modelo_limpio}")
                     break
     return compatibles
 
@@ -219,7 +236,7 @@ def consultar_odoo(mensaje):
             return con_stock, None
 
         print("Buscando compatibilidades...")
-        compatibles = buscar_compatibles(todos, mensaje_sin_espacios, palabras)
+        compatibles = buscar_compatibles(todos, mensaje, palabras)
 
         if compatibles:
             return None, compatibles
@@ -254,19 +271,20 @@ def get_system_prompt():
     return f"""Eres un vendedor directo de Cell Center 4620, tienda de celulares en Venezuela. Solo vendemos PANTALLAS y repuestos de celulares.
 La tienda está actualmente: {estado_tienda}
 
-IMPORTANTE: Cuando el inventario te muestre productos con precio y stock, SIEMPRE responde con el precio. Nunca digas que no está disponible si el inventario muestra stock mayor a 0.
+IMPORTANTE: Cuando el inventario te muestre productos con precio y stock mayor a 0, SIEMPRE responde con el precio. Nunca digas que no está disponible si el inventario muestra stock mayor a 0. No preguntes si es para pantalla o celular, asume que siempre es para pantalla.
 
-1. PANTALLAS: Cuando el inventario muestre productos disponibles, responde SIEMPRE con precio en USD y bolívares. No menciones stock al cliente. No preguntes si es para pantalla o celular — asume que siempre preguntan por pantallas.
+1. PANTALLAS: Cuando el inventario muestre productos disponibles responde con precio en USD y bolívares. No menciones cantidad de stock al cliente.
 
 MÚLTIPLES REFERENCIAS: responde cada uno en formato lista:
 ✅ *Modelo*: $12 USD / Bs. 8,243
 ❌ *Modelo*: No disponible
 
-COMPATIBILIDADES: Si el inventario incluye "PRODUCTOS COMPATIBLES":
-"No tenemos la pantalla para [modelo pedido], pero tenemos una compatible: *[modelo compatible]*: $XX USD / Bs. XX,XXX"
+COMPATIBILIDADES: Si el inventario incluye "PRODUCTOS COMPATIBLES", el modelo exacto no existe pero hay uno compatible. Responde SOLO con el producto compatible que aparece en el inventario, no inventes otros:
+"No tenemos la pantalla para [modelo pedido], pero tenemos una compatible: *[nombre exacto del producto]*: $XX USD / Bs. XX,XXX"
 
 REGLAS:
 - NUNCA preguntes si es para pantalla o celular. Siempre asume que es pantalla.
+- NUNCA digas que no está disponible si el inventario muestra stock mayor a 0.
 - Nunca preguntes "¿Te interesa?" después de dar un precio.
 - Stock 0: solo di que no está disponible. NUNCA sugieras alternativas.
 - Stock 1 o 2: da el precio y avisa que queda muy poco sin decir la cantidad. Varía las frases:
