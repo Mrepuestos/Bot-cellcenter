@@ -151,6 +151,33 @@ def es_coincidencia_exacta_palabra(palabra, nombre_lower):
     return bool(re.search(r'(?<![a-z0-9])' + re.escape(palabra) + r'(?![a-z0-9])', nombre_lower))
 
 
+def calcular_score(palabras, nombre_lower, mensaje_sin_espacios):
+    """Calcula score de coincidencia. Requiere que TODAS las palabras coincidan."""
+    nombre_sin_espacios = nombre_lower.replace(" ", "")
+    
+    # Si hay múltiples palabras, TODAS deben estar en el nombre
+    if len(palabras) > 1:
+        if not all(es_coincidencia_exacta_palabra(p, nombre_lower) for p in palabras):
+            return 0
+    
+    coincidencias = sum(1 for p in palabras if es_coincidencia_exacta_palabra(p, nombre_lower))
+
+    if mensaje_sin_espacios and len(mensaje_sin_espacios) > 2:
+        if nombre_sin_espacios == mensaje_sin_espacios:
+            coincidencias += 5
+        elif nombre_sin_espacios.startswith(mensaje_sin_espacios) or nombre_sin_espacios.endswith(mensaje_sin_espacios):
+            coincidencias += 3
+        elif mensaje_sin_espacios in nombre_sin_espacios:
+            coincidencias += 2
+        elif nombre_sin_espacios in mensaje_sin_espacios:
+            coincidencias += 2
+
+    if palabras and all(es_coincidencia_exacta_palabra(p, nombre_lower) for p in palabras):
+        coincidencias += 2
+
+    return coincidencias
+
+
 def buscar_compatibles(todos, mensaje_sin_espacios, palabras):
     compatibles = []
     for producto in todos:
@@ -176,6 +203,7 @@ def buscar_compatibles(todos, mensaje_sin_espacios, palabras):
                         coincide = True
                     elif mensaje_sin_espacios in modelo_sin_espacios or modelo_sin_espacios in mensaje_sin_espacios:
                         coincide = True
+
                 if not coincide and palabras and palabras_modelo:
                     if all(p in modelo for p in palabras):
                         coincide = True
@@ -213,29 +241,9 @@ def consultar_odoo(mensaje):
         encontrados = []
         for producto in todos:
             nombre_lower = producto['name'].lower()
-            nombre_sin_espacios = nombre_lower.replace(" ", "")
-            coincidencias = 0
-
-            # Búsqueda por palabras exactas
-            coincidencias += sum(1 for p in palabras if es_coincidencia_exacta_palabra(p, nombre_lower))
-
-            # Búsqueda sin espacios - bidireccional
-            if mensaje_sin_espacios and len(mensaje_sin_espacios) > 2:
-                if nombre_sin_espacios == mensaje_sin_espacios:
-                    coincidencias += 5
-                elif nombre_sin_espacios.startswith(mensaje_sin_espacios) or nombre_sin_espacios.endswith(mensaje_sin_espacios):
-                    coincidencias += 3
-                elif mensaje_sin_espacios in nombre_sin_espacios:
-                    coincidencias += 2
-                elif nombre_sin_espacios in mensaje_sin_espacios:
-                    coincidencias += 2
-
-            # Bonus si todas las palabras coinciden
-            if palabras and all(es_coincidencia_exacta_palabra(p, nombre_lower) for p in palabras):
-                coincidencias += 2
-
-            if coincidencias > 0:
-                producto['_score'] = coincidencias
+            score = calcular_score(palabras, nombre_lower, mensaje_sin_espacios)
+            if score > 0:
+                producto['_score'] = score
                 encontrados.append(producto)
 
         encontrados.sort(key=lambda x: x['_score'], reverse=True)
@@ -300,7 +308,7 @@ MÚLTIPLES REFERENCIAS en un mensaje, responde en lista:
 ✅ *Modelo*: $12 USD / Bs. 8,243
 ❌ *Modelo*: No disponible
 
-COMPATIBILIDADES: Si el inventario dice "PRODUCTOS COMPATIBLES", responde SOLO con ese producto:
+COMPATIBILIDADES: Si el inventario dice "PRODUCTOS COMPATIBLES", responde SOLO con ese producto compatible:
 "No tenemos la pantalla para [modelo pedido], pero tenemos una compatible: *[nombre producto]*: $XX USD / Bs. XX,XXX"
 
 STOCK 1 o 2: da el precio y avisa que queda muy poco. Varía las frases:
