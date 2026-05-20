@@ -158,16 +158,13 @@ def es_coincidencia_exacta_palabra(palabra, nombre_lower):
 
 
 def hay_coincidencia_exacta_con_stock(resultado_final, palabras, mensaje_sin_espacios):
-    """Verifica si algún producto tiene coincidencia exacta Y tiene stock"""
     for p in resultado_final:
         if int(p['qty_available']) <= 0:
             continue
         nombre_lower = p['name'].lower()
         nombre_sin_espacios = nombre_lower.replace(" ", "")
-        # Coincidencia exacta por nombre sin espacios
         if nombre_sin_espacios == mensaje_sin_espacios:
             return True
-        # Todas las palabras coinciden y el nombre es similar en longitud
         if palabras and all(es_coincidencia_exacta_palabra(p2, nombre_lower) for p2 in palabras):
             palabras_nombre = [w for w in nombre_lower.split() if w not in PALABRAS_IGNORAR]
             if abs(len(palabras_nombre) - len(palabras)) <= 1:
@@ -176,7 +173,6 @@ def hay_coincidencia_exacta_con_stock(resultado_final, palabras, mensaje_sin_esp
 
 
 def buscar_compatibles(todos, mensaje_sin_espacios, palabras):
-    """Busca productos que tengan compatibilidad con el modelo buscado"""
     compatibles = []
     for producto in todos:
         if int(producto['qty_available']) <= 0:
@@ -272,20 +268,17 @@ def consultar_odoo(mensaje):
         for p in resultado_final:
             print(f"Producto: {p['name']} | Stock: {p['qty_available']} | Score: {p['_score']}")
 
-        # Verificar si hay coincidencia exacta con stock
         exacto_con_stock = hay_coincidencia_exacta_con_stock(resultado_final, palabras, mensaje_sin_espacios)
         sin_resultados = not resultado_final
         todos_agotados = resultado_final and all(int(p['qty_available']) == 0 for p in resultado_final)
 
         print(f"Exacto con stock: {exacto_con_stock} | Sin resultados: {sin_resultados} | Todos agotados: {todos_agotados}")
 
-        # Buscar compatibles si no hay exacto con stock
         compatibles = []
         if not exacto_con_stock:
             print("No hay coincidencia exacta con stock, buscando compatibilidades...")
             compatibles = buscar_compatibles(todos, mensaje_sin_espacios, palabras)
 
-        # Decidir qué retornar
         if exacto_con_stock:
             return resultado_final, None
         elif compatibles:
@@ -397,6 +390,11 @@ def webhook():
 
             from_number = msg.get("from", "")
             if not from_number:
+                continue
+
+            # Ignorar mensajes de grupos
+            if "@g.us" in from_number:
+                print(f"Mensaje de grupo ignorado: {from_number}")
                 continue
 
             numero_limpio = from_number.replace("@s.whatsapp.net", "").replace("+", "")
