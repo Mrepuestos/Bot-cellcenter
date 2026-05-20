@@ -161,12 +161,12 @@ Mensaje del cliente: "{mensaje}"
 Catálogo completo:
 {catalogo_json}
 
-Instrucciones:
-- Identifica qué producto(s) busca el cliente, aunque haya errores tipográficos, abreviaciones o lenguaje informal.
-- Si el cliente pide varios modelos (ej: "samsung a03 y redmi 9a"), devuelve todos.
-- Primero busca coincidencia directa por nombre. Si no existe, busca en el campo "compatible_con".
-- Si usas "compatible_con", marca ese producto con "es_compatible": true y pon en "modelo_pedido" el modelo que pidió el cliente.
-- Si no encuentras nada, devuelve "encontrados": [].
+REGLAS ESTRICTAS:
+1. Busca coincidencia directa entre lo que pide el cliente y el campo "nombre" del catálogo. Permite errores tipográficos menores (ej: "samsug" = "samsung").
+2. Si no hay coincidencia directa, revisa el campo "compatible_con" de cada producto. Solo marca como compatible si el modelo pedido por el cliente aparece LITERALMENTE escrito en ese campo. Compara palabra por palabra.
+3. PROHIBIDO inferir, suponer o usar lógica propia. Si el cliente pide "2023" y el campo "compatible_con" dice "2024", NO es compatible.
+4. Si no encuentras nada con certeza, devuelve "encontrados": [].
+5. Si el cliente pide varios modelos, devuelve uno por cada modelo encontrado.
 
 Responde ÚNICAMENTE con este JSON sin texto adicional ni markdown:
 {{"encontrados": [{{"id": 123, "nombre": "nombre exacto", "stock": 5, "precio_usd": 12.0, "es_compatible": false, "modelo_pedido": "samsung a03"}}]}}"""
