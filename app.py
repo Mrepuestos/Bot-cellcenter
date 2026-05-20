@@ -375,6 +375,9 @@ def webhook():
         messages_list = data.get("messages", [])
 
         for msg in messages_list:
+            # Print completo del mensaje para diagnostico
+            print(f"MSG completo: {json.dumps(msg)[:500]}")
+
             if msg.get("from_me", False):
                 continue
             if msg.get("type", "") != "text":
@@ -395,13 +398,15 @@ def webhook():
             print(f"From recibido: {from_number}")
 
             # Ignorar mensajes de grupos
-            if "@g.us" in from_number:
-                print(f"Mensaje de grupo ignorado: {from_number}")
+            chat_id = msg.get("chat_id", "") or msg.get("chatId", "") or ""
+            print(f"Chat ID: {chat_id}")
+
+            if "@g.us" in from_number or "@g.us" in chat_id:
+                print(f"Mensaje de grupo ignorado")
                 continue
 
-            # Ignorar mensajes de broadcast
-            if "broadcast" in from_number.lower():
-                print(f"Mensaje broadcast ignorado: {from_number}")
+            if "broadcast" in from_number.lower() or "broadcast" in chat_id.lower():
+                print(f"Mensaje broadcast ignorado")
                 continue
 
             numero_limpio = from_number.replace("@s.whatsapp.net", "").replace("+", "")
