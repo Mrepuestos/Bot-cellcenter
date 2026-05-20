@@ -5,6 +5,7 @@ import os
 import time
 import xmlrpc.client
 import json
+import re
 from datetime import datetime
 import pytz
 from supabase import create_client
@@ -143,8 +144,6 @@ def corregir_texto(texto):
 
 
 def es_coincidencia_exacta_palabra(palabra, nombre_lower):
-    """Verifica que la palabra coincida como palabra completa, no como parte de otra"""
-    import re
     patron = r'(?<![a-z0-9])' + re.escape(palabra) + r'(?![a-z0-9])'
     return bool(re.search(patron, nombre_lower))
 
@@ -156,14 +155,14 @@ def consultar_odoo(mensaje):
         print(f"Odoo UID: {uid}")
         if not uid:
             print("ERROR: No se pudo autenticar en Odoo")
-            return None
+            return None, None
 
         models = xmlrpc.client.ServerProxy(f"{ODOO_URL}/xmlrpc/2/object")
         todos = models.execute_kw(
             ODOO_DB, uid, ODOO_API_KEY,
             'product.product', 'search_read',
             [[]],
-            {'fields': ['name', 'list_price', 'qty_available'], 'limit': 500}
+            {'fields': ['name', 'list_price', 'qty_available', 'description_picking'], 'limit': 500}
         )
         print(f"Total productos en Odoo: {len(todos)}")
 
@@ -173,24 +172,20 @@ def consultar_odoo(mensaje):
 
         mensaje_sin_espacios = mensaje_corregido.replace(" ", "").lower()
 
+        # Buscar coincidencias directas
         encontrados = []
         for producto in todos:
             nombre_lower = producto['name'].lower()
             nombre_sin_espacios = nombre_lower.replace(" ", "")
 
-            # Score por palabras coincidentes como palabras completas
             coincidencias = sum(1 for p in palabras if es_coincidencia_exacta_palabra(p, nombre_lower))
 
-            # Bonus por coincidencia exacta sin espacios
             if mensaje_sin_espacios and len(mensaje_sin_espacios) > 2:
                 if nombre_sin_espacios == mensaje_sin_espacios:
                     coincidencias += 5
-                elif mensaje_sin_espacios in nombre_sin_espacios:
-                    # Solo dar bonus si la coincidencia es al inicio o final
-                    if nombre_sin_espacios.startswith(mensaje_sin_espacios) or nombre_sin_espacios.endswith(mensaje_sin_espacios):
-                        coincidencias += 2
+                elif nombre_sin_espacios.startswith(mensaje_sin_espacios) or nombre_sin_espacios.endswith(mensaje_sin_espacios):
+                    coincidencias += 2
 
-            # Bonus si todas las palabras buscadas están en el nombre como palabras completas
             if palabras and all(es_coincidencia_exacta_palabra(p, nombre_lower) for p in palabras):
                 coincidencias += 2
 
@@ -198,20 +193,49 @@ def consultar_odoo(mensaje):
                 producto['_score'] = coincidencias
                 encontrados.append(producto)
 
-        print(f"Productos encontrados: {len(encontrados)}")
         encontrados.sort(key=lambda x: x['_score'], reverse=True)
-
         limite = 5 if len(encontrados) <= 5 else 3
         resultado_final = encontrados[:limite]
 
         for p in resultado_final:
             print(f"Producto: {p['name']} | Stock: {p['qty_available']} | Score: {p['_score']}")
 
-        return resultado_final if resultado_final else None
+        # Si no se encontró nada buscar en compatibilidades
+        compatibles = []
+        if not resultado_final:
+            print("No encontrado directamente, buscando en compatibilidades...")
+            for producto in todos:
+                notas = producto.get('description_picking') or ""
+                if 'COMPATIBLE:' in notas.upper():
+                    linea_compatible = ""
+                    for linea in notas.split('\n'):
+                        if 'COMPATIBLE:' in linea.upper():
+                            linea_compatible = linea
+                            break
+                    modelos_compatibles = linea_compatible.upper().replace('COMPATIBLE:', '').strip()
+                    modelos_lista = [m.strip().lower() for m in modelos_compatibles.split(',')]
+
+                    for modelo in modelos_lista:
+                        modelo_sin_espacios = modelo.replace(" ", "")
+                        palabras_modelo = [p for p in modelo.split() if p not in PALABRAS_IGNORAR]
+
+                        coincide = False
+                        if mensaje_sin_espacios and modelo_sin_espacios and mensaje_sin_espacios in modelo_sin_espacios:
+                            coincide = True
+                        elif palabras and all(p in modelo for p in palabras):
+                            coincide = True
+
+                        if coincide:
+                            producto['_compatible_con'] = modelo
+                            compatibles.append(producto)
+                            print(f"Compatible encontrado: {producto['name']} es compatible con {modelo}")
+                            break
+
+        return resultado_final if resultado_final else None, compatibles if compatibles else None
 
     except Exception as e:
         print(f"Error consultando Odoo: {e}")
-        return None
+        return None, None
 
 
 def send_whapi_message(to: str, text: str):
@@ -254,6 +278,9 @@ Detecta automáticamente qué necesita el cliente y responde según el tema:
 MÚLTIPLES REFERENCIAS: Si el cliente manda varios modelos en un mensaje, responde cada uno en formato lista:
 ✅ *Modelo*: $12 USD / Bs. 8,243
 ❌ *Modelo*: No disponible
+
+COMPATIBILIDADES: Si el inventario incluye una sección "PRODUCTOS COMPATIBLES", significa que el modelo exacto no está disponible pero hay uno compatible. Responde así:
+"No tenemos la pantalla para [modelo pedido], pero tenemos una compatible: *[modelo compatible]*: $XX USD / Bs. XX,XXX"
 
 REGLAS IMPORTANTES:
 - Nunca preguntes "¿Te interesa?" ni frases similares después de dar un precio. Solo da el precio y punto.
@@ -326,7 +353,7 @@ def webhook():
                 else:
                     stock_bajo_pendiente.pop(from_number)
 
-            productos = consultar_odoo(body)
+            productos, compatibles = consultar_odoo(body)
             contexto_odoo = ""
             stock_bajo_info = None
 
@@ -338,6 +365,20 @@ def webhook():
                     stock = int(p['qty_available'])
                     nombre = p['name']
                     contexto_odoo += f"- {nombre}: ${int(precio_usd)} USD / Bs. {precio_bs:,} | Stock: {stock} unidades\n"
+                    if stock_bajo_info is None and 1 <= stock <= 2:
+                        stock_bajo_info = {
+                            "producto": nombre,
+                            "stock": stock
+                        }
+            elif compatibles:
+                contexto_odoo = "\n\nPRODUCTOS COMPATIBLES (el modelo exacto no está en inventario):\n"
+                for p in compatibles:
+                    precio_usd = p['list_price']
+                    precio_tabla, precio_bs = calcular_precio_bs(precio_usd)
+                    stock = int(p['qty_available'])
+                    nombre = p['name']
+                    compatible_con = p.get('_compatible_con', '')
+                    contexto_odoo += f"- {nombre} (compatible con {compatible_con}): ${int(precio_usd)} USD / Bs. {precio_bs:,} | Stock: {stock} unidades\n"
                     if stock_bajo_info is None and 1 <= stock <= 2:
                         stock_bajo_info = {
                             "producto": nombre,
