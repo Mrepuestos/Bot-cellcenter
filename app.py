@@ -72,6 +72,9 @@ def limpiar_html(texto):
     texto_limpio = texto_limpio.replace('&amp;','&').replace('&lt;','<').replace('&gt;','>').replace('&nbsp;',' ')
     return re.sub(r'\s+', ' ', texto_limpio).strip()
 
+def limpiar_puntuacion(texto):
+    return re.sub(r'[^\w\s]', ' ', texto)
+
 def obtener_tasa_bcv():
     try:
         fecha_hoy = time.strftime("%Y-%m-%d")
@@ -120,7 +123,7 @@ def guardar_historial(numero, historial):
         print(f"Error guardando historial: {e}")
 
 def corregir_texto(texto):
-    texto_lower = texto.lower()
+    texto_lower = limpiar_puntuacion(texto.lower())
     for error, correcto in CORRECCIONES.items():
         texto_lower = texto_lower.replace(error, correcto)
     return texto_lower
@@ -206,18 +209,15 @@ def consultar_odoo(mensaje):
         for p in resultado_final:
             print(f"Producto: {p['name']} | Stock: {p['qty_available']} | Score: {p['_score']}")
 
-        # Filtrar solo productos con stock
         con_stock = [p for p in resultado_final if int(p['qty_available']) > 0]
         sin_stock = [p for p in resultado_final if int(p['qty_available']) <= 0]
         sin_resultados = not resultado_final
 
         print(f"Con stock: {len(con_stock)} | Sin stock: {len(sin_stock)} | Sin resultados: {sin_resultados}")
 
-        # Si hay productos con stock, mostrarlos directamente
         if con_stock:
             return con_stock, None
 
-        # Si no hay stock o no hay resultados, buscar compatibles
         print("Buscando compatibilidades...")
         compatibles = buscar_compatibles(todos, mensaje_sin_espacios, palabras)
 
