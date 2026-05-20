@@ -4,7 +4,7 @@ import anthropic
 import os
 import time
 import xmlrpc.client
-import random
+import json
 from datetime import datetime
 import pytz
 from supabase import create_client
@@ -51,7 +51,7 @@ stock_bajo_pendiente = {}
 
 PALABRAS_SI = ["si", "sí", "yes", "claro", "dale", "ok", "okay", "quiero", "aparta", "reserva", "separa", "confirmado", "afirmativo", "me interesa", "la quiero"]
 
-PALABRAS_IGNORAR = {"pantalla", "de", "el", "la", "los", "las", "un", "una", "para", "del", "con", "por", "que", "precio", "cuanto", "tienes", "tienen", "hay", "stock", "y", "tendrás", "cuales", "son", "disponibles"}
+PALABRAS_IGNORAR = {"pantalla", "de", "el", "la", "los", "las", "un", "una", "para", "del", "con", "por", "que", "precio", "cuanto", "tienes", "tienen", "hay", "stock", "y", "tendrás", "cuales", "son", "disponibles", "tienes"}
 
 CORRECCIONES = {
     "samsug": "samsung", "samsum": "samsung", "samsun": "samsung",
@@ -105,7 +105,6 @@ def esta_abierto():
 
 def cargar_historial(numero):
     try:
-        import json
         resultado = supabase.table("Clientes").select("historial").eq("numero", numero).execute()
         if resultado.data:
             historial_str = resultado.data[0].get("historial", "")
@@ -119,7 +118,6 @@ def cargar_historial(numero):
 
 def guardar_historial(numero, historial):
     try:
-        import json
         historial_str = json.dumps(historial[-20:])
         resultado = supabase.table("Clientes").select("numero").eq("numero", numero).execute()
         if resultado.data:
@@ -173,22 +171,38 @@ def consultar_odoo(mensaje):
             nombre_lower = producto['name'].lower()
             nombre_sin_espacios = nombre_lower.replace(" ", "")
 
+            # Score por palabras coincidentes
             coincidencias = sum(1 for p in palabras if p in nombre_lower)
 
+            # Bonus por coincidencia sin espacios
             if mensaje_sin_espacios and len(mensaje_sin_espacios) > 2:
                 if mensaje_sin_espacios in nombre_sin_espacios or nombre_sin_espacios in mensaje_sin_espacios:
                     coincidencias += 3
+
+            # Bonus por coincidencia exacta del nombre completo
+            if nombre_sin_espacios == mensaje_sin_espacios:
+                coincidencias += 5
+
+            # Bonus si todas las palabras buscadas están en el nombre
+            if palabras and all(p in nombre_lower for p in palabras):
+                coincidencias += 2
 
             if coincidencias > 0:
                 producto['_score'] = coincidencias
                 encontrados.append(producto)
 
         print(f"Productos encontrados: {len(encontrados)}")
-        for p in encontrados[:3]:
-            print(f"Producto: {p['name']} | Stock: {p['qty_available']}")
-
         encontrados.sort(key=lambda x: x['_score'], reverse=True)
-        return encontrados[:3]
+
+        # Si hay pocos resultados muy específicos mostrar hasta 5
+        # Si hay muchos resultados genéricos limitar a 3
+        limite = 5 if len(encontrados) <= 5 else 3
+        resultado_final = encontrados[:limite]
+
+        for p in resultado_final:
+            print(f"Producto: {p['name']} | Stock: {p['qty_available']} | Score: {p['_score']}")
+
+        return resultado_final if resultado_final else None
 
     except Exception as e:
         print(f"Error consultando Odoo: {e}")
