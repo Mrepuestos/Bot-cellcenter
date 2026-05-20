@@ -7,6 +7,7 @@ import xmlrpc.client
 import random
 from datetime import datetime
 import pytz
+from supabase import create_client
 
 app = Flask(__name__)
 
@@ -28,6 +29,10 @@ ODOO_URL = os.environ.get("ODOO_URL", "")
 ODOO_DB = os.environ.get("ODOO_DB", "")
 ODOO_USER = os.environ.get("ODOO_USER", "")
 ODOO_API_KEY = os.environ.get("ODOO_API_KEY", "")
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
+
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 TABLA_PRECIOS = {
     11: 15,
@@ -90,13 +95,46 @@ def calcular_precio_bs(precio_usd_odoo):
 def esta_abierto():
     tz = pytz.timezone("America/Caracas")
     ahora = datetime.now(tz)
-    dia = ahora.weekday()  # 0=lunes, 6=domingo
+    dia = ahora.weekday()
     hora = ahora.hour + ahora.minute / 60
-
-    if dia == 6:  # domingo
+    if dia == 6:
         return 9.0 <= hora < 14.0
-    else:  # lunes a sábado
+    else:
         return 8.5 <= hora < 17.5
+
+
+def cargar_historial(numero):
+    try:
+        resultado = supabase.table("clientes").select("historial").eq("numero", numero).execute()
+        if resultado.data:
+            historial_str = resultado.data[0].get("historial", "")
+            if historial_str:
+                import json
+                return json.loads(historial_str)
+        return []
+    except Exception as e:
+        print(f"Error cargando historial: {e}")
+        return []
+
+
+def guardar_historial(numero, historial):
+    try:
+        import json
+        historial_str = json.dumps(historial[-20:])
+        resultado = supabase.table("clientes").select("numero").eq("numero", numero).execute()
+        if resultado.data:
+            supabase.table("clientes").update({
+                "historial": historial_str,
+                "ultima_visita": datetime.utcnow().isoformat()
+            }).eq("numero", numero).execute()
+        else:
+            supabase.table("clientes").insert({
+                "numero": numero,
+                "historial": historial_str,
+                "ultima_visita": datetime.utcnow().isoformat()
+            }).execute()
+    except Exception as e:
+        print(f"Error guardando historial: {e}")
 
 
 def corregir_texto(texto):
@@ -226,7 +264,6 @@ REGLAS IMPORTANTES:
 Responde siempre corto y directo. Muestra el nombre del producto tal como aparece en el inventario."""
 
 
-conversations = {}
 client = anthropic.Anthropic()
 
 
@@ -290,20 +327,18 @@ def webhook():
             else:
                 contexto_odoo = "\n\nNo se encontró el producto en el inventario."
 
-            if from_number not in conversations:
-                conversations[from_number] = []
-
+            historial = cargar_historial(from_number)
             mensaje_con_contexto = body + contexto_odoo
-            conversations[from_number].append({"role": "user", "content": mensaje_con_contexto})
+            historial.append({"role": "user", "content": mensaje_con_contexto})
 
-            if len(conversations[from_number]) > 20:
-                conversations[from_number] = conversations[from_number][-20:]
+            if len(historial) > 20:
+                historial = historial[-20:]
 
             response = client.messages.create(
                 model="claude-haiku-4-5-20251001",
                 max_tokens=300,
                 system=get_system_prompt(),
-                messages=conversations[from_number]
+                messages=historial
             )
 
             reply = response.content[0].text
@@ -318,7 +353,8 @@ def webhook():
             if stock_bajo_info:
                 stock_bajo_pendiente[from_number] = stock_bajo_info
 
-            conversations[from_number].append({"role": "assistant", "content": reply})
+            historial.append({"role": "assistant", "content": reply})
+            guardar_historial(from_number, historial)
             send_whapi_message(from_number, reply)
 
         return jsonify({"status": "ok"}), 200
