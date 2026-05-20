@@ -182,8 +182,22 @@ def calcular_score(palabras, nombre_lower, mensaje_sin_espacios):
     return coincidencias
 
 
+def es_inicio_modelo(palabra):
+    """Detecta si una palabra parece ser inicio de un modelo — marca o alfanumérico corto"""
+    if palabra in MARCAS:
+        return True
+    if re.match(r'^[a-z0-9]{1,4}$', palabra) and not palabra.isdigit():
+        return True
+    if re.match(r'^[a-z]+\d+', palabra):
+        return True
+    return False
+
+
 def dividir_en_referencias(mensaje):
+    """Divide mensaje con múltiples modelos en referencias individuales"""
     mensaje_corregido = corregir_texto(mensaje)
+
+    # Separar por saltos de línea primero
     partes = re.split(r'\n', mensaje_corregido)
     referencias = []
 
@@ -196,11 +210,15 @@ def dividir_en_referencias(mensaje):
         grupo_actual = []
 
         for i, palabra in enumerate(palabras):
-            if palabra in SEPARADORES_MODELOS:
-                siguiente_es_marca = (i + 1 < len(palabras) and palabras[i+1].lower() in MARCAS)
-                if siguiente_es_marca and grupo_actual:
+            if palabra in SEPARADORES_MODELOS and grupo_actual:
+                # Verificar si lo que sigue parece un modelo nuevo
+                siguiente_palabras = palabras[i+1:i+3] if i+1 < len(palabras) else []
+                siguiente_es_modelo = any(es_inicio_modelo(p) for p in siguiente_palabras)
+
+                if siguiente_es_modelo:
                     ref = " ".join(grupo_actual).strip()
-                    if ref:
+                    palabras_ref = [p for p in ref.split() if p not in PALABRAS_IGNORAR]
+                    if palabras_ref:
                         referencias.append(ref)
                     grupo_actual = []
                 else:
@@ -210,14 +228,14 @@ def dividir_en_referencias(mensaje):
 
         if grupo_actual:
             ref = " ".join(grupo_actual).strip()
-            if ref:
+            palabras_ref = [p for p in ref.split() if p not in PALABRAS_IGNORAR]
+            if palabras_ref:
                 referencias.append(ref)
 
     return referencias if referencias else [mensaje_corregido]
 
 
 def buscar_compatible_individual(todos, mensaje_sin_espacios, palabras):
-    """Busca compatible con coincidencia más flexible"""
     for producto in todos:
         if int(producto['qty_available']) <= 0:
             continue
@@ -236,21 +254,17 @@ def buscar_compatible_individual(todos, mensaje_sin_espacios, palabras):
                 palabras_modelo = [p for p in modelo.split() if p not in PALABRAS_IGNORAR and len(p) > 1]
 
                 coincide = False
-
-                # Coincidencia sin espacios
                 if mensaje_sin_espacios and modelo_sin_espacios:
                     if mensaje_sin_espacios == modelo_sin_espacios:
                         coincide = True
                     elif mensaje_sin_espacios in modelo_sin_espacios or modelo_sin_espacios in mensaje_sin_espacios:
                         coincide = True
 
-                # Coincidencia por palabras — todas las palabras buscadas en el modelo
                 if not coincide and palabras:
                     palabras_filtradas = [p for p in palabras if len(p) > 1]
                     if palabras_filtradas and all(p in modelo for p in palabras_filtradas):
                         coincide = True
 
-                # Coincidencia parcial — al menos la mitad de palabras coinciden
                 if not coincide and palabras and palabras_modelo:
                     palabras_filtradas = [p for p in palabras if len(p) > 1]
                     if palabras_filtradas:
@@ -295,6 +309,7 @@ def buscar_en_odoo(todos, referencia):
         return None, compatible
 
     return resultado[0] if resultado else None, None
+
 
 def consultar_odoo(mensaje):
     try:
@@ -478,87 +493,87 @@ def webhook():
 
             numero_limpio = from_number.replace("@s.whatsapp.net", "").replace("+", "")
             if numero_limpio not in NUMEROS_AUTORIZADOS:
-                print("Número no autorizado: " + numero_limpio)
-                continue
-
-            body = msg.get("text", {}).get("body", "").strip()
-            if not body:
-                continue
-
-            if from_number in stock_bajo_pendiente:
-                if any(palabra in body.lower() for palabra in PALABRAS_SI):
-                    info = stock_bajo_pendiente.pop(from_number)
-                    notificar_stock_bajo(from_number, info["producto"], info["stock"])
-                else:
-                    stock_bajo_pendiente.pop(from_number)
-
-            productos, compatibles = consultar_odoo(body)
-            contexto_odoo = ""
-            stock_bajo_info = None
-
-            if productos:
-                contexto_odoo = "\n\nINFORMACIÓN DEL INVENTARIO:\n"
-                for p in productos:
-                    precio_usd, precio_bs = calcular_precio_bs(p['list_price'])
-                    stock = int(p['qty_available'])
-                    nombre = p['name']
-                    contexto_odoo += f"- {nombre}: ${precio_usd} USD / Bs. {precio_bs:,} | Stock: {stock} unidades\n"
-                    if stock_bajo_info is None and 1 <= stock <= 2:
-                        stock_bajo_info = {"producto": nombre, "stock": stock}
-
-            if compatibles:
-                contexto_odoo += "\n\nPRODUCTOS COMPATIBLES (modelo exacto no disponible):\n"
-                for p in compatibles:
-                    precio_usd, precio_bs = calcular_precio_bs(p['list_price'])
-                    stock = int(p['qty_available'])
-                    nombre = p['name']
-                    compatible_con = p.get('_compatible_con', '')
-                    contexto_odoo += f"- {nombre} (compatible con {compatible_con}): ${precio_usd} USD / Bs. {precio_bs:,} | Stock: {stock} unidades\n"
-                    if stock_bajo_info is None and 1 <= stock <= 2:
-                        stock_bajo_info = {"producto": nombre, "stock": stock}
-
-            if not productos and not compatibles:
-                contexto_odoo = "\n\nNo se encontró el producto en el inventario."
-
-            historial = cargar_historial(from_number)
-            historial.append({"role": "user", "content": body + contexto_odoo})
-            if len(historial) > 4:
-                historial = historial[-4:]
-
-            response = client.messages.create(
-                model="claude-haiku-4-5-20251001",
-                max_tokens=300,
-                system=get_system_prompt(),
-                messages=historial
-            )
-
-            reply = response.content[0].text
-
-            if "DERIVAR_TECNICO" in reply:
-                notificar_asesor(ASESOR_TECNICO, "celulares o servicio técnico", from_number)
-                reply = "Un momento, un asesor te atenderá enseguida 👋"
-            elif "DERIVAR_ACCESORIOS" in reply:
-                notificar_asesor(ASESOR_ACCESORIOS, "accesorios", from_number)
-                reply = "Un momento, un asesor te atenderá enseguida 👋"
-
-            if stock_bajo_info:
-                stock_bajo_pendiente[from_number] = stock_bajo_info
-
-            historial.append({"role": "assistant", "content": reply})
-            guardar_historial(from_number, historial)
-            send_whapi_message(from_number, reply)
-
-        return jsonify({"status": "ok"}), 200
-
-    except Exception as e:
-        print(f"Error en webhook: {e}")
-        return jsonify({"status": "error", "detail": str(e)}), 200
-
-
-@app.route('/', methods=['GET'])
-def health():
-    return "Cell Center Bot activo ✅", 200
-
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=10000)
+               print("Número no autorizado: " + numero_limpio)
+‎                continue
+‎
+‎            body = msg.get("text", {}).get("body", "").strip()
+‎            if not body:
+‎                continue
+‎
+‎            if from_number in stock_bajo_pendiente:
+‎                if any(palabra in body.lower() for palabra in PALABRAS_SI):
+‎                    info = stock_bajo_pendiente.pop(from_number)
+‎                    notificar_stock_bajo(from_number, info["producto"], info["stock"])
+‎                else:
+‎                    stock_bajo_pendiente.pop(from_number)
+‎
+‎            productos, compatibles = consultar_odoo(body)
+‎            contexto_odoo = ""
+‎            stock_bajo_info = None
+‎
+‎            if productos:
+‎                contexto_odoo = "\n\nINFORMACIÓN DEL INVENTARIO:\n"
+‎                for p in productos:
+‎                    precio_usd, precio_bs = calcular_precio_bs(p['list_price'])
+‎                    stock = int(p['qty_available'])
+‎                    nombre = p['name']
+‎                    contexto_odoo += f"- {nombre}: ${precio_usd} USD / Bs. {precio_bs:,} | Stock: {stock} unidades\n"
+‎                    if stock_bajo_info is None and 1 <= stock <= 2:
+‎                        stock_bajo_info = {"producto": nombre, "stock": stock}
+‎
+‎            if compatibles:
+‎                contexto_odoo += "\n\nPRODUCTOS COMPATIBLES (modelo exacto no disponible):\n"
+‎                for p in compatibles:
+‎                    precio_usd, precio_bs = calcular_precio_bs(p['list_price'])
+‎                    stock = int(p['qty_available'])
+‎                    nombre = p['name']
+‎                    compatible_con = p.get('_compatible_con', '')
+‎                    contexto_odoo += f"- {nombre} (compatible con {compatible_con}): ${precio_usd} USD / Bs. {precio_bs:,} | Stock: {stock} unidades\n"
+‎                    if stock_bajo_info is None and 1 <= stock <= 2:
+‎                        stock_bajo_info = {"producto": nombre, "stock": stock}
+‎
+‎            if not productos and not compatibles:
+‎                contexto_odoo = "\n\nNo se encontró el producto en el inventario."
+‎
+‎            historial = cargar_historial(from_number)
+‎            historial.append({"role": "user", "content": body + contexto_odoo})
+‎            if len(historial) > 4:
+‎                historial = historial[-4:]
+‎
+‎            response = client.messages.create(
+‎                model="claude-haiku-4-5-20251001",
+‎                max_tokens=300,
+‎                system=get_system_prompt(),
+‎                messages=historial
+‎            )
+‎
+‎            reply = response.content[0].text
+‎
+‎            if "DERIVAR_TECNICO" in reply:
+‎                notificar_asesor(ASESOR_TECNICO, "celulares o servicio técnico", from_number)
+‎                reply = "Un momento, un asesor te atenderá enseguida 👋"
+‎            elif "DERIVAR_ACCESORIOS" in reply:
+‎                notificar_asesor(ASESOR_ACCESORIOS, "accesorios", from_number)
+‎                reply = "Un momento, un asesor te atenderá enseguida 👋"
+‎
+‎            if stock_bajo_info:
+‎                stock_bajo_pendiente[from_number] = stock_bajo_info
+‎
+‎            historial.append({"role": "assistant", "content": reply})
+‎            guardar_historial(from_number, historial)
+‎            send_whapi_message(from_number, reply)
+‎
+‎        return jsonify({"status": "ok"}), 200
+‎
+‎    except Exception as e:
+‎        print(f"Error en webhook: {e}")
+‎        return jsonify({"status": "error", "detail": str(e)}), 200
+‎
+‎
+‎@app.route('/', methods=['GET'])
+‎def health():
+‎    return "Cell Center Bot activo ✅", 200
+‎
+‎
+‎if __name__ == '__main__':
+‎    app.run(host='0.0.0.0', port=10000)
