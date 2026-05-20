@@ -52,7 +52,8 @@ PALABRAS_IGNORAR = {
     "favor","porfavor","porfa","gracias","please","podria","podría",
     "mano","hermano","brother","bro","amigo","amiga","chamo","chama","pana","compañero","compañera","jefe","jefa","señor","señora","estimado","estimada","maestro","profe","socio","vale","papi","mami",
     "me","mi","mis","tu","tus","nos","nuestro","nuestra","alguna","alguno","algún","otro","otra",
-    "ese","esa","esto","esta","aqui","acá","allá","cuando","como","donde","quien","qué","mas","más","muy","bien","mal","solo","también","tampoco"
+    "ese","esa","esto","esta","aqui","acá","allá","cuando","como","donde","quien","qué","mas","más","muy","bien","mal","solo","también","tampoco",
+    "d","q","x","k"
 }
 
 SEPARADORES_MODELOS = {"y", "and", "tambien", "también", "ademas", "además"}
@@ -182,26 +183,20 @@ def calcular_score(palabras, nombre_lower, mensaje_sin_espacios):
 
 
 def dividir_en_referencias(mensaje):
-    """Divide un mensaje con múltiples modelos en referencias individuales"""
     mensaje_corregido = corregir_texto(mensaje)
-
-    # Separar por saltos de línea primero
     partes = re.split(r'\n', mensaje_corregido)
-
     referencias = []
+
     for parte in partes:
         parte = parte.strip()
         if not parte:
             continue
 
-        # Separar por palabras separadoras (y, and, también)
-        # Solo separar si la siguiente palabra es una marca conocida
         palabras = parte.split()
         grupo_actual = []
 
         for i, palabra in enumerate(palabras):
             if palabra in SEPARADORES_MODELOS:
-                # Verificar si la siguiente palabra es una marca
                 siguiente_es_marca = (i + 1 < len(palabras) and palabras[i+1].lower() in MARCAS)
                 if siguiente_es_marca and grupo_actual:
                     ref = " ".join(grupo_actual).strip()
@@ -221,42 +216,8 @@ def dividir_en_referencias(mensaje):
     return referencias if referencias else [mensaje_corregido]
 
 
-def buscar_en_odoo(todos, referencia):
-    """Busca una referencia específica en el inventario"""
-    mensaje_corregido = corregir_texto(referencia)
-    palabras = [p for p in mensaje_corregido.split() if len(p) >= 1 and p not in PALABRAS_IGNORAR]
-    mensaje_sin_espacios = mensaje_corregido.replace(" ", "").lower()
-
-    if not palabras:
-        return None, None
-
-    encontrados = []
-    for producto in todos:
-        nombre_lower = producto['name'].lower()
-        score = calcular_score(palabras, nombre_lower, mensaje_sin_espacios)
-        if score > 0:
-            producto_copia = dict(producto)
-            producto_copia['_score'] = score
-            encontrados.append(producto_copia)
-
-    encontrados.sort(key=lambda x: x['_score'], reverse=True)
-    resultado = encontrados[:3] if encontrados else []
-
-    con_stock = [p for p in resultado if int(p['qty_available']) > 0]
-
-    if con_stock:
-        return con_stock[0], None
-
-    # Buscar compatibles
-    compatible = buscar_compatible_individual(todos, mensaje_sin_espacios, palabras)
-    if compatible:
-        return None, compatible
-
-    return resultado[0] if resultado else None, None
-
-
 def buscar_compatible_individual(todos, mensaje_sin_espacios, palabras):
-    """Busca UN compatible para una referencia específica"""
+    """Busca compatible con coincidencia más flexible"""
     for producto in todos:
         if int(producto['qty_available']) <= 0:
             continue
@@ -275,14 +236,27 @@ def buscar_compatible_individual(todos, mensaje_sin_espacios, palabras):
                 palabras_modelo = [p for p in modelo.split() if p not in PALABRAS_IGNORAR and len(p) > 1]
 
                 coincide = False
+
+                # Coincidencia sin espacios
                 if mensaje_sin_espacios and modelo_sin_espacios:
                     if mensaje_sin_espacios == modelo_sin_espacios:
                         coincide = True
                     elif mensaje_sin_espacios in modelo_sin_espacios or modelo_sin_espacios in mensaje_sin_espacios:
                         coincide = True
-                if not coincide and palabras and palabras_modelo:
-                    if all(p in modelo for p in palabras):
+
+                # Coincidencia por palabras — todas las palabras buscadas en el modelo
+                if not coincide and palabras:
+                    palabras_filtradas = [p for p in palabras if len(p) > 1]
+                    if palabras_filtradas and all(p in modelo for p in palabras_filtradas):
                         coincide = True
+
+                # Coincidencia parcial — al menos la mitad de palabras coinciden
+                if not coincide and palabras and palabras_modelo:
+                    palabras_filtradas = [p for p in palabras if len(p) > 1]
+                    if palabras_filtradas:
+                        coincidencias = sum(1 for p in palabras_filtradas if p in modelo)
+                        if coincidencias >= len(palabras_filtradas) * 0.7:
+                            coincide = True
 
                 if coincide:
                     producto_copia = dict(producto)
@@ -290,6 +264,37 @@ def buscar_compatible_individual(todos, mensaje_sin_espacios, palabras):
                     print(f"Compatible encontrado: {producto['name']} es compatible con {modelo}")
                     return producto_copia
     return None
+
+
+def buscar_en_odoo(todos, referencia):
+    mensaje_corregido = corregir_texto(referencia)
+    palabras = [p for p in mensaje_corregido.split() if len(p) >= 1 and p not in PALABRAS_IGNORAR]
+    mensaje_sin_espacios = mensaje_corregido.replace(" ", "").lower()
+
+    if not palabras:
+        return None, None
+
+    encontrados = []
+    for producto in todos:
+        nombre_lower = producto['name'].lower()
+        score = calcular_score(palabras, nombre_lower, mensaje_sin_espacios)
+        if score > 0:
+            producto_copia = dict(producto)
+            producto_copia['_score'] = score
+            encontrados.append(producto_copia)
+
+    encontrados.sort(key=lambda x: x['_score'], reverse=True)
+    resultado = encontrados[:3] if encontrados else []
+    con_stock = [p for p in resultado if int(p['qty_available']) > 0]
+
+    if con_stock:
+        return con_stock[0], None
+
+    compatible = buscar_compatible_individual(todos, mensaje_sin_espacios, palabras)
+    if compatible:
+        return None, compatible
+
+    return resultado[0] if resultado else None, None
 
 def consultar_odoo(mensaje):
     try:
@@ -311,7 +316,6 @@ def consultar_odoo(mensaje):
         referencias = dividir_en_referencias(mensaje)
         print(f"Referencias detectadas: {referencias}")
 
-        # Si hay una sola referencia usar búsqueda normal
         if len(referencias) == 1:
             mensaje_corregido = corregir_texto(mensaje)
             palabras = [p for p in mensaje_corregido.split() if len(p) >= 1 and p not in PALABRAS_IGNORAR]
@@ -350,7 +354,6 @@ def consultar_odoo(mensaje):
             else:
                 return sin_stock, None
 
-        # Múltiples referencias — buscar cada una por separado
         resultados_multiples = []
         compatibles_multiples = []
 
