@@ -35,7 +35,10 @@ SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-TABLA_PRECIOS = {11:15, 12:16, 13:17, 14:19, 15:20, 17:23, 19:26, 21:28, 24:32}
+TABLA_PRECIOS = {
+    11: 15, 12: 16, 13: 17, 14: 19, 15: 20,
+    17: 23, 19: 26, 21: 28, 24: 32
+}
 
 tasa_bcv_cache = {"tasa": 515.0, "fecha": ""}
 stock_bajo_pendiente = {}
@@ -65,6 +68,7 @@ CORRECCIONES = {
     "onor":"honor","onour":"honor"
 }
 
+
 def limpiar_html(texto):
     if not texto:
         return ""
@@ -72,8 +76,10 @@ def limpiar_html(texto):
     texto_limpio = texto_limpio.replace('&amp;','&').replace('&lt;','<').replace('&gt;','>').replace('&nbsp;',' ')
     return re.sub(r'\s+', ' ', texto_limpio).strip()
 
+
 def limpiar_puntuacion(texto):
     return re.sub(r'[^\w\s]', ' ', texto)
+
 
 def obtener_tasa_bcv():
     try:
@@ -90,16 +96,19 @@ def obtener_tasa_bcv():
         print(f"Error obteniendo tasa BCV: {e}")
         return tasa_bcv_cache["tasa"]
 
+
 def calcular_precio_bs(precio_usd_odoo):
     precio_int = int(precio_usd_odoo)
     precio_tabla = TABLA_PRECIOS.get(precio_int, round(precio_usd_odoo * 1.35))
     return precio_tabla, round(precio_tabla * obtener_tasa_bcv())
+
 
 def esta_abierto():
     tz = pytz.timezone("America/Caracas")
     ahora = datetime.now(tz)
     hora = ahora.hour + ahora.minute / 60
     return (9.0 <= hora < 14.0) if ahora.weekday() == 6 else (8.5 <= hora < 17.5)
+
 
 def cargar_historial(numero):
     try:
@@ -111,16 +120,25 @@ def cargar_historial(numero):
         print(f"Error cargando historial: {e}")
         return []
 
+
 def guardar_historial(numero, historial):
     try:
-        historial_str = json.dumps(historial[-20:])
+        historial_str = json.dumps(historial[-4:])
         resultado = supabase.table("Clientes").select("numero").eq("numero", numero).execute()
         if resultado.data:
-            supabase.table("Clientes").update({"historial": historial_str, "ultima_visita": datetime.utcnow().isoformat()}).eq("numero", numero).execute()
+            supabase.table("Clientes").update({
+                "historial": historial_str,
+                "ultima_visita": datetime.utcnow().isoformat()
+            }).eq("numero", numero).execute()
         else:
-            supabase.table("Clientes").insert({"numero": numero, "historial": historial_str, "ultima_visita": datetime.utcnow().isoformat()}).execute()
+            supabase.table("Clientes").insert({
+                "numero": numero,
+                "historial": historial_str,
+                "ultima_visita": datetime.utcnow().isoformat()
+            }).execute()
     except Exception as e:
         print(f"Error guardando historial: {e}")
+
 
 def corregir_texto(texto):
     texto_lower = limpiar_puntuacion(texto.lower())
@@ -128,16 +146,13 @@ def corregir_texto(texto):
         texto_lower = texto_lower.replace(error, correcto)
     return texto_lower
 
+
 def es_coincidencia_exacta_palabra(palabra, nombre_lower):
     return bool(re.search(r'(?<![a-z0-9])' + re.escape(palabra) + r'(?![a-z0-9])', nombre_lower))
 
-def buscar_compatibles(todos, mensaje_original, palabras_originales):
-    """Busca productos que tengan exactamente el modelo buscado en sus notas COMPATIBLE"""
-    compatibles = []
-    mensaje_limpio = limpiar_puntuacion(mensaje_original.lower())
-    palabras = [p for p in mensaje_limpio.split() if p not in PALABRAS_IGNORAR and len(p) > 1]
-    msg_sin_espacios = mensaje_limpio.replace(" ", "")
 
+def buscar_compatibles(todos, mensaje_sin_espacios, palabras):
+    compatibles = []
     for producto in todos:
         if int(producto['qty_available']) <= 0:
             continue
@@ -147,33 +162,29 @@ def buscar_compatibles(todos, mensaje_original, palabras_originales):
         for linea in notas.split('\n'):
             if 'COMPATIBLE:' not in linea.upper():
                 continue
-            modelos_str = linea.upper().replace('COMPATIBLE:','').strip()
+            modelos_str = linea.upper().replace('COMPATIBLE:', '').strip()
             for modelo in modelos_str.split(','):
-                modelo_limpio = limpiar_puntuacion(modelo.strip().lower())
-                if not modelo_limpio:
+                modelo = limpiar_puntuacion(modelo.strip().lower())
+                if not modelo:
                     continue
-                modelo_sin_espacios = modelo_limpio.replace(" ", "")
-                palabras_modelo = [p for p in modelo_limpio.split() if p not in PALABRAS_IGNORAR and len(p) > 1]
+                modelo_sin_espacios = modelo.replace(" ", "")
+                palabras_modelo = [p for p in modelo.split() if p not in PALABRAS_IGNORAR and len(p) > 1]
 
-                # Coincidencia estricta: todas las palabras del modelo deben estar en el mensaje
-                # Y todas las palabras del mensaje deben estar en el modelo
                 coincide = False
-                if msg_sin_espacios and modelo_sin_espacios:
-                    if msg_sin_espacios == modelo_sin_espacios:
+                if mensaje_sin_espacios and modelo_sin_espacios:
+                    if mensaje_sin_espacios == modelo_sin_espacios:
                         coincide = True
-                    elif msg_sin_espacios in modelo_sin_espacios or modelo_sin_espacios in msg_sin_espacios:
+                    elif mensaje_sin_espacios in modelo_sin_espacios or modelo_sin_espacios in mensaje_sin_espacios:
                         coincide = True
-
                 if not coincide and palabras and palabras_modelo:
-                    # Todas las palabras del mensaje deben estar en el modelo
-                    if all(p in modelo_limpio for p in palabras):
+                    if all(p in modelo for p in palabras):
                         coincide = True
 
                 if coincide:
-                    producto['_compatible_con'] = modelo_limpio
+                    producto['_compatible_con'] = modelo
                     if producto not in compatibles:
                         compatibles.append(producto)
-                    print(f"Compatible encontrado: {producto['name']} es compatible con {modelo_limpio}")
+                    print(f"Compatible encontrado: {producto['name']} es compatible con {modelo}")
                     break
     return compatibles
 
@@ -203,16 +214,23 @@ def consultar_odoo(mensaje):
         for producto in todos:
             nombre_lower = producto['name'].lower()
             nombre_sin_espacios = nombre_lower.replace(" ", "")
-            coincidencias = sum(1 for p in palabras if es_coincidencia_exacta_palabra(p, nombre_lower))
+            coincidencias = 0
 
+            # Búsqueda por palabras exactas
+            coincidencias += sum(1 for p in palabras if es_coincidencia_exacta_palabra(p, nombre_lower))
+
+            # Búsqueda sin espacios - bidireccional
             if mensaje_sin_espacios and len(mensaje_sin_espacios) > 2:
                 if nombre_sin_espacios == mensaje_sin_espacios:
                     coincidencias += 5
                 elif nombre_sin_espacios.startswith(mensaje_sin_espacios) or nombre_sin_espacios.endswith(mensaje_sin_espacios):
-                    coincidencias += 2
+                    coincidencias += 3
                 elif mensaje_sin_espacios in nombre_sin_espacios:
-                    coincidencias += 1
+                    coincidencias += 2
+                elif nombre_sin_espacios in mensaje_sin_espacios:
+                    coincidencias += 2
 
+            # Bonus si todas las palabras coinciden
             if palabras and all(es_coincidencia_exacta_palabra(p, nombre_lower) for p in palabras):
                 coincidencias += 2
 
@@ -236,7 +254,7 @@ def consultar_odoo(mensaje):
             return con_stock, None
 
         print("Buscando compatibilidades...")
-        compatibles = buscar_compatibles(todos, mensaje, palabras)
+        compatibles = buscar_compatibles(todos, mensaje_sin_espacios, palabras)
 
         if compatibles:
             return None, compatibles
@@ -258,55 +276,55 @@ def send_whapi_message(to: str, text: str):
     except Exception as e:
         print(f"Error enviando mensaje Whapi: {e}")
 
+
 def notificar_asesor(asesor: str, tema: str, numero_cliente: str):
     numero_formateado = "+" + numero_cliente.replace("@s.whatsapp.net", "")
     send_whapi_message(asesor, f"🔔 *Mensaje pendiente*\nUn cliente está esperando respuesta sobre *{tema}*.\nNúmero: {numero_formateado}")
 
+
 def notificar_stock_bajo(numero_cliente: str, producto: str, stock: int):
     numero_formateado = "+" + numero_cliente.replace("@s.whatsapp.net", "")
     send_whapi_message(ASESOR_STOCK, f"⚠️ *Stock bajo - Cliente interesado*\nProducto: *{producto}*\nStock: {stock} unidad(es)\nCliente: {numero_formateado}\n\nEl cliente confirmó que quiere apartar esta pantalla.")
+
 
 def get_system_prompt():
     estado_tienda = "ABIERTA" if esta_abierto() else "CERRADA"
     return f"""Eres un vendedor directo de Cell Center 4620, tienda de celulares en Venezuela. Solo vendemos PANTALLAS y repuestos de celulares.
 La tienda está actualmente: {estado_tienda}
 
-IMPORTANTE: Cuando el inventario te muestre productos con precio y stock mayor a 0, SIEMPRE responde con el precio. Nunca digas que no está disponible si el inventario muestra stock mayor a 0. No preguntes si es para pantalla o celular, asume que siempre es para pantalla.
+REGLA PRINCIPAL: Cuando el inventario muestre productos con stock mayor a 0, SIEMPRE da el precio. NUNCA digas que no está disponible si hay stock. NUNCA preguntes si es para pantalla o celular, asume que siempre es para pantalla.
 
-1. PANTALLAS: Cuando el inventario muestre productos disponibles responde con precio en USD y bolívares. No menciones cantidad de stock al cliente.
+1. PANTALLAS: Si el inventario muestra productos disponibles, responde con precio en USD y bolívares. No menciones cantidad de stock.
 
-MÚLTIPLES REFERENCIAS: responde cada uno en formato lista:
+MÚLTIPLES REFERENCIAS en un mensaje, responde en lista:
 ✅ *Modelo*: $12 USD / Bs. 8,243
 ❌ *Modelo*: No disponible
 
-COMPATIBILIDADES: Si el inventario incluye "PRODUCTOS COMPATIBLES", el modelo exacto no existe pero hay uno compatible. Responde SOLO con el producto compatible que aparece en el inventario, no inventes otros:
-"No tenemos la pantalla para [modelo pedido], pero tenemos una compatible: *[nombre exacto del producto]*: $XX USD / Bs. XX,XXX"
+COMPATIBILIDADES: Si el inventario dice "PRODUCTOS COMPATIBLES", responde SOLO con ese producto:
+"No tenemos la pantalla para [modelo pedido], pero tenemos una compatible: *[nombre producto]*: $XX USD / Bs. XX,XXX"
 
-REGLAS:
-- NUNCA preguntes si es para pantalla o celular. Siempre asume que es pantalla.
-- NUNCA digas que no está disponible si el inventario muestra stock mayor a 0.
-- Nunca preguntes "¿Te interesa?" después de dar un precio.
-- Stock 0: solo di que no está disponible. NUNCA sugieras alternativas.
-- Stock 1 o 2: da el precio y avisa que queda muy poco sin decir la cantidad. Varía las frases:
-  "Por cierto, este modelo está casi agotado. ¿Lo reservamos?"
-  "Nos queda muy poco de este modelo. ¿Lo apartamos?"
-  "Existencia muy limitada. ¿Lo separamos para ti?"
-  "Está por agotarse. ¿Lo guardamos?"
-- Stock 3 o más: solo da el precio.
+STOCK 1 o 2: da el precio y avisa que queda muy poco. Varía las frases:
+"Por cierto, este modelo está casi agotado. ¿Lo reservamos?"
+"Nos queda muy poco de este modelo. ¿Lo apartamos?"
+"Existencia muy limitada. ¿Lo separamos para ti?"
+"Está por agotarse. ¿Lo guardamos?"
 
-2. CELULARES (compra de celular completo): responde exactamente: "DERIVAR_TECNICO"
-3. SERVICIO TÉCNICO: responde exactamente: "DERIVAR_TECNICO"
+STOCK 3 o más: solo da el precio sin comentarios.
+STOCK 0: solo di que no está disponible. NUNCA sugieras alternativas.
+
+2. CELULARES (comprar celular completo): responde exactamente: "DERIVAR_TECNICO"
+3. SERVICIO TÉCNICO o reparaciones: responde exactamente: "DERIVAR_TECNICO"
 4. ACCESORIOS: responde exactamente: "DERIVAR_ACCESORIOS"
 
-5. HORARIO: Si preguntan si estamos abiertos o por el horario:
-- ABIERTA: confirma que sí están en tienda. Horario: lunes a sábado 8:30am-5:30pm, domingos y feriados 9:00am-2:00pm.
-- CERRADA: avisa que estamos cerrados pero puedes ayudar. Varía las frases:
-  "En este momento estamos cerrados, pero aquí estoy para responder tus preguntas. Horario: lunes a sábado 8:30am-5:30pm, domingos y feriados 9:00am-2:00pm."
-  "La tienda está cerrada, aunque puedo ayudarte. Abrimos lunes a sábado 8:30am-5:30pm, domingos y feriados 9:00am-2:00pm."
+5. HORARIO o si estamos abiertos:
+- ABIERTA: confirmamos que sí estamos. Horario: lunes a sábado 8:30am-5:30pm, domingos y feriados 9:00am-2:00pm.
+- CERRADA: avisa que estamos cerrados pero puedes responder preguntas. Varía las frases:
+  "En este momento estamos cerrados, pero aquí estoy para ayudarte. Horario: lunes a sábado 8:30am-5:30pm, domingos y feriados 9:00am-2:00pm."
+  "La tienda está cerrada, aunque puedo ayudarte con precios. Abrimos lunes a sábado 8:30am-5:30pm, domingos y feriados 9:00am-2:00pm."
 
 6. OTROS TEMAS: responde amablemente que solo manejas productos y servicios de Cell Center 4620.
 
-Responde siempre corto y directo. Muestra el nombre del producto tal como aparece en el inventario."""
+Responde siempre corto y directo. Muestra el nombre exacto del producto como aparece en el inventario."""
 
 
 client = anthropic.Anthropic()
@@ -388,8 +406,8 @@ def webhook():
 
             historial = cargar_historial(from_number)
             historial.append({"role": "user", "content": body + contexto_odoo})
-            if len(historial) > 20:
-                historial = historial[-20:]
+            if len(historial) > 4:
+                historial = historial[-4:]
 
             response = client.messages.create(
                 model="claude-haiku-4-5-20251001",
