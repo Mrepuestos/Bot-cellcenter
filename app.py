@@ -100,7 +100,8 @@ def obtener_tasa_bcv():
 def calcular_precio_bs(precio_usd_odoo):
     precio_int = int(precio_usd_odoo)
     precio_tabla = TABLA_PRECIOS.get(precio_int, round(precio_usd_odoo * 1.35))
-    return precio_tabla, round(precio_tabla * obtener_tasa_bcv())
+    precio_bs = round(precio_tabla * obtener_tasa_bcv())
+    return precio_usd_odoo, precio_bs
 
 
 def esta_abierto():
@@ -152,14 +153,12 @@ def es_coincidencia_exacta_palabra(palabra, nombre_lower):
 
 
 def calcular_score(palabras, nombre_lower, mensaje_sin_espacios):
-    """Calcula score de coincidencia. Requiere que TODAS las palabras coincidan."""
     nombre_sin_espacios = nombre_lower.replace(" ", "")
-    
-    # Si hay múltiples palabras, TODAS deben estar en el nombre
+
     if len(palabras) > 1:
         if not all(es_coincidencia_exacta_palabra(p, nombre_lower) for p in palabras):
             return 0
-    
+
     coincidencias = sum(1 for p in palabras if es_coincidencia_exacta_palabra(p, nombre_lower))
 
     if mensaje_sin_espacios and len(mensaje_sin_espacios) > 2:
@@ -393,20 +392,20 @@ def webhook():
             if productos:
                 contexto_odoo = "\n\nINFORMACIÓN DEL INVENTARIO:\n"
                 for p in productos:
-                    precio_tabla, precio_bs = calcular_precio_bs(p['list_price'])
+                    precio_usd, precio_bs = calcular_precio_bs(p['list_price'])
                     stock = int(p['qty_available'])
                     nombre = p['name']
-                    contexto_odoo += f"- {nombre}: ${precio_tabla} USD / Bs. {precio_bs:,} | Stock: {stock} unidades\n"
+                    contexto_odoo += f"- {nombre}: ${precio_usd} USD / Bs. {precio_bs:,} | Stock: {stock} unidades\n"
                     if stock_bajo_info is None and 1 <= stock <= 2:
                         stock_bajo_info = {"producto": nombre, "stock": stock}
             elif compatibles:
                 contexto_odoo = "\n\nPRODUCTOS COMPATIBLES (el modelo exacto no está en inventario):\n"
                 for p in compatibles:
-                    precio_tabla, precio_bs = calcular_precio_bs(p['list_price'])
+                    precio_usd, precio_bs = calcular_precio_bs(p['list_price'])
                     stock = int(p['qty_available'])
                     nombre = p['name']
                     compatible_con = p.get('_compatible_con', '')
-                    contexto_odoo += f"- {nombre} (compatible con {compatible_con}): ${precio_tabla} USD / Bs. {precio_bs:,} | Stock: {stock} unidades\n"
+                    contexto_odoo += f"- {nombre} (compatible con {compatible_con}): ${precio_usd} USD / Bs. {precio_bs:,} | Stock: {stock} unidades\n"
                     if stock_bajo_info is None and 1 <= stock <= 2:
                         stock_bajo_info = {"producto": nombre, "stock": stock}
             else:
