@@ -68,6 +68,15 @@ CORRECCIONES = {
 }
 
 
+def limpiar_html(texto):
+    """Elimina etiquetas HTML del texto"""
+    if not texto:
+        return ""
+    texto_limpio = re.sub(r'<[^>]+>', '', str(texto))
+    texto_limpio = texto_limpio.replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>').replace('&nbsp;', ' ')
+    return texto_limpio.strip()
+
+
 def obtener_tasa_bcv():
     try:
         fecha_hoy = time.strftime("%Y-%m-%d")
@@ -206,9 +215,9 @@ def consultar_odoo(mensaje):
         if sin_resultados or todos_agotados:
             print("Buscando en compatibilidades...")
             for producto in todos:
-                notas = producto.get('description') or ""
-                if isinstance(notas, dict):
-                    notas = str(notas)
+                notas_raw = producto.get('description') or ""
+                notas = limpiar_html(notas_raw)
+
                 if 'COMPATIBLE:' in notas.upper():
                     for linea in notas.split('\n'):
                         if 'COMPATIBLE:' in linea.upper():
