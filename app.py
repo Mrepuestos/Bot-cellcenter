@@ -161,10 +161,13 @@ Mensaje del cliente: "{mensaje}"
 Catálogo completo:
 {catalogo_json}
 
-REGLAS ESTRICTAS:
-1. Busca coincidencia directa entre lo que pide el cliente y el campo "nombre" del catálogo. Permite errores tipográficos menores (ej: "samsug" = "samsung").
-2. Si no hay coincidencia directa, revisa el campo "compatible_con" de cada producto. Solo marca como compatible si el modelo pedido por el cliente aparece LITERALMENTE escrito en ese campo. Compara palabra por palabra.
-3. PROHIBIDO inferir, suponer o usar lógica propia. Si el cliente pide "2023" y el campo "compatible_con" dice "2024", NO es compatible.
+REGLAS:
+1. Busca coincidencia directa entre lo que pide el cliente y el campo "nombre". Permite errores tipográficos menores (ej: "samsug" = "samsung").
+2. Si no hay coincidencia directa, revisa el campo "compatible_con" de cada producto. Marca como compatible si el modelo pedido o alguna de sus palabras clave aparece en ese campo. Ejemplos:
+   - Cliente escribe "2023" y "compatible_con" dice "Tecno Spark 2023" → SÍ es compatible.
+   - Cliente escribe "smart 7" y "compatible_con" dice "infinix smart 7" → SÍ es compatible.
+   - Cliente escribe "2024" y "compatible_con" dice "Tecno Spark 2023" → NO es compatible.
+3. PROHIBIDO inventar compatibilidades que no estén escritas en el campo "compatible_con".
 4. Si no encuentras nada con certeza, devuelve "encontrados": [].
 5. Si el cliente pide varios modelos, devuelve uno por cada modelo encontrado.
 
