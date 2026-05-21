@@ -402,7 +402,7 @@ def webhook():
                 send_whapi_message(from_number, reply)
 
             elif similares:
-                lista = "\n".join(f"• {s}" for s in similares)
+                lista = "\n".join(f"✅ {nombre}" if stock > 0 else f"❌ {nombre}" for nombre, stock in similares)
                 reply = (
                     f"Soy un sistema automatizado 🤖. Para consultar disponibilidad, "
                     f"escribe la *marca y modelo exacto* sin errores de escritura.\n\n"
