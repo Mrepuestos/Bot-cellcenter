@@ -45,8 +45,44 @@ stock_bajo_pendiente = {}
 
 PALABRAS_SI = ["si","sí","yes","claro","dale","ok","okay","quiero","aparta","reserva","separa","confirmado","afirmativo","me interesa","la quiero"]
 
+CORRECCIONES_MARCAS = {
+    "remi": "redmi",
+    "samsug": "samsung",
+    "samsum": "samsung",
+    "samsun": "samsung",
+    "infnix": "infinix",
+    "infinik": "infinix",
+    "ifninx": "infinix",
+    "iph": "iphone",
+    "aifon": "iphone",
+    "aiphone": "iphone",
+    "huawe": "huawei",
+    "huawey": "huawei",
+    "huawai": "huawei",
+    "tecnho": "tecno",
+    "tekno": "tecno",
+    "motoral": "motorola",
+    "motarola": "motorola",
+    "alkatel": "alcatel",
+    "alcater": "alcatel",
+    "onor": "honor",
+    "onour": "honor",
+}
+
 
 # ── Utilidades generales ──────────────────────────────────────────────────────
+
+def normalizar_mensaje(texto):
+    """Corrige typos de marcas y separa letras pegadas a números"""
+    texto = texto.lower().strip()
+    # Separar letras pegadas a números: "pop7" → "pop 7", "9a" → "9 a"
+    texto = re.sub(r'([a-zA-Z])(\d)', r'\1 \2', texto)
+    texto = re.sub(r'(\d)([a-zA-Z])', r'\1 \2', texto)
+    # Corregir marcas conocidas con límites de palabra
+    for error, correcto in CORRECCIONES_MARCAS.items():
+        texto = re.sub(r'\b' + re.escape(error) + r'\b', correcto, texto)
+    return texto
+
 
 def limpiar_html(texto):
     if not texto:
@@ -124,11 +160,13 @@ def buscar_compatible_python(todos, modelo_pedido):
     escrito literalmente en su campo compatible_con.
     Solo retorna productos con stock > 0.
     """
-    modelo_lower = modelo_pedido.lower().strip()
-    palabras_modelo = [p for p in modelo_lower.split() if len(p) > 1]
+    modelo_normalizado = normalizar_mensaje(modelo_pedido)
+    palabras_modelo = [p for p in modelo_normalizado.split() if len(p) > 1]
 
     if not palabras_modelo:
         return None
+
+    print(f"Buscando compatible para '{modelo_pedido}' → normalizado: '{modelo_normalizado}' → palabras: {palabras_modelo}")
 
     for producto in todos:
         if int(producto['qty_available']) <= 0:
@@ -149,8 +187,12 @@ def buscar_compatible_python(todos, modelo_pedido):
                 if not modelo_odoo:
                     continue
 
-                palabras_odoo = modelo_odoo.split()
+                # Normalizar el modelo de Odoo también
+                modelo_odoo_norm = normalizar_mensaje(modelo_odoo)
+                palabras_odoo = modelo_odoo_norm.split()
 
+                # TODAS las palabras del cliente deben estar en el modelo de Odoo
+                # como palabras exactas, no substrings
                 if all(p in palabras_odoo for p in palabras_modelo):
                     print(f"Compatible Python: {producto['name']} | modelo_odoo='{modelo_odoo}' | pedido='{modelo_pedido}'")
                     producto_copia = dict(producto)
@@ -179,6 +221,10 @@ def consultar_odoo(mensaje):
         )
         print(f"Total productos en Odoo: {len(todos)}")
 
+        # Normalizar mensaje antes de todo
+        mensaje_normalizado = normalizar_mensaje(mensaje)
+        print(f"Mensaje normalizado: '{mensaje_normalizado}'")
+
         catalogo = []
         for p in todos:
             catalogo.append({
@@ -192,18 +238,18 @@ def consultar_odoo(mensaje):
 
         prompt = f"""Eres un buscador de productos para una tienda de pantallas de celulares en Venezuela.
 
-Mensaje del cliente: "{mensaje}"
+Mensaje del cliente (ya normalizado): "{mensaje_normalizado}"
 
 Catálogo completo:
 {catalogo_json}
 
 REGLAS:
-1. Busca coincidencia entre lo que pide el cliente y el campo "nombre". 
-2. Permite errores tipográficos y variaciones: "remi"="redmi", "samsug"="samsung", "9 a"="9A", letras faltantes o duplicadas.
-3. IMPORTANTE: La coincidencia debe ser EXACTA en el modelo. "Hot 30" NO es igual a "Hot 30i" ni "Hot 30 PLAY" — son modelos distintos con sufijos diferentes. Solo devuelve un producto si el modelo pedido coincide completamente con el nombre, sin sufijos extra.
+1. Busca coincidencia entre lo que pide el cliente y el campo "nombre".
+2. Permite errores tipográficos menores y variaciones de mayúsculas/minúsculas.
+3. IMPORTANTE: La coincidencia debe ser exacta en el modelo completo. "Hot 30" NO es igual a "Hot 30i" ni "Hot 30 PLAY" — son modelos distintos. Solo devuelve un producto si el modelo pedido coincide completamente, sin sufijos extra no mencionados por el cliente.
 4. Si el cliente pide varios modelos, devuelve uno por cada modelo.
 5. Devuelve el producto aunque su stock sea 0.
-6. Si no hay coincidencia exacta por nombre, devuelve "encontrados": []. NO devuelvas productos similares.
+6. Si no hay coincidencia clara por nombre, devuelve "encontrados": []. NO devuelvas productos similares.
 
 Responde ÚNICAMENTE con este JSON sin texto adicional ni markdown:
 {{"encontrados": [{{"id": 123, "nombre": "nombre exacto", "stock": 5, "precio_usd": 12.0, "modelo_pedido": "redmi 9a"}}]}}"""
@@ -229,7 +275,7 @@ Responde ÚNICAMENTE con este JSON sin texto adicional ni markdown:
 
         if not encontrados:
             print("Claude no encontró productos por nombre, buscando compatibles...")
-            compatible = buscar_compatible_python(todos, mensaje)
+            compatible = buscar_compatible_python(todos, mensaje_normalizado)
             if compatible:
                 productos_compatibles.append(compatible)
             return (None, productos_compatibles if productos_compatibles else None)
