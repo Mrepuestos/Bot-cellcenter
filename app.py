@@ -166,7 +166,7 @@ def guardar_historial(numero, historial):
 
 def extraer_palabras_clave(mensaje):
     normalizado = normalizar_texto(mensaje)
-    palabras = [p for p in normalizado.split() if p not in PALABRAS_IGNORAR and len(p) > 1]
+    palabras = [p for p in normalizado.split() if p not in PALABRAS_IGNORAR and (len(p) > 1 or p.isdigit())]
     print(f"Mensaje normalizado: '{normalizado}' | Palabras clave: {palabras}")
     return palabras, normalizado
 
