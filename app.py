@@ -205,10 +205,10 @@ def buscar_similares(todos, palabras_clave, max_resultados=5):
         palabras_nombre = nombre_norm.split()
         coincidencias = sum(1 for p in palabras_clave if p in palabras_nombre)
         if coincidencias > 0:
-            similares.append((coincidencias, producto['name']))
+            similares.append((coincidencias, producto['name'], int(producto['qty_available'])))
 
     similares.sort(key=lambda x: x[0], reverse=True)
-    return [nombre for _, nombre in similares[:max_resultados]]
+    return [(nombre, stock) for _, nombre, stock in similares[:max_resultados]]
 
 
 def consultar_odoo(mensaje):
