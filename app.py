@@ -116,7 +116,53 @@ def guardar_historial(numero, historial):
         print(f"Error guardando historial: {e}")
 
 
-# ── Búsqueda inteligente con Claude ──────────────────────────────────────────
+# ── Búsqueda de compatibles en Python (sin Claude) ───────────────────────────
+
+def buscar_compatible_python(todos, modelo_pedido):
+    """
+    Busca en Python si algún producto tiene el modelo_pedido
+    escrito literalmente en su campo compatible_con.
+    Solo retorna productos con stock > 0.
+    """
+    modelo_lower = modelo_pedido.lower().strip()
+    palabras_modelo = [p for p in modelo_lower.split() if len(p) > 1]
+
+    if not palabras_modelo:
+        return None
+
+    for producto in todos:
+        if int(producto['qty_available']) <= 0:
+            continue
+
+        notas = limpiar_html(producto.get('description') or "")
+        if 'COMPATIBLE:' not in notas.upper():
+            continue
+
+        for linea in notas.split('\n'):
+            if 'COMPATIBLE:' not in linea.upper():
+                continue
+
+            compatible_texto = linea.replace('COMPATIBLE:', '').replace('Compatible:', '').strip().lower()
+
+            # Verificar cada modelo listado separado por coma
+            for modelo_odoo in compatible_texto.split(','):
+                modelo_odoo = modelo_odoo.strip()
+                if not modelo_odoo:
+                    continue
+
+                palabras_odoo = modelo_odoo.split()
+
+                # Todas las palabras del modelo pedido deben estar en el modelo de Odoo
+                if all(p in palabras_odoo for p in palabras_modelo):
+                    print(f"Compatible Python: {producto['name']} | modelo_odoo='{modelo_odoo}' | pedido='{modelo_pedido}'")
+                    producto_copia = dict(producto)
+                    producto_copia['_compatible_con'] = modelo_pedido
+                    return producto_copia
+
+    return None
+
+
+# ── Búsqueda principal con Claude + compatibles en Python ────────────────────
 
 def consultar_odoo(mensaje):
     try:
@@ -135,21 +181,14 @@ def consultar_odoo(mensaje):
         )
         print(f"Total productos en Odoo: {len(todos)}")
 
+        # Catálogo solo con nombre y stock para Claude (sin compatible_con)
         catalogo = []
         for p in todos:
-            notas = limpiar_html(p.get('description') or "")
-            compatible_con = ""
-            if 'COMPATIBLE:' in notas.upper():
-                for linea in notas.split('\n'):
-                    if 'COMPATIBLE:' in linea.upper():
-                        compatible_con = linea.replace('COMPATIBLE:', '').replace('Compatible:', '').strip()
-                        break
             catalogo.append({
                 "id": p['id'],
                 "nombre": p['name'],
                 "stock": int(p['qty_available']),
-                "precio_usd": p['list_price'],
-                "compatible_con": compatible_con
+                "precio_usd": p['list_price']
             })
 
         catalogo_json = json.dumps(catalogo, ensure_ascii=False)
@@ -162,18 +201,14 @@ Catálogo completo:
 {catalogo_json}
 
 REGLAS:
-1. Busca coincidencia directa entre lo que pide el cliente y el campo "nombre". Permite errores tipográficos menores (ej: "samsug" = "samsung").
-2. Si encuentras el producto por nombre pero su stock es 0, NO lo devuelvas como encontrado. En cambio, busca en el campo "compatible_con" de otros productos si hay alguno que mencione ese modelo y tenga stock mayor a 0, y devuélvelo con "es_compatible": true.
-3. Si no hay coincidencia directa por nombre, busca en el campo "compatible_con" de cada producto. Marca como compatible si el modelo pedido o alguna de sus palabras clave aparece en ese campo y el producto tiene stock mayor a 0. Ejemplos:
-   - Cliente escribe "2023" y "compatible_con" dice "Tecno Spark 2023" → SÍ es compatible.
-   - Cliente escribe "smart 7" y "compatible_con" dice "infinix smart 7" → SÍ es compatible.
-   - Cliente escribe "2024" y "compatible_con" dice "Tecno Spark 2023" → NO es compatible.
-4. PROHIBIDO inventar compatibilidades que no estén escritas en el campo "compatible_con".
-5. Si no encuentras nada con certeza, devuelve "encontrados": [].
-6. Si el cliente pide varios modelos, devuelve uno por cada modelo encontrado.
+1. Identifica qué producto(s) busca el cliente comparando con el campo "nombre". Permite errores tipográficos menores (ej: "samsug" = "samsung", "infinix 50 pro plus" = "Infinix HOT 50 PRO PLUS").
+2. Si el cliente pide varios modelos, devuelve uno por cada modelo.
+3. Devuelve el producto aunque su stock sea 0.
+4. Si no encuentras ninguna coincidencia por nombre, devuelve "encontrados": [].
+5. NO inventes productos. Solo devuelve lo que está en el catálogo.
 
 Responde ÚNICAMENTE con este JSON sin texto adicional ni markdown:
-{{"encontrados": [{{"id": 123, "nombre": "nombre exacto", "stock": 5, "precio_usd": 12.0, "es_compatible": false, "modelo_pedido": "samsung a03"}}]}}"""
+{{"encontrados": [{{"id": 123, "nombre": "nombre exacto", "stock": 5, "precio_usd": 12.0, "modelo_pedido": "samsung a03"}}]}}"""
 
         respuesta = client.messages.create(
             model="claude-haiku-4-5-20251001",
@@ -190,13 +225,18 @@ Responde ÚNICAMENTE con este JSON sin texto adicional ni markdown:
         resultado_claude = json.loads(texto)
         encontrados = resultado_claude.get("encontrados", [])
 
-        if not encontrados:
-            print("Claude no encontró productos")
-            return None, None
-
         odoo_por_id = {p['id']: p for p in todos}
         productos_normales = []
         productos_compatibles = []
+
+        if not encontrados:
+            print("Claude no encontró productos por nombre, buscando compatibles...")
+            # Si Claude no encontró nada, buscar compatibles en Python
+            # Intentar con el mensaje completo
+            compatible = buscar_compatible_python(todos, mensaje)
+            if compatible:
+                productos_compatibles.append(compatible)
+            return (None, productos_compatibles if productos_compatibles else None)
 
         for item in encontrados:
             pid = item.get("id")
@@ -204,16 +244,27 @@ Responde ÚNICAMENTE con este JSON sin texto adicional ni markdown:
             if not producto_odoo:
                 continue
 
-            producto_copia = dict(producto_odoo)
-            producto_copia['_referencia'] = item.get("modelo_pedido", "")
+            stock = int(producto_odoo['qty_available'])
+            modelo_pedido = item.get("modelo_pedido", item.get("nombre", ""))
 
-            if item.get("es_compatible"):
-                producto_copia['_compatible_con'] = item.get("modelo_pedido", "")
-                productos_compatibles.append(producto_copia)
-                print(f"Compatible: {producto_odoo['name']} para {item.get('modelo_pedido')}")
-            else:
+            if stock > 0:
+                # Tiene stock, lo agregamos normal
+                producto_copia = dict(producto_odoo)
+                producto_copia['_referencia'] = modelo_pedido
                 productos_normales.append(producto_copia)
-                print(f"Encontrado: {producto_odoo['name']} | Stock: {producto_odoo['qty_available']}")
+                print(f"Encontrado: {producto_odoo['name']} | Stock: {stock}")
+            else:
+                # Sin stock, buscar compatible en Python
+                print(f"Sin stock: {producto_odoo['name']} | Buscando compatible para '{modelo_pedido}'...")
+                compatible = buscar_compatible_python(todos, modelo_pedido)
+                if compatible:
+                    compatible['_referencia'] = modelo_pedido
+                    productos_compatibles.append(compatible)
+                else:
+                    # No hay compatible, mostrar como sin stock
+                    producto_copia = dict(producto_odoo)
+                    producto_copia['_referencia'] = modelo_pedido
+                    productos_normales.append(producto_copia)
 
         return (productos_normales if productos_normales else None,
                 productos_compatibles if productos_compatibles else None)
