@@ -40,7 +40,7 @@ GRUPO_PAGOS_ID = os.getenv("GRUPO_PAGOS_ID", "120363XXXXXXXX@g.us")
 DB_PATH = Path(__file__).parent / "pagos.db"
 
 # Modelo de Claude para análisis de imágenes
-CLAUDE_MODEL = "claude-sonnet-4-5-20251001"
+CLAUDE_MODEL = "claude-haiku-4-5-20251001"
 
 # Logger
 logger = logging.getLogger("pagos_extractor")
