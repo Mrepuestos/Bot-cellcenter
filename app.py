@@ -162,9 +162,9 @@ REGLAS:
 - Extrae solo los modelos de celular mencionados, corregidos y normalizados.
 - Si el cliente menciona varios modelos, extráelos todos.
 - NO incluyas palabras como "pantalla", "precio", "tienes", saludos, etc.
-- NO inventes modelos. Solo extrae lo que el cliente escribió.
+- NO inventes modelos. Solo extrae exactamente lo que el cliente escribió.
 - Si el mensaje no menciona ningún modelo de celular específico, devuelve lista vacía.
-- Ejemplos de modelos: "samsung a03 core", "redmi 9a", "tecno pop 7", "infinix hot 30i"
+- Ejemplos: "samsung a03 core", "redmi 9a", "tecno pop 7", "infinix hot 30i"
 
 Responde ÚNICAMENTE con este JSON sin texto adicional ni markdown:
 {{"modelos": ["modelo1", "modelo2"]}}"""
@@ -192,9 +192,11 @@ Responde ÚNICAMENTE con este JSON sin texto adicional ni markdown:
 
 def buscar_producto_python(todos, modelo):
     """
-    Busca producto por nombre. TODAS las palabras del modelo pedido
-    deben estar en el nombre del producto. Score mínimo alto para
-    evitar falsos positivos.
+    Busca producto por nombre.
+    - TODAS las palabras del modelo pedido deben estar en el nombre.
+    - El nombre del producto puede tener como máximo 1 palabra extra
+      que el cliente no mencionó (para incluir la marca si falta).
+    - Así 'hot 30' NO matchea 'hot 30 play' (2 palabras extra).
     """
     palabras_clave = [p for p in normalizar_texto(modelo).split() if len(p) > 1]
     if not palabras_clave:
@@ -209,17 +211,14 @@ def buscar_producto_python(todos, modelo):
         if not all(p in palabras_nombre for p in palabras_clave):
             continue
 
-        coincidencias = sum(1 for p in palabras_clave if p in palabras_nombre)
-        diferencia = len(palabras_nombre) - len(palabras_clave)
-        bonus = max(0, 3 - diferencia)
-        score = coincidencias + bonus
+        # El nombre no puede tener más de 1 palabra extra que el cliente no mencionó
+        palabras_extra = len(palabras_nombre) - len(palabras_clave)
+        if palabras_extra > 1:
+            continue
 
-        # Score mínimo: debe coincidir todas las palabras clave + bonus
-        score_minimo = len(palabras_clave) + 1
-        if score >= score_minimo:
-            producto_copia = dict(producto)
-            producto_copia['_score'] = score
-            mejores.append(producto_copia)
+        producto_copia = dict(producto)
+        producto_copia['_score'] = len(palabras_clave)
+        mejores.append(producto_copia)
 
     if not mejores:
         print(f"Sin match para '{modelo}'")
