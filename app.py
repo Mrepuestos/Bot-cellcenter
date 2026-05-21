@@ -144,7 +144,6 @@ def buscar_compatible_python(todos, modelo_pedido):
 
             compatible_texto = linea.replace('COMPATIBLE:', '').replace('Compatible:', '').strip().lower()
 
-            # Verificar cada modelo listado separado por coma
             for modelo_odoo in compatible_texto.split(','):
                 modelo_odoo = modelo_odoo.strip()
                 if not modelo_odoo:
@@ -152,7 +151,6 @@ def buscar_compatible_python(todos, modelo_pedido):
 
                 palabras_odoo = modelo_odoo.split()
 
-                # Todas las palabras del modelo pedido deben estar en el modelo de Odoo
                 if all(p in palabras_odoo for p in palabras_modelo):
                     print(f"Compatible Python: {producto['name']} | modelo_odoo='{modelo_odoo}' | pedido='{modelo_pedido}'")
                     producto_copia = dict(producto)
@@ -181,7 +179,6 @@ def consultar_odoo(mensaje):
         )
         print(f"Total productos en Odoo: {len(todos)}")
 
-        # Catálogo solo con nombre y stock para Claude (sin compatible_con)
         catalogo = []
         for p in todos:
             catalogo.append({
@@ -201,14 +198,15 @@ Catálogo completo:
 {catalogo_json}
 
 REGLAS:
-1. Identifica qué producto(s) busca el cliente comparando con el campo "nombre". Permite errores tipográficos menores (ej: "samsug" = "samsung", "infinix 50 pro plus" = "Infinix HOT 50 PRO PLUS").
-2. Si el cliente pide varios modelos, devuelve uno por cada modelo.
-3. Devuelve el producto aunque su stock sea 0.
-4. Si no encuentras ninguna coincidencia por nombre, devuelve "encontrados": [].
-5. NO inventes productos. Solo devuelve lo que está en el catálogo.
+1. Busca coincidencia entre lo que pide el cliente y el campo "nombre". 
+2. Permite errores tipográficos y variaciones: "remi"="redmi", "samsug"="samsung", "9 a"="9A", letras faltantes o duplicadas.
+3. IMPORTANTE: La coincidencia debe ser EXACTA en el modelo. "Hot 30" NO es igual a "Hot 30i" ni "Hot 30 PLAY" — son modelos distintos con sufijos diferentes. Solo devuelve un producto si el modelo pedido coincide completamente con el nombre, sin sufijos extra.
+4. Si el cliente pide varios modelos, devuelve uno por cada modelo.
+5. Devuelve el producto aunque su stock sea 0.
+6. Si no hay coincidencia exacta por nombre, devuelve "encontrados": []. NO devuelvas productos similares.
 
 Responde ÚNICAMENTE con este JSON sin texto adicional ni markdown:
-{{"encontrados": [{{"id": 123, "nombre": "nombre exacto", "stock": 5, "precio_usd": 12.0, "modelo_pedido": "samsung a03"}}]}}"""
+{{"encontrados": [{{"id": 123, "nombre": "nombre exacto", "stock": 5, "precio_usd": 12.0, "modelo_pedido": "redmi 9a"}}]}}"""
 
         respuesta = client.messages.create(
             model="claude-haiku-4-5-20251001",
@@ -231,8 +229,6 @@ Responde ÚNICAMENTE con este JSON sin texto adicional ni markdown:
 
         if not encontrados:
             print("Claude no encontró productos por nombre, buscando compatibles...")
-            # Si Claude no encontró nada, buscar compatibles en Python
-            # Intentar con el mensaje completo
             compatible = buscar_compatible_python(todos, mensaje)
             if compatible:
                 productos_compatibles.append(compatible)
@@ -248,20 +244,17 @@ Responde ÚNICAMENTE con este JSON sin texto adicional ni markdown:
             modelo_pedido = item.get("modelo_pedido", item.get("nombre", ""))
 
             if stock > 0:
-                # Tiene stock, lo agregamos normal
                 producto_copia = dict(producto_odoo)
                 producto_copia['_referencia'] = modelo_pedido
                 productos_normales.append(producto_copia)
                 print(f"Encontrado: {producto_odoo['name']} | Stock: {stock}")
             else:
-                # Sin stock, buscar compatible en Python
                 print(f"Sin stock: {producto_odoo['name']} | Buscando compatible para '{modelo_pedido}'...")
                 compatible = buscar_compatible_python(todos, modelo_pedido)
                 if compatible:
                     compatible['_referencia'] = modelo_pedido
                     productos_compatibles.append(compatible)
                 else:
-                    # No hay compatible, mostrar como sin stock
                     producto_copia = dict(producto_odoo)
                     producto_copia['_referencia'] = modelo_pedido
                     productos_normales.append(producto_copia)
