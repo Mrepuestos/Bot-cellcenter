@@ -152,10 +152,6 @@ def guardar_historial(numero, historial):
 # ── Llamado 1: Claude interpreta el mensaje ───────────────────────────────────
 
 def extraer_modelos_con_claude(mensaje):
-    """
-    Claude solo extrae qué modelos de celular pide el cliente.
-    No busca en catálogo, no sugiere nada. Solo interpreta.
-    """
     mensaje_norm = normalizar_texto(mensaje)
 
     prompt = f"""Eres un extractor de modelos de celulares. Tu única tarea es identificar qué modelos de celular menciona el cliente.
@@ -168,7 +164,7 @@ REGLAS:
 - NO incluyas palabras como "pantalla", "precio", "tienes", saludos, etc.
 - NO inventes modelos. Solo extrae lo que el cliente escribió.
 - Si el mensaje no menciona ningún modelo de celular específico, devuelve lista vacía.
-- Ejemplos: "samsung a03 core", "redmi 9a", "tecno pop 7", "infinix hot 30i"
+- Ejemplos de modelos: "samsung a03 core", "redmi 9a", "tecno pop 7", "infinix hot 30i"
 
 Responde ÚNICAMENTE con este JSON sin texto adicional ni markdown:
 {{"modelos": ["modelo1", "modelo2"]}}"""
@@ -192,35 +188,41 @@ Responde ÚNICAMENTE con este JSON sin texto adicional ni markdown:
         return []
 
 
-# ── Python busca en Odoo ──────────────────────────────────────────────────────
-
-def calcular_score_producto(palabras_clave, nombre_producto):
-    nombre_norm = normalizar_texto(nombre_producto)
-    palabras_nombre = nombre_norm.split()
-
-    if not all(p in palabras_nombre for p in palabras_clave):
-        return 0
-
-    coincidencias = sum(1 for p in palabras_clave if p in palabras_nombre)
-    diferencia = len(palabras_nombre) - len(palabras_clave)
-    bonus = max(0, 3 - diferencia)
-    return coincidencias + bonus
-
+# ── Python busca en Odoo (estricto) ──────────────────────────────────────────
 
 def buscar_producto_python(todos, modelo):
+    """
+    Busca producto por nombre. TODAS las palabras del modelo pedido
+    deben estar en el nombre del producto. Score mínimo alto para
+    evitar falsos positivos.
+    """
     palabras_clave = [p for p in normalizar_texto(modelo).split() if len(p) > 1]
     if not palabras_clave:
         return None
 
     mejores = []
     for producto in todos:
-        score = calcular_score_producto(palabras_clave, producto['name'])
-        if score > 0:
+        nombre_norm = normalizar_texto(producto['name'])
+        palabras_nombre = nombre_norm.split()
+
+        # TODAS las palabras clave deben estar en el nombre
+        if not all(p in palabras_nombre for p in palabras_clave):
+            continue
+
+        coincidencias = sum(1 for p in palabras_clave if p in palabras_nombre)
+        diferencia = len(palabras_nombre) - len(palabras_clave)
+        bonus = max(0, 3 - diferencia)
+        score = coincidencias + bonus
+
+        # Score mínimo: debe coincidir todas las palabras clave + bonus
+        score_minimo = len(palabras_clave) + 1
+        if score >= score_minimo:
             producto_copia = dict(producto)
             producto_copia['_score'] = score
             mejores.append(producto_copia)
 
     if not mejores:
+        print(f"Sin match para '{modelo}'")
         return None
 
     mejores.sort(key=lambda x: x['_score'], reverse=True)
@@ -230,6 +232,11 @@ def buscar_producto_python(todos, modelo):
 
 
 def buscar_compatible_python(todos, modelo):
+    """
+    Busca en notas internas de Odoo si algún producto tiene
+    el modelo escrito en su campo COMPATIBLE.
+    Solo retorna productos con stock > 0.
+    """
     palabras_clave = [p for p in normalizar_texto(modelo).split() if len(p) > 1]
     if not palabras_clave:
         return None
@@ -281,7 +288,6 @@ def consultar_odoo(mensaje):
         )
         print(f"Total productos en Odoo: {len(todos)}")
 
-        # Llamado 1: Claude extrae los modelos del mensaje
         modelos = extraer_modelos_con_claude(mensaje)
 
         if not modelos:
@@ -294,7 +300,6 @@ def consultar_odoo(mensaje):
         for modelo in modelos:
             print(f"Buscando en Odoo: '{modelo}'")
 
-            # Python busca el producto por nombre (estricto)
             producto = buscar_producto_python(todos, modelo)
 
             if producto:
