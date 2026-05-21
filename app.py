@@ -87,8 +87,8 @@ def normalizar_texto(texto):
     texto = texto.lower().strip()
     # Solo separar cuando hay 2+ letras pegadas a números
     # "note12" → "note 12", "a22" queda "a22"
-    texto = re.sub(r'([a-zA-Z]{2,})(\d)', r'\1 \2', texto)
-    texto = re.sub(r'(\d)([a-zA-Z]{2,})', r'\1 \2', texto)
+    texto = re.sub(r'([a-zA-Z]{3,})(\d)', r'\1 \2', texto)
+    texto = re.sub(r'(\d)([a-zA-Z]{3,})', r'\1 \2', texto)
     for error, correcto in CORRECCIONES_MARCAS.items():
         texto = re.sub(r'\b' + re.escape(error) + r'\b', correcto, texto)
     return texto
