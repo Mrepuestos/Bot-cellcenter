@@ -10,9 +10,15 @@ from datetime import datetime
 import pytz
 from supabase import create_client
 
+# ── NUEVO: Módulo de pagos ────────────────────────────────────────────────────
+from pagos_extractor import procesar_imagen_pago, inicializar_db
+
 app = Flask(__name__)
 
 BOT_START_TIME = time.time()
+
+# ── NUEVO: ID del grupo de pagos ──────────────────────────────────────────────
+GRUPO_PAGOS_ID = os.environ.get("GRUPO_PAGOS_ID", "")  # ← Pon el ID de tu grupo aquí o en Render como variable de entorno
 
 NUMEROS_AUTORIZADOS = [
     "584149202844",
@@ -191,13 +197,6 @@ Responde ÚNICAMENTE con este JSON sin texto adicional ni markdown:
 # ── Python busca en Odoo (estricto) ──────────────────────────────────────────
 
 def buscar_producto_python(todos, modelo):
-    """
-    Busca producto por nombre.
-    - TODAS las palabras del modelo pedido deben estar en el nombre.
-    - El nombre del producto puede tener como máximo 1 palabra extra
-      que el cliente no mencionó (para incluir la marca si falta).
-    - Así 'hot 30' NO matchea 'hot 30 play' (2 palabras extra).
-    """
     palabras_clave = [p for p in normalizar_texto(modelo).split() if len(p) > 1]
     if not palabras_clave:
         return None
@@ -207,11 +206,9 @@ def buscar_producto_python(todos, modelo):
         nombre_norm = normalizar_texto(producto['name'])
         palabras_nombre = nombre_norm.split()
 
-        # TODAS las palabras clave deben estar en el nombre
         if not all(p in palabras_nombre for p in palabras_clave):
             continue
 
-        # El nombre no puede tener más de 1 palabra extra que el cliente no mencionó
         palabras_extra = len(palabras_nombre) - len(palabras_clave)
         if palabras_extra > 1:
             continue
@@ -231,11 +228,6 @@ def buscar_producto_python(todos, modelo):
 
 
 def buscar_compatible_python(todos, modelo):
-    """
-    Busca en notas internas de Odoo si algún producto tiene
-    el modelo escrito en su campo COMPATIBLE.
-    Solo retorna productos con stock > 0.
-    """
     palabras_clave = [p for p in normalizar_texto(modelo).split() if len(p) > 1]
     if not palabras_clave:
         return None
@@ -330,7 +322,8 @@ def consultar_odoo(mensaje):
         print(f"Error consultando Odoo: {e}")
         return None, None
 
-        # ── Mensajería y asesores ─────────────────────────────────────────────────────
+
+# ── Mensajería y asesores ─────────────────────────────────────────────────────
 
 def send_whapi_message(to: str, text: str):
     url = f"{WHAPI_API_URL}/messages/text"
@@ -396,6 +389,9 @@ Responde siempre corto y directo. Muestra el nombre exacto del producto como apa
 
 client = anthropic.Anthropic()
 
+# ── NUEVO: Inicializar DB de pagos al arrancar ────────────────────────────────
+inicializar_db()
+
 
 # ── Webhook ───────────────────────────────────────────────────────────────────
 
@@ -408,6 +404,18 @@ def webhook():
         for msg in messages_list:
             if msg.get("from_me", False):
                 continue
+
+            chat_id = msg.get("chat_id", "") or msg.get("chatId", "") or ""
+
+            # ── NUEVO: Capturar imágenes del grupo de pagos ───────────────────
+            if (chat_id == GRUPO_PAGOS_ID
+                    and msg.get("type") == "image"
+                    and GRUPO_PAGOS_ID):
+                print(f"📥 Imagen de pago recibida de {msg.get('from_name', msg.get('from', ''))}")
+                procesar_imagen_pago(msg)
+                continue
+            # ─────────────────────────────────────────────────────────────────
+
             if msg.get("type", "") != "text":
                 continue
 
@@ -423,7 +431,6 @@ def webhook():
             if not from_number:
                 continue
 
-            chat_id = msg.get("chat_id", "") or msg.get("chatId", "") or ""
             if "@g.us" in from_number or "@g.us" in chat_id:
                 print("Mensaje de grupo ignorado")
                 continue
