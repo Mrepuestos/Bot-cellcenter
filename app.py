@@ -45,6 +45,16 @@ stock_bajo_pendiente = {}
 
 PALABRAS_SI = ["si","sí","yes","claro","dale","ok","okay","quiero","aparta","reserva","separa","confirmado","afirmativo","me interesa","la quiero"]
 
+PALABRAS_IGNORAR = {
+    "de","el","la","los","las","un","una","para","del","con","por","que","y","o","a","en","al","lo","le","se","su","sus","es","son",
+    "tienes","tienen","hay","tengo","tiene","dame","dime","quiero","quieres","puedes","puede","necesito",
+    "pantalla","precio","cuanto","cuánto","stock","disponibles","disponible","cuales","hola","buenas","buenos",
+    "dias","día","dia","tardes","noches","saludos","favor","porfavor","porfa","gracias","please",
+    "mano","hermano","brother","bro","amigo","chamo","pana","jefe","señor","señora","maestro","socio","papi","mami",
+    "me","mi","mis","tu","tus","nos","ese","esa","esto","esta","aqui","cuando","como","donde",
+    "mas","más","muy","bien","mal","solo","también","tampoco","d","q","x","k","tendrás","podria","podría"
+}
+
 CORRECCIONES_MARCAS = {
     "remi": "redmi",
     "samsug": "samsung",
@@ -72,13 +82,11 @@ CORRECCIONES_MARCAS = {
 
 # ── Utilidades generales ──────────────────────────────────────────────────────
 
-def normalizar_mensaje(texto):
+def normalizar_texto(texto):
     """Corrige typos de marcas y separa letras pegadas a números"""
     texto = texto.lower().strip()
-    # Separar letras pegadas a números: "pop7" → "pop 7", "9a" → "9 a"
     texto = re.sub(r'([a-zA-Z])(\d)', r'\1 \2', texto)
     texto = re.sub(r'(\d)([a-zA-Z])', r'\1 \2', texto)
-    # Corregir marcas conocidas con límites de palabra
     for error, correcto in CORRECCIONES_MARCAS.items():
         texto = re.sub(r'\b' + re.escape(error) + r'\b', correcto, texto)
     return texto
@@ -152,21 +160,68 @@ def guardar_historial(numero, historial):
         print(f"Error guardando historial: {e}")
 
 
-# ── Búsqueda de compatibles en Python (sin Claude) ───────────────────────────
+# ── Búsqueda 100% en Python ───────────────────────────────────────────────────
 
-def buscar_compatible_python(todos, modelo_pedido):
-    """
-    Busca en Python si algún producto tiene el modelo_pedido
-    escrito literalmente en su campo compatible_con.
-    Solo retorna productos con stock > 0.
-    """
-    modelo_normalizado = normalizar_mensaje(modelo_pedido)
-    palabras_modelo = [p for p in modelo_normalizado.split() if len(p) > 1]
+def extraer_palabras_clave(texto):
+    """Extrae palabras relevantes del mensaje ignorando palabras comunes"""
+    normalizado = normalizar_texto(texto)
+    palabras = [p for p in normalizado.split() if p not in PALABRAS_IGNORAR and len(p) > 1]
+    return palabras, normalizado
 
-    if not palabras_modelo:
+
+def calcular_score_producto(palabras_clave, nombre_producto):
+    """
+    Calcula qué tan bien coincide el nombre del producto con las palabras clave.
+    Retorna score >= 0. Solo considera coincidencia si TODAS las palabras clave
+    están en el nombre del producto.
+    """
+    nombre_norm = normalizar_texto(nombre_producto)
+    palabras_nombre = nombre_norm.split()
+
+    # Todas las palabras clave deben estar en el nombre
+    if not all(p in palabras_nombre for p in palabras_clave):
+        return 0
+
+    # Score base: cantidad de palabras que coinciden
+    coincidencias = sum(1 for p in palabras_clave if p in palabras_nombre)
+
+    # Bonus si el número de palabras es similar (evita matches demasiado generales)
+    diferencia = len(palabras_nombre) - len(palabras_clave)
+    bonus = max(0, 3 - diferencia)
+
+    return coincidencias + bonus
+
+
+def buscar_producto_python(todos, palabras_clave):
+    """Busca el mejor producto por nombre usando scoring estricto"""
+    if not palabras_clave:
         return None
 
-    print(f"Buscando compatible para '{modelo_pedido}' → normalizado: '{modelo_normalizado}' → palabras: {palabras_modelo}")
+    mejores = []
+    for producto in todos:
+        score = calcular_score_producto(palabras_clave, producto['name'])
+        if score > 0:
+            producto_copia = dict(producto)
+            producto_copia['_score'] = score
+            mejores.append(producto_copia)
+
+    if not mejores:
+        return None
+
+    mejores.sort(key=lambda x: x['_score'], reverse=True)
+    mejor = mejores[0]
+    print(f"Mejor match: {mejor['name']} | Score: {mejor['_score']}")
+    return mejor
+
+
+def buscar_compatible_python(todos, palabras_clave):
+    """
+    Busca en Python si algún producto tiene las palabras clave
+    escritas en su campo COMPATIBLE de notas internas.
+    Solo retorna productos con stock > 0.
+    """
+    if not palabras_clave:
+        return None
 
     for producto in todos:
         if int(producto['qty_available']) <= 0:
@@ -183,28 +238,26 @@ def buscar_compatible_python(todos, modelo_pedido):
             compatible_texto = linea.replace('COMPATIBLE:', '').replace('Compatible:', '').strip().lower()
 
             for modelo_odoo in compatible_texto.split(','):
-                modelo_odoo = modelo_odoo.strip()
-                if not modelo_odoo:
-                    continue
-
-                # Normalizar el modelo de Odoo también
-                modelo_odoo_norm = normalizar_mensaje(modelo_odoo)
+                modelo_odoo_norm = normalizar_texto(modelo_odoo.strip())
                 palabras_odoo = modelo_odoo_norm.split()
 
-                # TODAS las palabras del cliente deben estar en el modelo de Odoo
-                # como palabras exactas, no substrings
-                if all(p in palabras_odoo for p in palabras_modelo):
-                    print(f"Compatible Python: {producto['name']} | modelo_odoo='{modelo_odoo}' | pedido='{modelo_pedido}'")
+                if not palabras_odoo:
+                    continue
+
+                # TODAS las palabras clave deben estar como palabras exactas en el modelo
+                if all(p in palabras_odoo for p in palabras_clave):
+                    print(f"Compatible Python: {producto['name']} | modelo='{modelo_odoo.strip()}' | palabras={palabras_clave}")
                     producto_copia = dict(producto)
-                    producto_copia['_compatible_con'] = modelo_pedido
+                    producto_copia['_compatible_con'] = modelo_odoo.strip()
                     return producto_copia
 
     return None
 
 
-# ── Búsqueda principal con Claude + compatibles en Python ────────────────────
-
 def consultar_odoo(mensaje):
+    """
+    Búsqueda 100% en Python. Claude no interviene en el inventario.
+    """
     try:
         common = xmlrpc.client.ServerProxy(f"{ODOO_URL}/xmlrpc/2/common")
         uid = common.authenticate(ODOO_DB, ODOO_USER, ODOO_API_KEY, {})
@@ -221,101 +274,48 @@ def consultar_odoo(mensaje):
         )
         print(f"Total productos en Odoo: {len(todos)}")
 
-        # Normalizar mensaje antes de todo
-        mensaje_normalizado = normalizar_mensaje(mensaje)
-        print(f"Mensaje normalizado: '{mensaje_normalizado}'")
+        palabras_clave, mensaje_norm = extraer_palabras_clave(mensaje)
+        print(f"Mensaje normalizado: '{mensaje_norm}' | Palabras clave: {palabras_clave}")
 
-        catalogo = []
-        for p in todos:
-            catalogo.append({
-                "id": p['id'],
-                "nombre": p['name'],
-                "stock": int(p['qty_available']),
-                "precio_usd": p['list_price']
-            })
+        if not palabras_clave:
+            return None, None
 
-        catalogo_json = json.dumps(catalogo, ensure_ascii=False)
-
-        prompt = f"""Eres un buscador de productos para una tienda de pantallas de celulares en Venezuela.
-
-Mensaje del cliente (ya normalizado): "{mensaje_normalizado}"
-
-Catálogo completo:
-{catalogo_json}
-
-REGLAS:
-1. Busca coincidencia entre lo que pide el cliente y el campo "nombre".
-2. Permite errores tipográficos menores y variaciones de mayúsculas/minúsculas.
-3. IMPORTANTE: La coincidencia debe ser exacta en el modelo completo. "Hot 30" NO es igual a "Hot 30i" ni "Hot 30 PLAY" — son modelos distintos. Solo devuelve un producto si el modelo pedido coincide completamente, sin sufijos extra no mencionados por el cliente.
-4. Si el cliente pide varios modelos, devuelve uno por cada modelo.
-5. Devuelve el producto aunque su stock sea 0.
-6. Si no hay coincidencia clara por nombre, devuelve "encontrados": []. NO devuelvas productos similares.
-
-Responde ÚNICAMENTE con este JSON sin texto adicional ni markdown:
-{{"encontrados": [{{"id": 123, "nombre": "nombre exacto", "stock": 5, "precio_usd": 12.0, "modelo_pedido": "redmi 9a"}}]}}"""
-
-        respuesta = client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=1000,
-            messages=[{"role": "user", "content": prompt}]
-        )
-
-        texto = respuesta.content[0].text.strip()
-        texto = re.sub(r'^```json\s*', '', texto)
-        texto = re.sub(r'^```\s*', '', texto)
-        texto = re.sub(r'\s*```$', '', texto)
-        print(f"Claude búsqueda: {texto}")
-
-        resultado_claude = json.loads(texto)
-        encontrados = resultado_claude.get("encontrados", [])
-
-        odoo_por_id = {p['id']: p for p in todos}
         productos_normales = []
         productos_compatibles = []
 
-        if not encontrados:
-            print("Claude no encontró productos por nombre, buscando compatibles...")
-            compatible = buscar_compatible_python(todos, mensaje_normalizado)
-            if compatible:
-                productos_compatibles.append(compatible)
-            return (None, productos_compatibles if productos_compatibles else None)
+        # Buscar producto por nombre
+        producto = buscar_producto_python(todos, palabras_clave)
 
-        for item in encontrados:
-            pid = item.get("id")
-            producto_odoo = odoo_por_id.get(pid)
-            if not producto_odoo:
-                continue
-
-            stock = int(producto_odoo['qty_available'])
-            modelo_pedido = item.get("modelo_pedido", item.get("nombre", ""))
-
+        if producto:
+            stock = int(producto['qty_available'])
             if stock > 0:
-                producto_copia = dict(producto_odoo)
-                producto_copia['_referencia'] = modelo_pedido
-                productos_normales.append(producto_copia)
-                print(f"Encontrado: {producto_odoo['name']} | Stock: {stock}")
+                # Tiene stock, listo
+                productos_normales.append(producto)
+                print(f"Encontrado con stock: {producto['name']} | Stock: {stock}")
             else:
-                print(f"Sin stock: {producto_odoo['name']} | Buscando compatible para '{modelo_pedido}'...")
-                compatible = buscar_compatible_python(todos, modelo_pedido)
+                # Sin stock, buscar compatible
+                print(f"Sin stock: {producto['name']} | Buscando compatible...")
+                compatible = buscar_compatible_python(todos, palabras_clave)
                 if compatible:
-                    compatible['_referencia'] = modelo_pedido
                     productos_compatibles.append(compatible)
                 else:
-                    producto_copia = dict(producto_odoo)
-                    producto_copia['_referencia'] = modelo_pedido
-                    productos_normales.append(producto_copia)
+                    # Mostrar como sin stock
+                    productos_normales.append(producto)
+        else:
+            # No encontrado por nombre, buscar en compatibles
+            print("No encontrado por nombre, buscando en compatibles...")
+            compatible = buscar_compatible_python(todos, palabras_clave)
+            if compatible:
+                productos_compatibles.append(compatible)
 
         return (productos_normales if productos_normales else None,
                 productos_compatibles if productos_compatibles else None)
 
-    except json.JSONDecodeError as e:
-        print(f"Error parseando JSON de Claude búsqueda: {e}")
-        return None, None
     except Exception as e:
         print(f"Error consultando Odoo: {e}")
         return None, None
 
-        # ── Mensajería y asesores ─────────────────────────────────────────────────────
+# ── Mensajería y asesores ─────────────────────────────────────────────────────
 
 def send_whapi_message(to: str, text: str):
     url = f"{WHAPI_API_URL}/messages/text"
