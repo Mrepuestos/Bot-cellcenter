@@ -45,16 +45,6 @@ stock_bajo_pendiente = {}
 
 PALABRAS_SI = ["si","sí","yes","claro","dale","ok","okay","quiero","aparta","reserva","separa","confirmado","afirmativo","me interesa","la quiero"]
 
-PALABRAS_IGNORAR = {
-    "de","el","la","los","las","un","una","para","del","con","por","que","y","o","a","en","al","lo","le","se","su","sus","es","son",
-    "tienes","tienen","hay","tengo","tiene","dame","dime","quiero","quieres","puedes","puede","necesito",
-    "pantalla","precio","cuanto","cuánto","stock","disponibles","disponible","cuales","hola","buenas","buenos",
-    "dias","día","dia","tardes","noches","saludos","favor","porfavor","porfa","gracias","please",
-    "mano","hermano","brother","bro","amigo","chamo","pana","jefe","señor","señora","maestro","socio","papi","mami",
-    "me","mi","mis","tu","tus","nos","ese","esa","esto","esta","aqui","cuando","como","donde",
-    "mas","más","muy","bien","mal","solo","también","tampoco","d","q","x","k","tendrás","podria","podría"
-}
-
 CORRECCIONES_MARCAS = {
     "remi": "redmi",
     "samsug": "samsung",
@@ -83,7 +73,6 @@ CORRECCIONES_MARCAS = {
 # ── Utilidades generales ──────────────────────────────────────────────────────
 
 def normalizar_texto(texto):
-    """Corrige typos de marcas y separa letras pegadas a números"""
     texto = texto.lower().strip()
     texto = re.sub(r'([a-zA-Z])(\d)', r'\1 \2', texto)
     texto = re.sub(r'(\d)([a-zA-Z])', r'\1 \2', texto)
@@ -160,40 +149,66 @@ def guardar_historial(numero, historial):
         print(f"Error guardando historial: {e}")
 
 
-# ── Búsqueda 100% en Python ───────────────────────────────────────────────────
+# ── Llamado 1: Claude interpreta el mensaje ───────────────────────────────────
 
-def extraer_palabras_clave(texto):
-    """Extrae palabras relevantes del mensaje ignorando palabras comunes"""
-    normalizado = normalizar_texto(texto)
-    palabras = [p for p in normalizado.split() if p not in PALABRAS_IGNORAR and len(p) > 1]
-    return palabras, normalizado
+def extraer_modelos_con_claude(mensaje):
+    """
+    Claude solo extrae qué modelos de celular pide el cliente.
+    No busca en catálogo, no sugiere nada. Solo interpreta.
+    """
+    mensaje_norm = normalizar_texto(mensaje)
 
+    prompt = f"""Eres un extractor de modelos de celulares. Tu única tarea es identificar qué modelos de celular menciona el cliente.
+
+Mensaje del cliente: "{mensaje_norm}"
+
+REGLAS:
+- Extrae solo los modelos de celular mencionados, corregidos y normalizados.
+- Si el cliente menciona varios modelos, extráelos todos.
+- NO incluyas palabras como "pantalla", "precio", "tienes", saludos, etc.
+- NO inventes modelos. Solo extrae lo que el cliente escribió.
+- Si el mensaje no menciona ningún modelo de celular específico, devuelve lista vacía.
+- Ejemplos: "samsung a03 core", "redmi 9a", "tecno pop 7", "infinix hot 30i"
+
+Responde ÚNICAMENTE con este JSON sin texto adicional ni markdown:
+{{"modelos": ["modelo1", "modelo2"]}}"""
+
+    try:
+        respuesta = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=200,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        texto = respuesta.content[0].text.strip()
+        texto = re.sub(r'^```json\s*', '', texto)
+        texto = re.sub(r'^```\s*', '', texto)
+        texto = re.sub(r'\s*```$', '', texto)
+        resultado = json.loads(texto)
+        modelos = resultado.get("modelos", [])
+        print(f"Claude extrajo modelos: {modelos}")
+        return modelos
+    except Exception as e:
+        print(f"Error extrayendo modelos: {e}")
+        return []
+
+
+# ── Python busca en Odoo ──────────────────────────────────────────────────────
 
 def calcular_score_producto(palabras_clave, nombre_producto):
-    """
-    Calcula qué tan bien coincide el nombre del producto con las palabras clave.
-    Retorna score >= 0. Solo considera coincidencia si TODAS las palabras clave
-    están en el nombre del producto.
-    """
     nombre_norm = normalizar_texto(nombre_producto)
     palabras_nombre = nombre_norm.split()
 
-    # Todas las palabras clave deben estar en el nombre
     if not all(p in palabras_nombre for p in palabras_clave):
         return 0
 
-    # Score base: cantidad de palabras que coinciden
     coincidencias = sum(1 for p in palabras_clave if p in palabras_nombre)
-
-    # Bonus si el número de palabras es similar (evita matches demasiado generales)
     diferencia = len(palabras_nombre) - len(palabras_clave)
     bonus = max(0, 3 - diferencia)
-
     return coincidencias + bonus
 
 
-def buscar_producto_python(todos, palabras_clave):
-    """Busca el mejor producto por nombre usando scoring estricto"""
+def buscar_producto_python(todos, modelo):
+    palabras_clave = [p for p in normalizar_texto(modelo).split() if len(p) > 1]
     if not palabras_clave:
         return None
 
@@ -210,16 +225,12 @@ def buscar_producto_python(todos, palabras_clave):
 
     mejores.sort(key=lambda x: x['_score'], reverse=True)
     mejor = mejores[0]
-    print(f"Mejor match: {mejor['name']} | Score: {mejor['_score']}")
+    print(f"Mejor match para '{modelo}': {mejor['name']} | Score: {mejor['_score']}")
     return mejor
 
 
-def buscar_compatible_python(todos, palabras_clave):
-    """
-    Busca en Python si algún producto tiene las palabras clave
-    escritas en su campo COMPATIBLE de notas internas.
-    Solo retorna productos con stock > 0.
-    """
+def buscar_compatible_python(todos, modelo):
+    palabras_clave = [p for p in normalizar_texto(modelo).split() if len(p) > 1]
     if not palabras_clave:
         return None
 
@@ -244,9 +255,8 @@ def buscar_compatible_python(todos, palabras_clave):
                 if not palabras_odoo:
                     continue
 
-                # TODAS las palabras clave deben estar como palabras exactas en el modelo
                 if all(p in palabras_odoo for p in palabras_clave):
-                    print(f"Compatible Python: {producto['name']} | modelo='{modelo_odoo.strip()}' | palabras={palabras_clave}")
+                    print(f"Compatible: {producto['name']} | modelo='{modelo_odoo.strip()}'")
                     producto_copia = dict(producto)
                     producto_copia['_compatible_con'] = modelo_odoo.strip()
                     return producto_copia
@@ -255,9 +265,6 @@ def buscar_compatible_python(todos, palabras_clave):
 
 
 def consultar_odoo(mensaje):
-    """
-    Búsqueda 100% en Python. Claude no interviene en el inventario.
-    """
     try:
         common = xmlrpc.client.ServerProxy(f"{ODOO_URL}/xmlrpc/2/common")
         uid = common.authenticate(ODOO_DB, ODOO_USER, ODOO_API_KEY, {})
@@ -274,39 +281,43 @@ def consultar_odoo(mensaje):
         )
         print(f"Total productos en Odoo: {len(todos)}")
 
-        palabras_clave, mensaje_norm = extraer_palabras_clave(mensaje)
-        print(f"Mensaje normalizado: '{mensaje_norm}' | Palabras clave: {palabras_clave}")
+        # Llamado 1: Claude extrae los modelos del mensaje
+        modelos = extraer_modelos_con_claude(mensaje)
 
-        if not palabras_clave:
+        if not modelos:
+            print("No se detectaron modelos en el mensaje")
             return None, None
 
         productos_normales = []
         productos_compatibles = []
 
-        # Buscar producto por nombre
-        producto = buscar_producto_python(todos, palabras_clave)
+        for modelo in modelos:
+            print(f"Buscando en Odoo: '{modelo}'")
 
-        if producto:
-            stock = int(producto['qty_available'])
-            if stock > 0:
-                # Tiene stock, listo
-                productos_normales.append(producto)
-                print(f"Encontrado con stock: {producto['name']} | Stock: {stock}")
-            else:
-                # Sin stock, buscar compatible
-                print(f"Sin stock: {producto['name']} | Buscando compatible...")
-                compatible = buscar_compatible_python(todos, palabras_clave)
-                if compatible:
-                    productos_compatibles.append(compatible)
-                else:
-                    # Mostrar como sin stock
+            # Python busca el producto por nombre (estricto)
+            producto = buscar_producto_python(todos, modelo)
+
+            if producto:
+                stock = int(producto['qty_available'])
+                if stock > 0:
+                    producto['_referencia'] = modelo
                     productos_normales.append(producto)
-        else:
-            # No encontrado por nombre, buscar en compatibles
-            print("No encontrado por nombre, buscando en compatibles...")
-            compatible = buscar_compatible_python(todos, palabras_clave)
-            if compatible:
-                productos_compatibles.append(compatible)
+                    print(f"Encontrado con stock: {producto['name']} | Stock: {stock}")
+                else:
+                    print(f"Sin stock: {producto['name']} | Buscando compatible...")
+                    compatible = buscar_compatible_python(todos, modelo)
+                    if compatible:
+                        compatible['_referencia'] = modelo
+                        productos_compatibles.append(compatible)
+                    else:
+                        producto['_referencia'] = modelo
+                        productos_normales.append(producto)
+            else:
+                print(f"No encontrado por nombre: '{modelo}' | Buscando compatible...")
+                compatible = buscar_compatible_python(todos, modelo)
+                if compatible:
+                    compatible['_referencia'] = modelo
+                    productos_compatibles.append(compatible)
 
         return (productos_normales if productos_normales else None,
                 productos_compatibles if productos_compatibles else None)
@@ -315,7 +326,7 @@ def consultar_odoo(mensaje):
         print(f"Error consultando Odoo: {e}")
         return None, None
 
-# ── Mensajería y asesores ─────────────────────────────────────────────────────
+        # ── Mensajería y asesores ─────────────────────────────────────────────────────
 
 def send_whapi_message(to: str, text: str):
     url = f"{WHAPI_API_URL}/messages/text"
