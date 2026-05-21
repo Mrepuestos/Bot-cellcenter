@@ -85,8 +85,10 @@ CORRECCIONES_MARCAS = {
 
 def normalizar_texto(texto):
     texto = texto.lower().strip()
-    texto = re.sub(r'([a-zA-Z])(\d)', r'\1 \2', texto)
-    texto = re.sub(r'(\d)([a-zA-Z])', r'\1 \2', texto)
+    # Solo separar cuando hay 2+ letras pegadas a números
+    # "note12" → "note 12", "a22" queda "a22"
+    texto = re.sub(r'([a-zA-Z]{2,})(\d)', r'\1 \2', texto)
+    texto = re.sub(r'(\d)([a-zA-Z]{2,})', r'\1 \2', texto)
     for error, correcto in CORRECCIONES_MARCAS.items():
         texto = re.sub(r'\b' + re.escape(error) + r'\b', correcto, texto)
     return texto
@@ -160,27 +162,18 @@ def guardar_historial(numero, historial):
         print(f"Error guardando historial: {e}")
 
 
-# ── Extracción de palabras clave en Python (sin Claude) ──────────────────────
+# ── Extracción de palabras clave en Python ────────────────────────────────────
 
 def extraer_palabras_clave(mensaje):
-    """
-    Extrae palabras relevantes del mensaje ignorando
-    palabras comunes. Sin Claude, sin interpretación.
-    """
     normalizado = normalizar_texto(mensaje)
     palabras = [p for p in normalizado.split() if p not in PALABRAS_IGNORAR and len(p) > 1]
     print(f"Mensaje normalizado: '{normalizado}' | Palabras clave: {palabras}")
     return palabras, normalizado
 
 
-# ── Búsqueda exacta en Python ─────────────────────────────────────────────────
+# ── Búsqueda en Python ────────────────────────────────────────────────────────
 
 def buscar_exacto(todos, palabras_clave):
-    """
-    Busca coincidencia exacta: todas las palabras clave
-    deben estar en el nombre del producto y el nombre
-    no puede tener más de 1 palabra extra.
-    """
     if not palabras_clave:
         return []
 
@@ -203,10 +196,6 @@ def buscar_exacto(todos, palabras_clave):
 
 
 def buscar_similares(todos, palabras_clave, max_resultados=5):
-    """
-    Busca productos con al menos UNA palabra en común,
-    ordenados por cantidad de coincidencias.
-    """
     if not palabras_clave:
         return []
 
@@ -242,16 +231,13 @@ def consultar_odoo(mensaje):
         palabras_clave, _ = extraer_palabras_clave(mensaje)
 
         if not palabras_clave:
-            print("No se detectaron palabras clave")
             return None, None
 
-        # Buscar exacto
         encontrados = buscar_exacto(todos, palabras_clave)
 
         if encontrados:
             return encontrados, None
 
-        # Sin match exacto — buscar similares
         print(f"Sin match exacto, buscando similares...")
         similares = buscar_similares(todos, palabras_clave)
         print(f"Similares: {similares}")
@@ -261,7 +247,7 @@ def consultar_odoo(mensaje):
         print(f"Error consultando Odoo: {e}")
         return None, None
 
-# ── Mensajería y asesores ─────────────────────────────────────────────────────
+        # ── Mensajería y asesores ─────────────────────────────────────────────────────
 
 def send_whapi_message(to: str, text: str):
     url = f"{WHAPI_API_URL}/messages/text"
@@ -375,7 +361,6 @@ def webhook():
                     stock_bajo_pendiente.pop(from_number)
 
             productos, similares = consultar_odoo(body)
-            contexto_odoo = ""
             stock_bajo_info = None
 
             if productos:
