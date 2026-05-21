@@ -45,6 +45,17 @@ stock_bajo_pendiente = {}
 
 PALABRAS_SI = ["si","sí","yes","claro","dale","ok","okay","quiero","aparta","reserva","separa","confirmado","afirmativo","me interesa","la quiero"]
 
+PALABRAS_IGNORAR = {
+    "de","el","la","los","las","un","una","para","del","con","por","que","y","o","a","en","al","lo","le","se","su","sus","es","son",
+    "tienes","tienen","hay","tengo","tiene","dame","dime","quiero","quieres","puedes","puede","necesito",
+    "pantalla","precio","cuanto","cuánto","stock","disponibles","disponible","cuales","hola","buenas","buenos",
+    "dias","día","dia","tardes","noches","saludos","favor","porfavor","porfa","gracias","please",
+    "mano","hermano","brother","bro","amigo","chamo","pana","jefe","señor","señora","maestro","socio","papi","mami",
+    "me","mi","mis","tu","tus","nos","ese","esa","esto","esta","aqui","cuando","como","donde",
+    "mas","más","muy","bien","mal","solo","también","tampoco","d","q","x","k","tendrás","podria","podría",
+    "teneis","tenes","tene","tiene","hay","tienen"
+}
+
 CORRECCIONES_MARCAS = {
     "remi": "redmi",
     "samsug": "samsung",
@@ -149,54 +160,31 @@ def guardar_historial(numero, historial):
         print(f"Error guardando historial: {e}")
 
 
-# ── Llamado 1: Claude extrae el modelo del mensaje ───────────────────────────
+# ── Extracción de palabras clave en Python (sin Claude) ──────────────────────
 
-def extraer_modelo_con_claude(mensaje):
-    mensaje_norm = normalizar_texto(mensaje)
-    prompt = f"""Eres un extractor de modelos de celulares. Identifica qué modelo(s) de celular menciona el cliente.
-
-Mensaje: "{mensaje_norm}"
-
-REGLAS:
-- Extrae solo los modelos mencionados, normalizados.
-- NO incluyas palabras como "pantalla", "precio", saludos, etc.
-- NO inventes modelos.
-- Si no hay modelo específico, devuelve lista vacía.
-
-Responde ÚNICAMENTE con JSON:
-{{"modelos": ["modelo1", "modelo2"]}}"""
-
-    try:
-        respuesta = client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=200,
-            messages=[{"role": "user", "content": prompt}]
-        )
-        texto = respuesta.content[0].text.strip()
-        texto = re.sub(r'^```json\s*', '', texto)
-        texto = re.sub(r'^```\s*', '', texto)
-        texto = re.sub(r'\s*```$', '', texto)
-        resultado = json.loads(texto)
-        modelos = resultado.get("modelos", [])
-        print(f"Claude extrajo modelos: {modelos}")
-        return modelos
-    except Exception as e:
-        print(f"Error extrayendo modelos: {e}")
-        return []
+def extraer_palabras_clave(mensaje):
+    """
+    Extrae palabras relevantes del mensaje ignorando
+    palabras comunes. Sin Claude, sin interpretación.
+    """
+    normalizado = normalizar_texto(mensaje)
+    palabras = [p for p in normalizado.split() if p not in PALABRAS_IGNORAR and len(p) > 1]
+    print(f"Mensaje normalizado: '{normalizado}' | Palabras clave: {palabras}")
+    return palabras, normalizado
 
 
 # ── Búsqueda exacta en Python ─────────────────────────────────────────────────
 
-def buscar_exacto(todos, modelo):
+def buscar_exacto(todos, palabras_clave):
     """
-    Busca coincidencia exacta: todas las palabras del modelo pedido
-    deben estar en el nombre del producto y la diferencia de palabras
-    no puede ser mayor a 1.
+    Busca coincidencia exacta: todas las palabras clave
+    deben estar en el nombre del producto y el nombre
+    no puede tener más de 1 palabra extra.
     """
-    palabras_clave = [p for p in normalizar_texto(modelo).split() if len(p) > 1]
     if not palabras_clave:
-        return None
+        return []
 
+    encontrados = []
     for producto in todos:
         nombre_norm = normalizar_texto(producto['name'])
         palabras_nombre = nombre_norm.split()
@@ -208,19 +196,17 @@ def buscar_exacto(todos, modelo):
         if palabras_extra > 1:
             continue
 
+        encontrados.append(producto)
         print(f"Match exacto: {producto['name']}")
-        return producto
 
-    return None
+    return encontrados
 
 
-def buscar_similares(todos, modelo, max_resultados=5):
+def buscar_similares(todos, palabras_clave, max_resultados=5):
     """
-    Busca productos que tengan al menos UNA palabra en común
-    con el modelo pedido, ordenados por cantidad de coincidencias.
-    Para mostrar sugerencias cuando no hay match exacto.
+    Busca productos con al menos UNA palabra en común,
+    ordenados por cantidad de coincidencias.
     """
-    palabras_clave = [p for p in normalizar_texto(modelo).split() if len(p) > 1]
     if not palabras_clave:
         return []
 
@@ -242,7 +228,7 @@ def consultar_odoo(mensaje):
         uid = common.authenticate(ODOO_DB, ODOO_USER, ODOO_API_KEY, {})
         print(f"Odoo UID: {uid}")
         if not uid:
-            return None, None, None
+            return None, None
 
         models = xmlrpc.client.ServerProxy(f"{ODOO_URL}/xmlrpc/2/object")
         todos = models.execute_kw(
@@ -253,38 +239,29 @@ def consultar_odoo(mensaje):
         )
         print(f"Total productos en Odoo: {len(todos)}")
 
-        modelos = extraer_modelo_con_claude(mensaje)
+        palabras_clave, _ = extraer_palabras_clave(mensaje)
 
-        if not modelos:
-            print("No se detectaron modelos")
-            return None, None, None
+        if not palabras_clave:
+            print("No se detectaron palabras clave")
+            return None, None
 
-        productos_encontrados = []
-        sugerencias_por_modelo = {}
+        # Buscar exacto
+        encontrados = buscar_exacto(todos, palabras_clave)
 
-        for modelo in modelos:
-            print(f"Buscando exacto: '{modelo}'")
-            producto = buscar_exacto(todos, modelo)
+        if encontrados:
+            return encontrados, None
 
-            if producto:
-                productos_encontrados.append(producto)
-            else:
-                print(f"Sin match exacto para '{modelo}', buscando similares...")
-                similares = buscar_similares(todos, modelo)
-                sugerencias_por_modelo[modelo] = similares
-                print(f"Similares para '{modelo}': {similares}")
-
-        return (
-            productos_encontrados if productos_encontrados else None,
-            sugerencias_por_modelo if sugerencias_por_modelo else None,
-            todos
-        )
+        # Sin match exacto — buscar similares
+        print(f"Sin match exacto, buscando similares...")
+        similares = buscar_similares(todos, palabras_clave)
+        print(f"Similares: {similares}")
+        return None, similares
 
     except Exception as e:
         print(f"Error consultando Odoo: {e}")
-        return None, None, None
+        return None, None
 
-        # ── Mensajería y asesores ─────────────────────────────────────────────────────
+# ── Mensajería y asesores ─────────────────────────────────────────────────────
 
 def send_whapi_message(to: str, text: str):
     url = f"{WHAPI_API_URL}/messages/text"
@@ -315,6 +292,10 @@ La tienda está actualmente: {estado_tienda}
 REGLA PRINCIPAL: Cuando el inventario muestre productos con stock mayor a 0, SIEMPRE da el precio. NUNCA digas que no está disponible si hay stock. NUNCA preguntes si es para pantalla o celular, asume que siempre es para pantalla.
 
 1. PANTALLAS: Si el inventario muestra productos disponibles, responde con precio en USD y bolívares. No menciones cantidad de stock.
+
+MÚLTIPLES PRODUCTOS: Si el inventario muestra varios productos, responde en lista:
+✅ *Modelo*: $12 USD / Bs. 8,243
+✅ *Modelo*: $13 USD / Bs. 8,856
 
 STOCK 1 o 2: da el precio y avisa que queda muy poco. Varía las frases:
 "Por cierto, este modelo está casi agotado. ¿Lo reservamos?"
@@ -393,7 +374,7 @@ def webhook():
                 else:
                     stock_bajo_pendiente.pop(from_number)
 
-            productos, sugerencias, _ = consultar_odoo(body)
+            productos, similares = consultar_odoo(body)
             contexto_odoo = ""
             stock_bajo_info = None
 
@@ -407,57 +388,69 @@ def webhook():
                     if stock_bajo_info is None and 1 <= stock <= 2:
                         stock_bajo_info = {"producto": nombre, "stock": stock}
 
-            elif sugerencias:
-                # No hubo match exacto — responder directamente sin pasar por Claude
-                for modelo, similares in sugerencias.items():
-                    if similares:
-                        lista = "\n".join(f"• {s}" for s in similares)
-                        reply = (
-                            f"Soy un sistema automatizado 🤖. Para consultar disponibilidad, "
-                            f"escribe la *marca y modelo exacto* sin errores de escritura.\n\n"
-                            f"Los modelos más parecidos que tenemos son:\n{lista}\n\n"
-                            f"Si no ves tu modelo aquí, es porque no lo tenemos disponible."
-                        )
-                    else:
-                        reply = (
-                            f"Soy un sistema automatizado 🤖. Para consultar disponibilidad, "
-                            f"escribe la *marca y modelo exacto* sin errores de escritura.\n\n"
-                            f"No encontré modelos similares a lo que escribiste. "
-                            f"Si no lo tenemos, es posible que no esté disponible."
-                        )
-                    send_whapi_message(from_number, reply)
-                continue
+                historial = cargar_historial(from_number)
+                historial.append({"role": "user", "content": body + contexto_odoo})
+                if len(historial) > 4:
+                    historial = historial[-4:]
+
+                response = client.messages.create(
+                    model="claude-haiku-4-5-20251001",
+                    max_tokens=300,
+                    system=get_system_prompt(),
+                    messages=historial
+                )
+
+                reply = response.content[0].text
+
+                if "DERIVAR_TECNICO" in reply:
+                    notificar_asesor(ASESOR_TECNICO, "celulares o servicio técnico", from_number)
+                    reply = "Un momento, un asesor te atenderá enseguida 👋"
+                elif "DERIVAR_ACCESORIOS" in reply:
+                    notificar_asesor(ASESOR_ACCESORIOS, "accesorios", from_number)
+                    reply = "Un momento, un asesor te atenderá enseguida 👋"
+
+                if stock_bajo_info:
+                    stock_bajo_pendiente[from_number] = stock_bajo_info
+
+                historial.append({"role": "assistant", "content": reply})
+                guardar_historial(from_number, historial)
+                send_whapi_message(from_number, reply)
+
+            elif similares:
+                lista = "\n".join(f"• {s}" for s in similares)
+                reply = (
+                    f"Soy un sistema automatizado 🤖. Para consultar disponibilidad, "
+                    f"escribe la *marca y modelo exacto* sin errores de escritura.\n\n"
+                    f"Los modelos más parecidos que tenemos son:\n{lista}\n\n"
+                    f"Si no ves tu modelo aquí, es porque no lo tenemos disponible."
+                )
+                send_whapi_message(from_number, reply)
 
             else:
-                contexto_odoo = "\n\nNo se encontró el producto en el inventario."
+                historial = cargar_historial(from_number)
+                historial.append({"role": "user", "content": body})
+                if len(historial) > 4:
+                    historial = historial[-4:]
 
-            historial = cargar_historial(from_number)
-            historial.append({"role": "user", "content": body + contexto_odoo})
-            if len(historial) > 4:
-                historial = historial[-4:]
+                response = client.messages.create(
+                    model="claude-haiku-4-5-20251001",
+                    max_tokens=300,
+                    system=get_system_prompt(),
+                    messages=historial
+                )
 
-            response = client.messages.create(
-                model="claude-haiku-4-5-20251001",
-                max_tokens=300,
-                system=get_system_prompt(),
-                messages=historial
-            )
+                reply = response.content[0].text
 
-            reply = response.content[0].text
+                if "DERIVAR_TECNICO" in reply:
+                    notificar_asesor(ASESOR_TECNICO, "celulares o servicio técnico", from_number)
+                    reply = "Un momento, un asesor te atenderá enseguida 👋"
+                elif "DERIVAR_ACCESORIOS" in reply:
+                    notificar_asesor(ASESOR_ACCESORIOS, "accesorios", from_number)
+                    reply = "Un momento, un asesor te atenderá enseguida 👋"
 
-            if "DERIVAR_TECNICO" in reply:
-                notificar_asesor(ASESOR_TECNICO, "celulares o servicio técnico", from_number)
-                reply = "Un momento, un asesor te atenderá enseguida 👋"
-            elif "DERIVAR_ACCESORIOS" in reply:
-                notificar_asesor(ASESOR_ACCESORIOS, "accesorios", from_number)
-                reply = "Un momento, un asesor te atenderá enseguida 👋"
-
-            if stock_bajo_info:
-                stock_bajo_pendiente[from_number] = stock_bajo_info
-
-            historial.append({"role": "assistant", "content": reply})
-            guardar_historial(from_number, historial)
-            send_whapi_message(from_number, reply)
+                historial.append({"role": "assistant", "content": reply})
+                guardar_historial(from_number, historial)
+                send_whapi_message(from_number, reply)
 
         return jsonify({"status": "ok"}), 200
 
