@@ -85,8 +85,6 @@ CORRECCIONES_MARCAS = {
 
 def normalizar_texto(texto):
     texto = texto.lower().strip()
-    # Solo separar cuando hay 2+ letras pegadas a números
-    # "note12" → "note 12", "a22" queda "a22"
     texto = re.sub(r'([a-zA-Z]{3,})(\d)', r'\1 \2', texto)
     texto = re.sub(r'(\d)([a-zA-Z]{3,})', r'\1 \2', texto)
     for error, correcto in CORRECCIONES_MARCAS.items():
@@ -162,7 +160,7 @@ def guardar_historial(numero, historial):
         print(f"Error guardando historial: {e}")
 
 
-# ── Extracción de palabras clave en Python ────────────────────────────────────
+# ── Extracción de palabras clave ──────────────────────────────────────────────
 
 def extraer_palabras_clave(mensaje):
     normalizado = normalizar_texto(mensaje)
@@ -171,7 +169,7 @@ def extraer_palabras_clave(mensaje):
     return palabras, normalizado
 
 
-# ── Búsqueda en Python ────────────────────────────────────────────────────────
+# ── Búsqueda exacta ───────────────────────────────────────────────────────────
 
 def buscar_exacto(todos, palabras_clave):
     if not palabras_clave:
@@ -195,21 +193,111 @@ def buscar_exacto(todos, palabras_clave):
     return encontrados
 
 
+# ── Búsqueda de compatible exacto ─────────────────────────────────────────────
+
+def buscar_compatible_exacto(todos, palabras_clave):
+    """
+    Busca si algún producto tiene en sus notas internas
+    una compatibilidad que coincida exactamente con las palabras clave.
+    Retorna el producto independientemente del stock.
+    """
+    if not palabras_clave:
+        return None
+
+    for producto in todos:
+        notas = limpiar_html(producto.get('description') or "")
+        if 'COMPATIBLE:' not in notas.upper():
+            continue
+
+        for linea in notas.split('\n'):
+            if 'COMPATIBLE:' not in linea.upper():
+                continue
+
+            compatible_texto = linea.replace('COMPATIBLE:', '').replace('Compatible:', '').strip().lower()
+
+            for modelo_odoo in compatible_texto.split(','):
+                modelo_norm = normalizar_texto(modelo_odoo.strip())
+                palabras_modelo = modelo_norm.split()
+
+                if not palabras_modelo:
+                    continue
+
+                # Todas las palabras clave deben estar en el modelo compatible
+                if all(p in palabras_modelo for p in palabras_clave):
+                    print(f"Compatible exacto: {producto['name']} | modelo='{modelo_odoo.strip()}'")
+                    producto_copia = dict(producto)
+                    producto_copia['_compatible_con'] = modelo_odoo.strip()
+                    return producto_copia
+
+    return None
+
+
+# ── Búsqueda de similares (productos + compatibles) ───────────────────────────
+
 def buscar_similares(todos, palabras_clave, max_resultados=5):
+    """
+    Busca productos similares por nombre Y por compatibilidades.
+    Retorna lista de tuplas: (nombre_display, stock, es_compatible, modelo_compatible)
+    """
     if not palabras_clave:
         return []
 
     similares = []
+    nombres_vistos = set()
+
+    # 1. Buscar en nombres de productos
     for producto in todos:
         nombre_norm = normalizar_texto(producto['name'])
         palabras_nombre = nombre_norm.split()
         coincidencias = sum(1 for p in palabras_clave if p in palabras_nombre)
         if coincidencias > 0:
-            similares.append((coincidencias, producto['name'], int(producto['qty_available'])))
+            if producto['name'] not in nombres_vistos:
+                nombres_vistos.add(producto['name'])
+                similares.append((
+                    coincidencias,
+                    producto['name'],
+                    int(producto['qty_available']),
+                    False,
+                    ""
+                ))
+
+    # 2. Buscar en notas internas (compatibilidades)
+    for producto in todos:
+        notas = limpiar_html(producto.get('description') or "")
+        if 'COMPATIBLE:' not in notas.upper():
+            continue
+
+        for linea in notas.split('\n'):
+            if 'COMPATIBLE:' not in linea.upper():
+                continue
+
+            compatible_texto = linea.replace('COMPATIBLE:', '').replace('Compatible:', '').strip()
+
+            for modelo_odoo in compatible_texto.split(','):
+                modelo_norm = normalizar_texto(modelo_odoo.strip())
+                palabras_modelo = modelo_norm.split()
+
+                if not palabras_modelo:
+                    continue
+
+                coincidencias = sum(1 for p in palabras_clave if p in palabras_modelo)
+                if coincidencias > 0:
+                    display = modelo_odoo.strip()
+                    if display not in nombres_vistos:
+                        nombres_vistos.add(display)
+                        similares.append((
+                            coincidencias,
+                            producto['name'],
+                            int(producto['qty_available']),
+                            True,
+                            modelo_odoo.strip()
+                        ))
 
     similares.sort(key=lambda x: x[0], reverse=True)
-    return [(nombre, stock) for _, nombre, stock in similares[:max_resultados]]
+    return similares[:max_resultados]
 
+
+# ── Consulta principal ────────────────────────────────────────────────────────
 
 def consultar_odoo(mensaje):
     try:
@@ -217,35 +305,42 @@ def consultar_odoo(mensaje):
         uid = common.authenticate(ODOO_DB, ODOO_USER, ODOO_API_KEY, {})
         print(f"Odoo UID: {uid}")
         if not uid:
-            return None, None
+            return None, None, None
 
         models = xmlrpc.client.ServerProxy(f"{ODOO_URL}/xmlrpc/2/object")
         todos = models.execute_kw(
             ODOO_DB, uid, ODOO_API_KEY,
             'product.product', 'search_read',
             [[]],
-            {'fields': ['name', 'list_price', 'qty_available'], 'limit': 500}
+            {'fields': ['name', 'list_price', 'qty_available', 'description'], 'limit': 500}
         )
         print(f"Total productos en Odoo: {len(todos)}")
 
         palabras_clave, _ = extraer_palabras_clave(mensaje)
 
         if not palabras_clave:
-            return None, None
+            return None, None, None
 
+        # 1. Buscar producto exacto
         encontrados = buscar_exacto(todos, palabras_clave)
-
         if encontrados:
-            return encontrados, None
+            print(f"Productos exactos encontrados: {len(encontrados)}")
+            return encontrados, None, None
 
-        print(f"Sin match exacto, buscando similares...")
+        # 2. Buscar compatible exacto
+        compatible = buscar_compatible_exacto(todos, palabras_clave)
+        if compatible:
+            return None, compatible, None
+
+        # 3. Mostrar sugerencias (productos + compatibles)
+        print("Sin match exacto, buscando similares...")
         similares = buscar_similares(todos, palabras_clave)
         print(f"Similares: {similares}")
-        return None, similares
+        return None, None, similares
 
     except Exception as e:
         print(f"Error consultando Odoo: {e}")
-        return None, None
+        return None, None, None
 
         # ── Mensajería y asesores ─────────────────────────────────────────────────────
 
@@ -282,6 +377,9 @@ REGLA PRINCIPAL: Cuando el inventario muestre productos con stock mayor a 0, SIE
 MÚLTIPLES PRODUCTOS: Si el inventario muestra varios productos, responde en lista:
 ✅ *Modelo*: $12 USD / Bs. 8,243
 ✅ *Modelo*: $13 USD / Bs. 8,856
+
+COMPATIBILIDADES: Si el inventario dice "PRODUCTO COMPATIBLE", responde:
+"No tenemos la pantalla para [modelo pedido], pero tenemos una compatible: *[nombre producto]*: $XX USD / Bs. XX,XXX"
 
 STOCK 1 o 2: da el precio y avisa que queda muy poco. Varía las frases:
 "Por cierto, este modelo está casi agotado. ¿Lo reservamos?"
@@ -360,10 +458,11 @@ def webhook():
                 else:
                     stock_bajo_pendiente.pop(from_number)
 
-            productos, similares = consultar_odoo(body)
+            productos, compatible, similares = consultar_odoo(body)
             stock_bajo_info = None
 
             if productos:
+                # Producto exacto encontrado
                 contexto_odoo = "\n\nINFORMACIÓN DEL INVENTARIO:\n"
                 for p in productos:
                     precio_usd, precio_bs = calcular_precio_bs(p['list_price'])
@@ -384,7 +483,6 @@ def webhook():
                     system=get_system_prompt(),
                     messages=historial
                 )
-
                 reply = response.content[0].text
 
                 if "DERIVAR_TECNICO" in reply:
@@ -401,8 +499,47 @@ def webhook():
                 guardar_historial(from_number, historial)
                 send_whapi_message(from_number, reply)
 
+            elif compatible:
+                # Compatible exacto encontrado
+                precio_usd, precio_bs = calcular_precio_bs(compatible['list_price'])
+                stock = int(compatible['qty_available'])
+                modelo_pedido = compatible.get('_compatible_con', '')
+                contexto_odoo = f"\n\nPRODUCTO COMPATIBLE:\n- {compatible['name']} (compatible con {modelo_pedido}): ${precio_usd} USD / Bs. {precio_bs:,} | Stock: {stock} unidades\n"
+
+                if 1 <= stock <= 2:
+                    stock_bajo_info = {"producto": compatible['name'], "stock": stock}
+
+                historial = cargar_historial(from_number)
+                historial.append({"role": "user", "content": body + contexto_odoo})
+                if len(historial) > 4:
+                    historial = historial[-4:]
+
+                response = client.messages.create(
+                    model="claude-haiku-4-5-20251001",
+                    max_tokens=300,
+                    system=get_system_prompt(),
+                    messages=historial
+                )
+                reply = response.content[0].text
+
+                if stock_bajo_info:
+                    stock_bajo_pendiente[from_number] = stock_bajo_info
+
+                historial.append({"role": "assistant", "content": reply})
+                guardar_historial(from_number, historial)
+                send_whapi_message(from_number, reply)
+
             elif similares:
-                lista = "\n".join(f"✅ {nombre}" if stock > 0 else f"❌ {nombre}" for nombre, stock in similares)
+                # Sin match exacto — mostrar sugerencias con ✅ o ❌
+                lineas = []
+                for _, nombre_producto, stock, es_compatible, modelo_compatible in similares:
+                    icono = "✅" if stock > 0 else "❌"
+                    if es_compatible:
+                        lineas.append(f"{icono} {nombre_producto} (compatible con {modelo_compatible})")
+                    else:
+                        lineas.append(f"{icono} {nombre_producto}")
+
+                lista = "\n".join(lineas)
                 reply = (
                     f"Soy un sistema automatizado 🤖. Para consultar disponibilidad, "
                     f"escribe la *marca y modelo exacto* sin errores de escritura.\n\n"
@@ -412,6 +549,7 @@ def webhook():
                 send_whapi_message(from_number, reply)
 
             else:
+                # Sin resultados — dejar que Claude responda
                 historial = cargar_historial(from_number)
                 historial.append({"role": "user", "content": body})
                 if len(historial) > 4:
@@ -423,7 +561,6 @@ def webhook():
                     system=get_system_prompt(),
                     messages=historial
                 )
-
                 reply = response.content[0].text
 
                 if "DERIVAR_TECNICO" in reply:
