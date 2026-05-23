@@ -83,7 +83,6 @@ CORRECCIONES_MARCAS = {
     "onour": "honor",
 }
 
-# Modelos abreviados — solo se expanden cuando son la única palabra clave
 MODELOS_ABREVIADOS = {
     "2023": "Tecno Spark Go 2023",
     "2024": "Tecno Spark Go 2024",
@@ -179,7 +178,6 @@ def extraer_palabras_clave(mensaje):
 
 
 def expandir_abreviacion(mensaje):
-    """Expande modelos abreviados solo cuando es la única palabra clave"""
     palabras_temp, _ = extraer_palabras_clave(mensaje)
     if len(palabras_temp) == 1 and palabras_temp[0] in MODELOS_ABREVIADOS:
         expandido = MODELOS_ABREVIADOS[palabras_temp[0]]
@@ -385,7 +383,6 @@ def consultar_odoo(mensaje):
                 sugerencias_todas if sugerencias_todas else None
             )
 
-        # Un solo modelo — expandir abreviación si aplica
         mensaje = expandir_abreviacion(mensaje)
         palabras_clave, _ = extraer_palabras_clave(mensaje)
         if not palabras_clave:
@@ -416,7 +413,7 @@ def consultar_odoo(mensaje):
         print(f"Error consultando Odoo: {e}")
         return None, None, None
 
-     # ── Mensajería y asesores ─────────────────────────────────────────────────────
+    # ── Mensajería y asesores ─────────────────────────────────────────────────────
 
 def send_whapi_message(to: str, text: str):
     url = f"{WHAPI_API_URL}/messages/text"
@@ -493,6 +490,19 @@ def webhook():
         for msg in messages_list:
             if msg.get("from_me", False):
                 continue
+
+            from_number = msg.get("from", "")
+            if not from_number:
+                continue
+
+            chat_id = msg.get("chat_id", "") or msg.get("chatId", "") or ""
+            if "@g.us" in from_number or "@g.us" in chat_id:
+                print("Mensaje de grupo ignorado")
+                continue
+            if "broadcast" in from_number.lower() or "broadcast" in chat_id.lower():
+                print("Mensaje broadcast ignorado")
+                continue
+
             msg_type = msg.get("type", "")
             if msg_type != "text":
                 if msg_type in ["image", "audio", "video", "document", "location", "sticker", "contact"]:
@@ -505,18 +515,6 @@ def webhook():
 
             if msg_timestamp < BOT_START_TIME or antiguedad > 3600:
                 print("Mensaje ignorado - muy antiguo: " + str(antiguedad) + "s")
-                continue
-
-            from_number = msg.get("from", "")
-            if not from_number:
-                continue
-
-            chat_id = msg.get("chat_id", "") or msg.get("chatId", "") or ""
-            if "@g.us" in from_number or "@g.us" in chat_id:
-                print("Mensaje de grupo ignorado")
-                continue
-            if "broadcast" in from_number.lower() or "broadcast" in chat_id.lower():
-                print("Mensaje broadcast ignorado")
                 continue
 
             numero_limpio = from_number.replace("@s.whatsapp.net", "").replace("+", "")
