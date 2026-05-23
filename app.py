@@ -505,7 +505,7 @@ def webhook():
 
             msg_type = msg.get("type", "")
             if msg_type != "text":
-                if msg_type in ["image", "audio", "video", "document", "location", "sticker", "contact"]:
+                if msg_type in ["image", "audio", "voice", "video", "document", "location", "sticker", "contact"]:
                     send_whapi_message(from_number, "Por los momentos solo puedo leer mensajes de texto. Por favor escribe el modelo que buscas. 📝")
                 continue
 
