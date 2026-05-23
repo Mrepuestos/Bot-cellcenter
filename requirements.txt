@@ -4,3 +4,5 @@ requests
 gunicorn
 pytz
 supabase
+gspread
+google-auth
