@@ -62,6 +62,8 @@ CORRECCIONES_MARCAS = {
     "samsug": "samsung",
     "samsum": "samsung",
     "samsun": "samsung",
+    "infinity": "infinix",
+    "infiniti": "infinix",
     "infnix": "infinix",
     "infinik": "infinix",
     "ifninx": "infinix",
@@ -171,7 +173,6 @@ def extraer_palabras_clave(mensaje):
 
 
 def dividir_mensaje(mensaje):
-    """Divide mensaje con múltiples modelos en referencias individuales"""
     separadores = r'\by también\b|\by\b|,'
     partes = re.split(separadores, mensaje, flags=re.IGNORECASE)
     partes = [p.strip() for p in partes if p.strip()]
@@ -193,8 +194,9 @@ def buscar_exacto(todos, palabras_clave):
         if not all(p in palabras_nombre for p in palabras_clave):
             continue
 
+        # Coincidencia 100% exacta — sin palabras extra
         palabras_extra = len(palabras_nombre) - len(palabras_clave)
-        if palabras_extra > 1:
+        if palabras_extra > 0:
             continue
 
         encontrados.append(producto)
@@ -228,7 +230,7 @@ def buscar_compatible_exacto(todos, palabras_clave):
                     continue
 
                 palabras_extra = len(palabras_modelo) - len(palabras_clave)
-                if all(p in palabras_modelo for p in palabras_clave) and palabras_extra <= 1:
+                if all(p in palabras_modelo for p in palabras_clave) and palabras_extra == 0:
                     print(f"Compatible exacto: {producto['name']} | modelo='{modelo_odoo.strip()}'")
                     producto_copia = dict(producto)
                     producto_copia['_compatible_con'] = modelo_odoo.strip()
@@ -296,10 +298,9 @@ def buscar_similares(todos, palabras_clave, max_resultados=5):
     return similares[:max_resultados]
 
 
-# ── Consulta principal ────────────────────────────────────────────────────────
+# ── Búsqueda por referencia individual ───────────────────────────────────────
 
 def buscar_referencia(todos, ref):
-    """Busca una referencia individual y retorna (productos, compatible, similares)"""
     palabras_clave, _ = extraer_palabras_clave(ref)
     if not palabras_clave:
         return None, None, None
@@ -323,6 +324,8 @@ def buscar_referencia(todos, ref):
     return None, None, similares
 
 
+# ── Consulta principal ────────────────────────────────────────────────────────
+
 def consultar_odoo(mensaje):
     try:
         common = xmlrpc.client.ServerProxy(f"{ODOO_URL}/xmlrpc/2/common")
@@ -343,7 +346,6 @@ def consultar_odoo(mensaje):
         referencias = dividir_mensaje(mensaje)
 
         if referencias:
-            # Múltiples modelos
             productos_todos = []
             compatibles_todos = []
             sugerencias_todas = []
@@ -367,7 +369,6 @@ def consultar_odoo(mensaje):
                 sugerencias_todas if sugerencias_todas else None
             )
 
-        # Un solo modelo
         palabras_clave, _ = extraer_palabras_clave(mensaje)
         if not palabras_clave:
             return None, None, None
@@ -525,7 +526,6 @@ def webhook():
                         precio_usd, precio_bs = calcular_precio_bs(p['list_price'])
                         stock = int(p['qty_available'])
                         nombre = p['name']
-                        ref = p.get('_referencia', '')
                         contexto_odoo += f"- {nombre}: ${precio_usd} USD / Bs. {precio_bs:,} | Stock: {stock} unidades\n"
                         if stock_bajo_info is None and 1 <= stock <= 2:
                             stock_bajo_info = {"producto": nombre, "stock": stock}
@@ -551,18 +551,21 @@ def webhook():
                         if stock_bajo_info is None and 1 <= stock <= 2:
                             stock_bajo_info = {"producto": nombre, "stock": stock}
 
-                # Si hay sugerencias adicionales para referencias no encontradas
                 if similares:
                     contexto_odoo += "\n\nMODELOS NO ENCONTRADOS:\n"
                     for ref, lista_sim in similares:
                         contexto_odoo += f"- {ref}: no encontrado exacto\n"
 
-                 else:
+                historial = cargar_historial(from_number)
+                historial.append({"role": "user", "content": body + contexto_odoo})
+                if len(historial) > 4:
+                    historial = historial[-4:]
+
                 response = client.messages.create(
                     model="claude-haiku-4-5-20251001",
                     max_tokens=300,
                     system=get_system_prompt(),
-                    messages=[{"role": "user", "content": body}]
+                    messages=historial
                 )
                 reply = response.content[0].text
 
@@ -573,6 +576,11 @@ def webhook():
                     notificar_asesor(ASESOR_ACCESORIOS, "accesorios", from_number)
                     reply = "Un momento, un asesor te atenderá enseguida 👋"
 
+                if stock_bajo_info:
+                    stock_bajo_pendiente[from_number] = stock_bajo_info
+
+                historial.append({"role": "assistant", "content": reply})
+                guardar_historial(from_number, historial)
                 send_whapi_message(from_number, reply)
 
             elif similares:
@@ -604,16 +612,11 @@ def webhook():
                 send_whapi_message(from_number, reply)
 
             else:
-                historial = cargar_historial(from_number)
-                historial.append({"role": "user", "content": body})
-                if len(historial) > 4:
-                    historial = historial[-4:]
-
                 response = client.messages.create(
                     model="claude-haiku-4-5-20251001",
                     max_tokens=300,
                     system=get_system_prompt(),
-                    messages=historial
+                    messages=[{"role": "user", "content": body}]
                 )
                 reply = response.content[0].text
 
@@ -624,8 +627,6 @@ def webhook():
                     notificar_asesor(ASESOR_ACCESORIOS, "accesorios", from_number)
                     reply = "Un momento, un asesor te atenderá enseguida 👋"
 
-                historial.append({"role": "assistant", "content": reply})
-                guardar_historial(from_number, historial)
                 send_whapi_message(from_number, reply)
 
         return jsonify({"status": "ok"}), 200
