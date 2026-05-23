@@ -224,8 +224,15 @@ def buscar_exacto(todos, palabras_clave):
 # ── Búsqueda de compatible exacto ─────────────────────────────────────────────
 
 def buscar_compatible_exacto(todos, palabras_clave):
+    """
+    Busca compatibles y prioriza los que tienen stock > 0.
+    Si no hay ninguno con stock, retorna el primero encontrado.
+    """
     if not palabras_clave:
         return None
+
+    compatibles_con_stock = []
+    compatibles_sin_stock = []
 
     for producto in todos:
         notas = limpiar_html(producto.get('description') or "")
@@ -247,11 +254,20 @@ def buscar_compatible_exacto(todos, palabras_clave):
 
                 palabras_extra = len(palabras_modelo) - len(palabras_clave)
                 if all(p in palabras_modelo for p in palabras_clave) and palabras_extra == 0:
-                    print(f"Compatible exacto: {producto['name']} | modelo='{modelo_odoo.strip()}'")
                     producto_copia = dict(producto)
                     producto_copia['_compatible_con'] = modelo_odoo.strip()
-                    return producto_copia
+                    stock = int(producto['qty_available'])
+                    if stock > 0:
+                        compatibles_con_stock.append(producto_copia)
+                        print(f"Compatible con stock: {producto['name']} | modelo='{modelo_odoo.strip()}' | stock={stock}")
+                    else:
+                        compatibles_sin_stock.append(producto_copia)
+                        print(f"Compatible sin stock: {producto['name']} | modelo='{modelo_odoo.strip()}'")
 
+    if compatibles_con_stock:
+        return compatibles_con_stock[0]
+    elif compatibles_sin_stock:
+        return compatibles_sin_stock[0]
     return None
 
 
@@ -462,7 +478,7 @@ STOCK 1 o 2: da el precio y avisa que queda muy poco. Varía las frases:
 "Está por agotarse. ¿Lo guardamos?"
 
 STOCK 3 o más: solo da el precio sin comentarios.
-STOCK 0: solo di que no está disponible.
+STOCK 0: solo di que no está disponible. NUNCA sugieras contactar, reservar o esperar stock.
 
 2. CELULARES (comprar celular completo): responde exactamente: "DERIVAR_TECNICO"
 3. SERVICIO TÉCNICO o reparaciones: responde exactamente: "DERIVAR_TECNICO"
@@ -629,7 +645,8 @@ def webhook():
                     f"Soy un sistema automatizado 🤖. Para consultar disponibilidad, "
                     f"escribe la *marca y modelo exacto* sin errores de escritura.\n\n"
                     f"Los modelos más parecidos que tenemos son:\n{lista}\n\n"
-                    f"Si no ves tu modelo aquí, es porque no lo tenemos disponible.\n\n✏️ *Vuelve a escribir tu modelo*"
+                    f"Si no ves tu modelo aquí, es porque no lo tenemos disponible.\n\n"
+                    f"✏️ *Vuelve a escribir tu modelo*"
                 )
                 send_whapi_message(from_number, reply)
 
