@@ -506,8 +506,8 @@ def webhook():
                     and msg.get("type") in ("revoke", "action")):
                 # Whapi puede enviar el borrado como "revoke" o "action"
                 deleted_id = (
+                    msg.get("action", {}).get("target") or
                     msg.get("revoked_msg_id") or
-                    msg.get("action", {}).get("revoked_msg_id") or
                     msg.get("id", "")
                 )
                 print(f"🗑️ Evento borrado en grupo (tipo={msg.get('type')}) id={deleted_id}")
