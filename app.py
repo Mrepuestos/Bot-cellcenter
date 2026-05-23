@@ -325,8 +325,17 @@ def consultar_odoo(mensaje):
         # 1. Buscar producto exacto
         encontrados = buscar_exacto(todos, palabras_clave)
         if encontrados:
-            print(f"Productos exactos encontrados: {len(encontrados)}")
-            return encontrados, None, None
+        print(f"Productos exactos encontrados: {len(encontrados)}")
+        # Si todos tienen stock 0, buscar compatible
+        con_stock = [p for p in encontrados if int(p['qty_available']) > 0]
+        if con_stock:
+        return encontrados, None, None
+        else:
+        print("Sin stock, buscando compatible...")
+        compatible = buscar_compatible_exacto(todos, palabras_clave)
+        if compatible:
+            return None, compatible, None
+        return encontrados, None, None
 
         # 2. Buscar compatible exacto
         compatible = buscar_compatible_exacto(todos, palabras_clave)
