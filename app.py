@@ -253,7 +253,7 @@ def buscar_compatible_exacto(todos, palabras_clave):
                     continue
 
                 palabras_extra = len(palabras_modelo) - len(palabras_clave)
-                if all(p in palabras_modelo for p in palabras_clave) and palabras_extra == 0:
+                if all(p in palabras_modelo for p in palabras_clave) and palabras_extra <= 1:
                     producto_copia = dict(producto)
                     producto_copia['_compatible_con'] = modelo_odoo.strip()
                     stock = int(producto['qty_available'])
