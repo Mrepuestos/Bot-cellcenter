@@ -53,7 +53,7 @@ PALABRAS_IGNORAR = {
     "mano","hermano","brother","bro","amigo","chamo","pana","jefe","señor","señora","maestro","socio","papi","mami",
     "me","mi","mis","tu","tus","nos","ese","esa","esto","esta","aqui","cuando","como","donde",
     "mas","más","muy","bien","mal","solo","también","tampoco","d","q","x","k","tendrás","podria","podría",
-    "teneis","tenes","tene","tiene","hay","tienen","buen"
+    "teneis","tenes","tene","tiene","hay","tienen","buen",
     "bolivares","bolívares","divisa","divisas","dolar","dólares","dolares","dólar"
 }
 
