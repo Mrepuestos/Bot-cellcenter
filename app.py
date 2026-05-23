@@ -503,13 +503,19 @@ def webhook():
                 procesar_imagen_pago(msg)
                 continue
             # ── NUEVO: Capturar borrado de mensajes del grupo de pagos ──────────
-            if (GRUPO_PAGOS_ID
-                    and chat_id == GRUPO_PAGOS_ID
-                    and msg.get("type") == "revoke"):
-                deleted_id = msg.get("revoked_msg_id") or msg.get("id", "")
-                print(f"🗑️ Mensaje borrado en grupo de pagos: {deleted_id}")
-                borrar_pago_por_msg_id(deleted_id)
-                continue
+if (GRUPO_PAGOS_ID
+        and chat_id == GRUPO_PAGOS_ID
+        and msg.get("type") in ("revoke", "action")):
+    # Whapi puede enviar el borrado como "revoke" o "action"
+    deleted_id = (
+        msg.get("revoked_msg_id") or
+        msg.get("action", {}).get("revoked_msg_id") or
+        msg.get("id", "")
+    )
+    print(f"🗑️ Evento borrado en grupo (tipo={msg.get('type')}) id={deleted_id}")
+    print(f"🔍 msg completo: {msg}")
+    borrar_pago_por_msg_id(deleted_id)
+    continue
             # ─────────────────────────────────────────────────────────────────
 
             from_number = msg.get("from", "")
