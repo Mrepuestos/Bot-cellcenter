@@ -62,11 +62,11 @@ CORRECCIONES_MARCAS = {
     "samsug": "samsung",
     "samsum": "samsung",
     "samsun": "samsung",
-    "infinity": "infinix",
-    "infiniti": "infinix",
     "infnix": "infinix",
     "infinik": "infinix",
     "ifninx": "infinix",
+    "infinity": "infinix",
+    "infiniti": "infinix",
     "iph": "iphone",
     "aifon": "iphone",
     "aiphone": "iphone",
@@ -81,6 +81,12 @@ CORRECCIONES_MARCAS = {
     "alcater": "alcatel",
     "onor": "honor",
     "onour": "honor",
+}
+
+# Modelos abreviados — solo se expanden cuando son la única palabra clave
+MODELOS_ABREVIADOS = {
+    "2023": "Tecno Spark Go 2023",
+    "2024": "Tecno Spark Go 2024",
 }
 
 
@@ -172,6 +178,16 @@ def extraer_palabras_clave(mensaje):
     return palabras, normalizado
 
 
+def expandir_abreviacion(mensaje):
+    """Expande modelos abreviados solo cuando es la única palabra clave"""
+    palabras_temp, _ = extraer_palabras_clave(mensaje)
+    if len(palabras_temp) == 1 and palabras_temp[0] in MODELOS_ABREVIADOS:
+        expandido = MODELOS_ABREVIADOS[palabras_temp[0]]
+        print(f"Abreviación expandida: '{mensaje}' → '{expandido}'")
+        return expandido
+    return mensaje
+
+
 def dividir_mensaje(mensaje):
     separadores = r'\by también\b|\by\b|,'
     partes = re.split(separadores, mensaje, flags=re.IGNORECASE)
@@ -194,7 +210,6 @@ def buscar_exacto(todos, palabras_clave):
         if not all(p in palabras_nombre for p in palabras_clave):
             continue
 
-        # Coincidencia 100% exacta — sin palabras extra
         palabras_extra = len(palabras_nombre) - len(palabras_clave)
         if palabras_extra > 0:
             continue
@@ -301,6 +316,7 @@ def buscar_similares(todos, palabras_clave, max_resultados=5):
 # ── Búsqueda por referencia individual ───────────────────────────────────────
 
 def buscar_referencia(todos, ref):
+    ref = expandir_abreviacion(ref)
     palabras_clave, _ = extraer_palabras_clave(ref)
     if not palabras_clave:
         return None, None, None
@@ -369,6 +385,8 @@ def consultar_odoo(mensaje):
                 sugerencias_todas if sugerencias_todas else None
             )
 
+        # Un solo modelo — expandir abreviación si aplica
+        mensaje = expandir_abreviacion(mensaje)
         palabras_clave, _ = extraer_palabras_clave(mensaje)
         if not palabras_clave:
             return None, None, None
@@ -398,7 +416,7 @@ def consultar_odoo(mensaje):
         print(f"Error consultando Odoo: {e}")
         return None, None, None
 
-    # ── Mensajería y asesores ─────────────────────────────────────────────────────
+     # ── Mensajería y asesores ─────────────────────────────────────────────────────
 
 def send_whapi_message(to: str, text: str):
     url = f"{WHAPI_API_URL}/messages/text"
