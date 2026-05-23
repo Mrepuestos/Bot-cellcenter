@@ -629,7 +629,7 @@ def webhook():
                     f"Soy un sistema automatizado 🤖. Para consultar disponibilidad, "
                     f"escribe la *marca y modelo exacto* sin errores de escritura.\n\n"
                     f"Los modelos más parecidos que tenemos son:\n{lista}\n\n"
-                    f"Si no ves tu modelo aquí, es porque no lo tenemos disponible."
+                    f"Si no ves tu modelo aquí, es porque no lo tenemos disponible.\n\n✏️ *Vuelve a escribir tu modelo*"
                 )
                 send_whapi_message(from_number, reply)
 
