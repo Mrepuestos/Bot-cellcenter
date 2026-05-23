@@ -179,10 +179,11 @@ def extraer_palabras_clave(mensaje):
 
 def expandir_abreviacion(mensaje):
     palabras_temp, _ = extraer_palabras_clave(mensaje)
-    if len(palabras_temp) == 1 and palabras_temp[0] in MODELOS_ABREVIADOS:
-        expandido = MODELOS_ABREVIADOS[palabras_temp[0]]
-        print(f"Abreviación expandida: '{mensaje}' → '{expandido}'")
-        return expandido
+    for palabra in palabras_temp:
+        if palabra in MODELOS_ABREVIADOS:
+            expandido = MODELOS_ABREVIADOS[palabra]
+            print(f"Abreviación expandida: '{mensaje}' → '{expandido}'")
+            return expandido
     return mensaje
 
 
