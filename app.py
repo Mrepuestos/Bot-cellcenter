@@ -48,13 +48,13 @@ PALABRAS_SI = ["si","sí","yes","claro","dale","ok","okay","quiero","aparta","re
 PALABRAS_IGNORAR = {
     "de","el","la","los","las","un","una","para","del","con","por","que","y","o","a","en","al","lo","le","se","su","sus","es","son",
     "tienes","tienen","hay","tengo","tiene","dame","dime","quiero","quieres","puedes","puede","necesito",
-    "pantalla","precio","3/4","cuanto","cuánto","stock","bolivares","bolívares","divisa","divisas","dolar",
-    "dólares","dolares","dólar","disponibles","disponible","cuales","hola","buenas","buenos",
+    "pantalla","3/4","precio","cuanto","cuánto","stock","disponibles","disponible","cuales","hola","buenas","buenos",
     "dias","día","dia","tardes","noches","saludos","favor","porfavor","porfa","gracias","please",
     "mano","hermano","brother","bro","amigo","chamo","pana","jefe","señor","señora","maestro","socio","papi","mami",
     "me","mi","mis","tu","tus","nos","ese","esa","esto","esta","aqui","cuando","como","donde",
     "mas","más","muy","bien","mal","solo","también","tampoco","d","q","x","k","tendrás","podria","podría",
-    "teneis","tenes","tene","tiene","hay","tienen"
+    "teneis","tenes","tene","tiene","hay","tienen",
+    "bolivares","bolívares","divisa","divisas","dolar","dólares","dolares","dólar"
 }
 
 CORRECCIONES_MARCAS = {
@@ -170,6 +170,15 @@ def extraer_palabras_clave(mensaje):
     return palabras, normalizado
 
 
+def dividir_mensaje(mensaje):
+    """Divide mensaje con múltiples modelos en referencias individuales"""
+    separadores = r'\by también\b|\by\b|,'
+    partes = re.split(separadores, mensaje, flags=re.IGNORECASE)
+    partes = [p.strip() for p in partes if p.strip()]
+    print(f"Referencias divididas: {partes}")
+    return partes if len(partes) > 1 else None
+
+
 # ── Búsqueda exacta ───────────────────────────────────────────────────────────
 
 def buscar_exacto(todos, palabras_clave):
@@ -197,11 +206,6 @@ def buscar_exacto(todos, palabras_clave):
 # ── Búsqueda de compatible exacto ─────────────────────────────────────────────
 
 def buscar_compatible_exacto(todos, palabras_clave):
-    """
-    Busca si algún producto tiene en sus notas internas
-    una compatibilidad que coincida exactamente con las palabras clave.
-    Retorna el producto independientemente del stock.
-    """
     if not palabras_clave:
         return None
 
@@ -223,7 +227,6 @@ def buscar_compatible_exacto(todos, palabras_clave):
                 if not palabras_modelo:
                     continue
 
-                # Todas las palabras clave deben estar en el modelo compatible
                 palabras_extra = len(palabras_modelo) - len(palabras_clave)
                 if all(p in palabras_modelo for p in palabras_clave) and palabras_extra <= 1:
                     print(f"Compatible exacto: {producto['name']} | modelo='{modelo_odoo.strip()}'")
@@ -234,20 +237,15 @@ def buscar_compatible_exacto(todos, palabras_clave):
     return None
 
 
-# ── Búsqueda de similares (productos + compatibles) ───────────────────────────
+# ── Búsqueda de similares ─────────────────────────────────────────────────────
 
 def buscar_similares(todos, palabras_clave, max_resultados=5):
-    """
-    Busca productos similares por nombre Y por compatibilidades.
-    Retorna lista de tuplas: (nombre_display, stock, es_compatible, modelo_compatible)
-    """
     if not palabras_clave:
         return []
 
     similares = []
     nombres_vistos = set()
 
-    # 1. Buscar en nombres de productos
     for producto in todos:
         nombre_norm = normalizar_texto(producto['name'])
         palabras_nombre = nombre_norm.split()
@@ -263,7 +261,6 @@ def buscar_similares(todos, palabras_clave, max_resultados=5):
                     ""
                 ))
 
-    # 2. Buscar en notas internas (compatibilidades)
     for producto in todos:
         notas = limpiar_html(producto.get('description') or "")
         if 'COMPATIBLE:' not in notas.upper():
@@ -301,6 +298,31 @@ def buscar_similares(todos, palabras_clave, max_resultados=5):
 
 # ── Consulta principal ────────────────────────────────────────────────────────
 
+def buscar_referencia(todos, ref):
+    """Busca una referencia individual y retorna (productos, compatible, similares)"""
+    palabras_clave, _ = extraer_palabras_clave(ref)
+    if not palabras_clave:
+        return None, None, None
+
+    encontrados = buscar_exacto(todos, palabras_clave)
+    if encontrados:
+        con_stock = [p for p in encontrados if int(p['qty_available']) > 0]
+        if con_stock:
+            return encontrados, None, None
+        else:
+            compatible = buscar_compatible_exacto(todos, palabras_clave)
+            if compatible:
+                return None, compatible, None
+            return encontrados, None, None
+
+    compatible = buscar_compatible_exacto(todos, palabras_clave)
+    if compatible:
+        return None, compatible, None
+
+    similares = buscar_similares(todos, palabras_clave)
+    return None, None, similares
+
+
 def consultar_odoo(mensaje):
     try:
         common = xmlrpc.client.ServerProxy(f"{ODOO_URL}/xmlrpc/2/common")
@@ -318,15 +340,40 @@ def consultar_odoo(mensaje):
         )
         print(f"Total productos en Odoo: {len(todos)}")
 
-        palabras_clave, _ = extraer_palabras_clave(mensaje)
+        referencias = dividir_mensaje(mensaje)
 
+        if referencias:
+            # Múltiples modelos
+            productos_todos = []
+            compatibles_todos = []
+            sugerencias_todas = []
+
+            for ref in referencias:
+                print(f"Buscando referencia: '{ref}'")
+                prods, comp, sims = buscar_referencia(todos, ref)
+                if prods:
+                    for p in prods:
+                        p['_referencia'] = ref
+                    productos_todos.extend(prods)
+                if comp:
+                    comp['_referencia'] = ref
+                    compatibles_todos.append(comp)
+                if sims:
+                    sugerencias_todas.append((ref, sims))
+
+            return (
+                productos_todos if productos_todos else None,
+                compatibles_todos if compatibles_todos else None,
+                sugerencias_todas if sugerencias_todas else None
+            )
+
+        # Un solo modelo
+        palabras_clave, _ = extraer_palabras_clave(mensaje)
         if not palabras_clave:
             return None, None, None
 
-       # 1. Buscar producto exacto
         encontrados = buscar_exacto(todos, palabras_clave)
         if encontrados:
-            print(f"Productos exactos encontrados: {len(encontrados)}")
             con_stock = [p for p in encontrados if int(p['qty_available']) > 0]
             if con_stock:
                 return encontrados, None, None
@@ -337,12 +384,10 @@ def consultar_odoo(mensaje):
                     return None, compatible, None
                 return encontrados, None, None
 
-        # 2. Buscar compatible exacto
         compatible = buscar_compatible_exacto(todos, palabras_clave)
         if compatible:
             return None, compatible, None
 
-        # 3. Mostrar sugerencias (productos + compatibles)
         print("Sin match exacto, buscando similares...")
         similares = buscar_similares(todos, palabras_clave)
         print(f"Similares: {similares}")
@@ -352,7 +397,7 @@ def consultar_odoo(mensaje):
         print(f"Error consultando Odoo: {e}")
         return None, None, None
 
-        # ── Mensajería y asesores ─────────────────────────────────────────────────────
+    # ── Mensajería y asesores ─────────────────────────────────────────────────────
 
 def send_whapi_message(to: str, text: str):
     url = f"{WHAPI_API_URL}/messages/text"
@@ -468,19 +513,49 @@ def webhook():
                 else:
                     stock_bajo_pendiente.pop(from_number)
 
-            productos, compatible, similares = consultar_odoo(body)
+            productos, compatibles, similares = consultar_odoo(body)
             stock_bajo_info = None
 
-            if productos:
-                # Producto exacto encontrado
-                contexto_odoo = "\n\nINFORMACIÓN DEL INVENTARIO:\n"
-                for p in productos:
-                    precio_usd, precio_bs = calcular_precio_bs(p['list_price'])
-                    stock = int(p['qty_available'])
-                    nombre = p['name']
-                    contexto_odoo += f"- {nombre}: ${precio_usd} USD / Bs. {precio_bs:,} | Stock: {stock} unidades\n"
-                    if stock_bajo_info is None and 1 <= stock <= 2:
-                        stock_bajo_info = {"producto": nombre, "stock": stock}
+            if productos or compatibles:
+                contexto_odoo = ""
+
+                if productos:
+                    contexto_odoo += "\n\nINFORMACIÓN DEL INVENTARIO:\n"
+                    for p in productos:
+                        precio_usd, precio_bs = calcular_precio_bs(p['list_price'])
+                        stock = int(p['qty_available'])
+                        nombre = p['name']
+                        ref = p.get('_referencia', '')
+                        contexto_odoo += f"- {nombre}: ${precio_usd} USD / Bs. {precio_bs:,} | Stock: {stock} unidades\n"
+                        if stock_bajo_info is None and 1 <= stock <= 2:
+                            stock_bajo_info = {"producto": nombre, "stock": stock}
+
+                if compatibles:
+                    contexto_odoo += "\n\nPRODUCTOS COMPATIBLES:\n"
+                    if isinstance(compatibles, list):
+                        for comp in compatibles:
+                            precio_usd, precio_bs = calcular_precio_bs(comp['list_price'])
+                            stock = int(comp['qty_available'])
+                            nombre = comp['name']
+                            modelo_pedido = comp.get('_compatible_con', '')
+                            ref = comp.get('_referencia', '')
+                            contexto_odoo += f"- {nombre} (compatible con {ref or modelo_pedido}): ${precio_usd} USD / Bs. {precio_bs:,} | Stock: {stock} unidades\n"
+                            if stock_bajo_info is None and 1 <= stock <= 2:
+                                stock_bajo_info = {"producto": nombre, "stock": stock}
+                    else:
+                        precio_usd, precio_bs = calcular_precio_bs(compatibles['list_price'])
+                        stock = int(compatibles['qty_available'])
+                        nombre = compatibles['name']
+                        modelo_pedido = compatibles.get('_compatible_con', '')
+                        contexto_odoo += f"- {nombre} (compatible con {modelo_pedido}): ${precio_usd} USD / Bs. {precio_bs:,} | Stock: {stock} unidades\n"
+                        if stock_bajo_info is None and 1 <= stock <= 2:
+                            stock_bajo_info = {"producto": nombre, "stock": stock}
+
+                # Si hay sugerencias adicionales para referencias no encontradas
+                if similares:
+                    contexto_odoo += "\n\nMODELOS NO ENCONTRADOS:\n"
+                    for ref, lista_sim in similares:
+                        contexto_odoo += f"- {ref}: no encontrado exacto\n"
 
                 historial = cargar_historial(from_number)
                 historial.append({"role": "user", "content": body + contexto_odoo})
@@ -509,45 +584,24 @@ def webhook():
                 guardar_historial(from_number, historial)
                 send_whapi_message(from_number, reply)
 
-            elif compatible:
-                # Compatible exacto encontrado
-                precio_usd, precio_bs = calcular_precio_bs(compatible['list_price'])
-                stock = int(compatible['qty_available'])
-                modelo_pedido = compatible.get('_compatible_con', '')
-                contexto_odoo = f"\n\nPRODUCTO COMPATIBLE:\n- {compatible['name']} (compatible con {modelo_pedido}): ${precio_usd} USD / Bs. {precio_bs:,} | Stock: {stock} unidades\n"
-
-                if 1 <= stock <= 2:
-                    stock_bajo_info = {"producto": compatible['name'], "stock": stock}
-
-                historial = cargar_historial(from_number)
-                historial.append({"role": "user", "content": body + contexto_odoo})
-                if len(historial) > 4:
-                    historial = historial[-4:]
-
-                response = client.messages.create(
-                    model="claude-haiku-4-5-20251001",
-                    max_tokens=300,
-                    system=get_system_prompt(),
-                    messages=historial
-                )
-                reply = response.content[0].text
-
-                if stock_bajo_info:
-                    stock_bajo_pendiente[from_number] = stock_bajo_info
-
-                historial.append({"role": "assistant", "content": reply})
-                guardar_historial(from_number, historial)
-                send_whapi_message(from_number, reply)
-
             elif similares:
-                # Sin match exacto — mostrar sugerencias con ✅ o ❌
                 lineas = []
-                for _, nombre_producto, stock, es_compatible, modelo_compatible in similares:
-                    icono = "✅" if stock > 0 else "❌"
-                    if es_compatible:
-                        lineas.append(f"{icono} {nombre_producto} (compatible con {modelo_compatible})")
-                    else:
-                        lineas.append(f"{icono} {nombre_producto}")
+                if similares and isinstance(similares[0], tuple) and isinstance(similares[0][0], str):
+                    for ref, lista_similares in similares:
+                        lineas.append(f"*{ref}:*")
+                        for _, nombre_producto, stock, es_compatible, modelo_compatible in lista_similares:
+                            icono = "✅" if stock > 0 else "❌"
+                            if es_compatible:
+                                lineas.append(f"  {icono} {nombre_producto} (compatible con {modelo_compatible})")
+                            else:
+                                lineas.append(f"  {icono} {nombre_producto}")
+                else:
+                    for _, nombre_producto, stock, es_compatible, modelo_compatible in similares:
+                        icono = "✅" if stock > 0 else "❌"
+                        if es_compatible:
+                            lineas.append(f"{icono} {nombre_producto} (compatible con {modelo_compatible})")
+                        else:
+                            lineas.append(f"{icono} {nombre_producto}")
 
                 lista = "\n".join(lineas)
                 reply = (
@@ -559,7 +613,6 @@ def webhook():
                 send_whapi_message(from_number, reply)
 
             else:
-                # Sin resultados — dejar que Claude responda
                 historial = cargar_historial(from_number)
                 historial.append({"role": "user", "content": body})
                 if len(historial) > 4:
