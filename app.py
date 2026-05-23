@@ -10,9 +10,15 @@ from datetime import datetime
 import pytz
 from supabase import create_client
 
+# ── NUEVO: Módulo de pagos ────────────────────────────────────────────────────
+from pagos_extractor import procesar_imagen_pago, inicializar_db
+
 app = Flask(__name__)
 
 BOT_START_TIME = time.time()
+
+# ── NUEVO: ID del grupo de pagos ──────────────────────────────────────────────
+GRUPO_PAGOS_ID = os.environ.get("GRUPO_PAGOS_ID", "")
 
 NUMEROS_AUTORIZADOS = [
     "584149202844",
@@ -221,13 +227,7 @@ def buscar_exacto(todos, palabras_clave):
     return encontrados
 
 
-# ── Búsqueda de compatible exacto ─────────────────────────────────────────────
-
 def buscar_compatible_exacto(todos, palabras_clave):
-    """
-    Busca compatibles y prioriza los que tienen stock > 0.
-    Si no hay ninguno con stock, retorna el primero encontrado.
-    """
     if not palabras_clave:
         return None
 
@@ -259,10 +259,8 @@ def buscar_compatible_exacto(todos, palabras_clave):
                     stock = int(producto['qty_available'])
                     if stock > 0:
                         compatibles_con_stock.append(producto_copia)
-                        print(f"Compatible con stock: {producto['name']} | modelo='{modelo_odoo.strip()}' | stock={stock}")
                     else:
                         compatibles_sin_stock.append(producto_copia)
-                        print(f"Compatible sin stock: {producto['name']} | modelo='{modelo_odoo.strip()}'")
 
     if compatibles_con_stock:
         return compatibles_con_stock[0]
@@ -270,8 +268,6 @@ def buscar_compatible_exacto(todos, palabras_clave):
         return compatibles_sin_stock[0]
     return None
 
-
-# ── Búsqueda de similares ─────────────────────────────────────────────────────
 
 def buscar_similares(todos, palabras_clave, max_resultados=5):
     if not palabras_clave:
@@ -287,13 +283,7 @@ def buscar_similares(todos, palabras_clave, max_resultados=5):
         if coincidencias > 0:
             if producto['name'] not in nombres_vistos:
                 nombres_vistos.add(producto['name'])
-                similares.append((
-                    coincidencias,
-                    producto['name'],
-                    int(producto['qty_available']),
-                    False,
-                    ""
-                ))
+                similares.append((coincidencias, producto['name'], int(producto['qty_available']), False, ""))
 
     for producto in todos:
         notas = limpiar_html(producto.get('description') or "")
@@ -318,19 +308,11 @@ def buscar_similares(todos, palabras_clave, max_resultados=5):
                     display = modelo_odoo.strip()
                     if display not in nombres_vistos:
                         nombres_vistos.add(display)
-                        similares.append((
-                            coincidencias,
-                            producto['name'],
-                            int(producto['qty_available']),
-                            True,
-                            modelo_odoo.strip()
-                        ))
+                        similares.append((coincidencias, producto['name'], int(producto['qty_available']), True, modelo_odoo.strip()))
 
     similares.sort(key=lambda x: x[0], reverse=True)
     return similares[:max_resultados]
 
-
-# ── Búsqueda por referencia individual ───────────────────────────────────────
 
 def buscar_referencia(todos, ref):
     ref = expandir_abreviacion(ref)
@@ -356,8 +338,6 @@ def buscar_referencia(todos, ref):
     similares = buscar_similares(todos, palabras_clave)
     return None, None, similares
 
-
-# ── Consulta principal ────────────────────────────────────────────────────────
 
 def consultar_odoo(mensaje):
     try:
@@ -413,7 +393,6 @@ def consultar_odoo(mensaje):
             if con_stock:
                 return encontrados, None, None
             else:
-                print("Sin stock, buscando compatible...")
                 compatible = buscar_compatible_exacto(todos, palabras_clave)
                 if compatible:
                     return None, compatible, None
@@ -423,16 +402,15 @@ def consultar_odoo(mensaje):
         if compatible:
             return None, compatible, None
 
-        print("Sin match exacto, buscando similares...")
         similares = buscar_similares(todos, palabras_clave)
-        print(f"Similares: {similares}")
         return None, None, similares
 
     except Exception as e:
         print(f"Error consultando Odoo: {e}")
         return None, None, None
 
-    # ── Mensajería y asesores ─────────────────────────────────────────────────────
+
+# ── Mensajería y asesores ─────────────────────────────────────────────────────
 
 def send_whapi_message(to: str, text: str):
     url = f"{WHAPI_API_URL}/messages/text"
@@ -497,6 +475,9 @@ Responde siempre corto y directo. Muestra el nombre exacto del producto como apa
 
 client = anthropic.Anthropic()
 
+# ── NUEVO: Inicializar Google Sheets al arrancar ──────────────────────────────
+inicializar_db()
+
 
 # ── Webhook ───────────────────────────────────────────────────────────────────
 
@@ -510,11 +491,21 @@ def webhook():
             if msg.get("from_me", False):
                 continue
 
+            chat_id = msg.get("chat_id", "") or msg.get("chatId", "") or ""
+
+            # ── NUEVO: Capturar imágenes del grupo de pagos ───────────────────
+            if (GRUPO_PAGOS_ID
+                    and chat_id == GRUPO_PAGOS_ID
+                    and msg.get("type") == "image"):
+                print(f"📥 Imagen de pago recibida de {msg.get('from_name', msg.get('from', ''))}")
+                procesar_imagen_pago(msg)
+                continue
+            # ─────────────────────────────────────────────────────────────────
+
             from_number = msg.get("from", "")
             if not from_number:
                 continue
 
-            chat_id = msg.get("chat_id", "") or msg.get("chatId", "") or ""
             if "@g.us" in from_number or "@g.us" in chat_id:
                 print("Mensaje de grupo ignorado")
                 continue
