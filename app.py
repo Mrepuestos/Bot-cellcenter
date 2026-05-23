@@ -557,23 +557,23 @@ def webhook():
                     for ref, lista_sim in similares:
                         contexto_odoo += f"- {ref}: no encontrado exacto\n"
 
-else:
-    response = client.messages.create(
-        model="claude-haiku-4-5-20251001",
-        max_tokens=300,
-        system=get_system_prompt(),
-        messages=[{"role": "user", "content": body}]
-    )
-    reply = response.content[0].text
+                 else:
+                response = client.messages.create(
+                    model="claude-haiku-4-5-20251001",
+                    max_tokens=300,
+                    system=get_system_prompt(),
+                    messages=[{"role": "user", "content": body}]
+                )
+                reply = response.content[0].text
 
-    if "DERIVAR_TECNICO" in reply:
-        notificar_asesor(ASESOR_TECNICO, "celulares o servicio técnico", from_number)
-        reply = "Un momento, un asesor te atenderá enseguida 👋"
-    elif "DERIVAR_ACCESORIOS" in reply:
-        notificar_asesor(ASESOR_ACCESORIOS, "accesorios", from_number)
-        reply = "Un momento, un asesor te atenderá enseguida 👋"
+                if "DERIVAR_TECNICO" in reply:
+                    notificar_asesor(ASESOR_TECNICO, "celulares o servicio técnico", from_number)
+                    reply = "Un momento, un asesor te atenderá enseguida 👋"
+                elif "DERIVAR_ACCESORIOS" in reply:
+                    notificar_asesor(ASESOR_ACCESORIOS, "accesorios", from_number)
+                    reply = "Un momento, un asesor te atenderá enseguida 👋"
 
-    send_whapi_message(from_number, reply)
+                send_whapi_message(from_number, reply)
 
             elif similares:
                 lineas = []
