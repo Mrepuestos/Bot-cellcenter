@@ -488,6 +488,8 @@ def webhook():
         messages_list = data.get("messages", [])
 
         for msg in messages_list:
+            print(f"MSG tipo={msg.get('type')} chat={msg.get('chat_id','')[:20]}")
+            
             if msg.get("from_me", False):
                 continue
 
