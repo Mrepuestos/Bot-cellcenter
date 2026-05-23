@@ -223,7 +223,8 @@ def buscar_compatible_exacto(todos, palabras_clave):
                     continue
 
                 # Todas las palabras clave deben estar en el modelo compatible
-                if all(p in palabras_modelo for p in palabras_clave):
+                palabras_extra = len(palabras_modelo) - len(palabras_clave)
+                if all(p in palabras_modelo for p in palabras_clave) and palabras_extra <= 1:
                     print(f"Compatible exacto: {producto['name']} | modelo='{modelo_odoo.strip()}'")
                     producto_copia = dict(producto)
                     producto_copia['_compatible_con'] = modelo_odoo.strip()
