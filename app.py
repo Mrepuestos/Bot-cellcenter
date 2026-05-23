@@ -557,32 +557,23 @@ def webhook():
                     for ref, lista_sim in similares:
                         contexto_odoo += f"- {ref}: no encontrado exacto\n"
 
-                historial = cargar_historial(from_number)
-                historial.append({"role": "user", "content": body + contexto_odoo})
-                if len(historial) > 4:
-                    historial = historial[-4:]
+else:
+    response = client.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=300,
+        system=get_system_prompt(),
+        messages=[{"role": "user", "content": body}]
+    )
+    reply = response.content[0].text
 
-                response = client.messages.create(
-                    model="claude-haiku-4-5-20251001",
-                    max_tokens=300,
-                    system=get_system_prompt(),
-                    messages=historial
-                )
-                reply = response.content[0].text
+    if "DERIVAR_TECNICO" in reply:
+        notificar_asesor(ASESOR_TECNICO, "celulares o servicio técnico", from_number)
+        reply = "Un momento, un asesor te atenderá enseguida 👋"
+    elif "DERIVAR_ACCESORIOS" in reply:
+        notificar_asesor(ASESOR_ACCESORIOS, "accesorios", from_number)
+        reply = "Un momento, un asesor te atenderá enseguida 👋"
 
-                if "DERIVAR_TECNICO" in reply:
-                    notificar_asesor(ASESOR_TECNICO, "celulares o servicio técnico", from_number)
-                    reply = "Un momento, un asesor te atenderá enseguida 👋"
-                elif "DERIVAR_ACCESORIOS" in reply:
-                    notificar_asesor(ASESOR_ACCESORIOS, "accesorios", from_number)
-                    reply = "Un momento, un asesor te atenderá enseguida 👋"
-
-                if stock_bajo_info:
-                    stock_bajo_pendiente[from_number] = stock_bajo_info
-
-                historial.append({"role": "assistant", "content": reply})
-                guardar_historial(from_number, historial)
-                send_whapi_message(from_number, reply)
+    send_whapi_message(from_number, reply)
 
             elif similares:
                 lineas = []
