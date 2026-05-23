@@ -1,17 +1,16 @@
 """
-═══════════════════════════════════════════════════════════════════════
-  PAGOS EXTRACTOR — Módulo independiente
-  Procesa imágenes de comprobantes de pago de un grupo de WhatsApp
-  Extrae Nombre + Monto con Claude AI y los guarda en Google Sheets
-═══════════════════════════════════════════════════════════════════════
+PAGOS EXTRACTOR
+- Ignora imágenes que no sean comprobantes de pago (ej: consulta de saldo)
+- Extrae nombre del campo CONCEPTO
+- Si no hay nombre en concepto usa IDENTIFICACIÓN RECEPTOR
+- Monto viene del caption/texto que acompaña la foto
+- Soporta borrado cuando se elimina el mensaje en WhatsApp
 """
 
 import os
 import base64
 import logging
 import threading
-import json
-import re
 from datetime import datetime
 
 import requests
@@ -20,20 +19,16 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 # ─── CONFIGURACIÓN ────────────────────────────────────────────────────
-WHAPI_TOKEN       = os.environ.get("WHAPI_TOKEN", "")
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-GOOGLE_SHEET_ID   = os.environ.get("GOOGLE_SHEET_ID", "")
-
-# Credenciales de Google (se arman desde variables de entorno)
-GOOGLE_CLIENT_EMAIL  = os.environ.get("GOOGLE_CLIENT_EMAIL", "")
-GOOGLE_PRIVATE_KEY   = os.environ.get("GOOGLE_PRIVATE_KEY", "").replace("\\n", "\n")
-GOOGLE_PROJECT_ID    = os.environ.get("GOOGLE_PROJECT_ID", "controlpagos-497014")
+WHAPI_TOKEN         = os.environ.get("WHAPI_TOKEN", "")
+ANTHROPIC_API_KEY   = os.environ.get("ANTHROPIC_API_KEY", "")
+GOOGLE_SHEET_ID     = os.environ.get("GOOGLE_SHEET_ID", "")
+GOOGLE_CLIENT_EMAIL = os.environ.get("GOOGLE_CLIENT_EMAIL", "")
+GOOGLE_PRIVATE_KEY  = os.environ.get("GOOGLE_PRIVATE_KEY", "").replace("\\n", "\n")
+GOOGLE_PROJECT_ID   = os.environ.get("GOOGLE_PROJECT_ID", "controlpagos-497014")
 
 CLAUDE_MODEL = "claude-haiku-4-5-20251001"
 
 logger = logging.getLogger("pagos_extractor")
-logger.setLevel(logging.INFO)
-
 _anthropic_client = None
 _sheets_client    = None
 
@@ -74,39 +69,46 @@ def inicializar_db():
         gc = _get_sheet()
         sh = gc.open_by_key(GOOGLE_SHEET_ID)
         hoja = sh.sheet1
-
-        # Si la hoja está vacía, agrega encabezados
-        if hoja.row_count == 0 or not hoja.row_values(1):
-            hoja.append_row(["#", "Nombre", "Monto", "Remitente", "Fecha", "Estado"])
+        valores = hoja.row_values(1)
+        if not valores:
+            hoja.append_row(["#", "Nombre", "Monto", "Remitente", "Fecha", "Estado", "msg_id"])
             print("✅ Encabezados creados en Google Sheets")
-
         print("✅ Conexión con Google Sheets verificada")
     except Exception as e:
         print(f"⚠️ Error conectando a Google Sheets: {e}")
 
 
 # ─── GUARDAR PAGO ─────────────────────────────────────────────────────
-def _guardar_pago(fecha_msg, remitente_nombre, nombre, monto, estado):
+def _guardar_pago(msg_id, fecha_msg, remitente_nombre, nombre, monto, estado):
     try:
         gc = _get_sheet()
         sh = gc.open_by_key(GOOGLE_SHEET_ID)
         hoja = sh.sheet1
-
-        # Número de fila actual
-        num = max(1, len(hoja.get_all_values()))
-
-        hoja.append_row([
-            num,
-            nombre,
-            monto,
-            remitente_nombre,
-            fecha_msg,
-            estado,
-        ])
+        num = len(hoja.get_all_values())
+        hoja.append_row([num, nombre, monto, remitente_nombre, fecha_msg, estado, msg_id])
         print(f"✅ Pago guardado en Sheets: {nombre} → {monto}")
         return True
     except Exception as e:
         print(f"❌ Error guardando en Google Sheets: {e}")
+        return False
+
+
+# ─── BORRAR PAGO ──────────────────────────────────────────────────────
+def borrar_pago_por_msg_id(msg_id):
+    try:
+        gc = _get_sheet()
+        sh = gc.open_by_key(GOOGLE_SHEET_ID)
+        hoja = sh.sheet1
+        todas = hoja.get_all_values()
+        for i, fila in enumerate(todas):
+            if len(fila) > 6 and fila[6] == msg_id:
+                hoja.delete_rows(i + 1)
+                print(f"🗑️ Pago eliminado del Sheet (msg_id: {msg_id})")
+                return True
+        print(f"⚠️ No se encontró fila con msg_id: {msg_id}")
+        return False
+    except Exception as e:
+        print(f"❌ Error borrando pago: {e}")
         return False
 
 
@@ -121,59 +123,73 @@ def _descargar_imagen(image_data):
     )
     if not url:
         print(f"image_data keys: {list(image_data.keys())}")
-        raise ValueError("No se encontró URL de imagen en el mensaje")
+        raise ValueError("No se encontró URL de imagen")
 
     headers = {"Authorization": f"Bearer {WHAPI_TOKEN}"}
     resp = requests.get(url, headers=headers, timeout=30)
     resp.raise_for_status()
-
     mime_type = resp.headers.get("Content-Type", "image/jpeg").split(";")[0]
     b64_data = base64.standard_b64encode(resp.content).decode("utf-8")
     return b64_data, mime_type
 
 
 # ─── EXTRACCIÓN CON CLAUDE ────────────────────────────────────────────
-def _extraer_datos_con_claude(image_b64, mime_type):
+def _extraer_nombre_con_claude(image_b64, mime_type):
     client = _get_anthropic()
 
-    prompt = """Analiza este comprobante de pago/transferencia bancaria y extrae SOLO:
-1. NOMBRE del remitente/pagador (quien hizo el pago)
-2. MONTO pagado con su moneda (ej: $50.000 COP, $100 USD, Bs 200)
+    prompt = """Analiza esta imagen y sigue estos pasos:
 
-Responde ÚNICAMENTE en este formato JSON exacto, sin texto adicional, sin markdown:
-{"nombre": "...", "monto": "..."}
+PASO 1 — Verifica si es un comprobante de transferencia/pago exitoso.
+Si la imagen muestra alguna de estas cosas:
+- Consulta de saldo bancario
+- Pantalla de inicio de una app bancaria
+- Cualquier cosa que NO sea un comprobante de transferencia completada
+→ responde exactamente: NO_ES_PAGO
 
-Si no puedes identificar algún dato, usa "No encontrado"."""
+PASO 2 — Si sí es un comprobante de transferencia, busca el campo "CONCEPTO" y extrae el nombre de la persona.
+- "Pago a Gabriel carpintero" → responde: Gabriel carpintero
+- "Pago a Juan" → responde: Juan
+- Si el concepto no tiene nombre (solo dice "pago", "transferencia", etc.) → responde: sin_nombre
+- Si no hay campo CONCEPTO → responde: sin_nombre
+
+Responde ÚNICAMENTE con el nombre, "sin_nombre" o "NO_ES_PAGO". Sin explicaciones."""
 
     response = client.messages.create(
         model=CLAUDE_MODEL,
-        max_tokens=300,
+        max_tokens=100,
         messages=[{
             "role": "user",
             "content": [
-                {
-                    "type": "image",
-                    "source": {
-                        "type": "base64",
-                        "media_type": mime_type,
-                        "data": image_b64,
-                    },
-                },
+                {"type": "image", "source": {"type": "base64", "media_type": mime_type, "data": image_b64}},
                 {"type": "text", "text": prompt},
             ],
         }],
     )
+    nombre = response.content[0].text.strip()
+    print(f"Resultado Claude (concepto): '{nombre}'")
+    return nombre
 
-    text = response.content[0].text.strip()
-    text = re.sub(r'```json|```', '', text).strip()
-    try:
-        data = json.loads(text)
-        return {
-            "nombre": data.get("nombre", "No encontrado"),
-            "monto":  data.get("monto",  "No encontrado"),
-        }
-    except Exception:
-        return {"nombre": "Error de parseo", "monto": "Error de parseo"}
+
+def _extraer_identificacion_con_claude(image_b64, mime_type):
+    client = _get_anthropic()
+    prompt = """Extrae SOLO el valor del campo "IDENTIFICACIÓN RECEPTOR" de este comprobante.
+Ejemplo: "V-11691262" → responde: V-11691262
+Si no existe ese campo responde: No encontrado"""
+
+    response = client.messages.create(
+        model=CLAUDE_MODEL,
+        max_tokens=50,
+        messages=[{
+            "role": "user",
+            "content": [
+                {"type": "image", "source": {"type": "base64", "media_type": mime_type, "data": image_b64}},
+                {"type": "text", "text": prompt},
+            ],
+        }],
+    )
+    identificacion = response.content[0].text.strip()
+    print(f"Identificación receptor: '{identificacion}'")
+    return identificacion
 
 
 # ─── FUNCIÓN PRINCIPAL ────────────────────────────────────────────────
@@ -195,24 +211,46 @@ def _procesar_sync(mensaje):
     )
     image_data = mensaje.get("image", {})
 
-    print(f"📥 Procesando pago de {remitente_nombre}")
+    # Monto: viene del caption que acompaña la foto en WhatsApp
+    monto = (
+        image_data.get("caption") or
+        mensaje.get("caption") or
+        "Sin monto"
+    )
+    monto = monto.strip() or "Sin monto"
+    print(f"📥 Procesando imagen de {remitente_nombre} | Caption: {monto}")
 
     try:
         img_b64, mime = _descargar_imagen(image_data)
-        datos = _extraer_datos_con_claude(img_b64, mime)
+
+        # Verificar si es comprobante y extraer nombre del CONCEPTO
+        nombre = _extraer_nombre_con_claude(img_b64, mime)
+
+        # Si no es un comprobante de pago → ignorar completamente
+        if nombre == "NO_ES_PAGO":
+            print("⏭️ Imagen ignorada: no es un comprobante de pago (consulta de saldo u otro)")
+            return
+
+        # Si no hay nombre en concepto → usar IDENTIFICACIÓN RECEPTOR
+        if not nombre or nombre.lower() == "sin_nombre":
+            nombre = _extraer_identificacion_con_claude(img_b64, mime)
+
         _guardar_pago(
+            msg_id=msg_id,
             fecha_msg=fecha_msg,
             remitente_nombre=remitente_nombre,
-            nombre=datos["nombre"],
-            monto=datos["monto"],
+            nombre=nombre,
+            monto=monto,
             estado="OK",
         )
+
     except Exception as e:
         print(f"❌ Error procesando msg {msg_id}: {e}")
         _guardar_pago(
+            msg_id=msg_id,
             fecha_msg=fecha_msg,
             remitente_nombre=remitente_nombre,
             nombre="Error",
-            monto="Error",
+            monto=monto,
             estado=f"Error: {str(e)[:50]}",
         )
