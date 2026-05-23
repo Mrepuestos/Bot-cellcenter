@@ -48,7 +48,7 @@ PALABRAS_SI = ["si","sí","yes","claro","dale","ok","okay","quiero","aparta","re
 PALABRAS_IGNORAR = {
     "de","el","la","los","las","un","una","para","del","con","por","que","y","o","a","en","al","lo","le","se","su","sus","es","son",
     "tienes","tienen","hay","tengo","tiene","dame","dime","quiero","quieres","puedes","puede","necesito",
-    "pantalla","precio","cuanto","cuánto","stock","disponibles","disponible","cuales","hola","buenas","buenos",
+    "pantalla","precio","3/4","cuanto","cuánto","stock","disponibles","disponible","cuales","hola","buenas","buenos",
     "dias","día","dia","tardes","noches","saludos","favor","porfavor","porfa","gracias","please",
     "mano","hermano","brother","bro","amigo","chamo","pana","jefe","señor","señora","maestro","socio","papi","mami",
     "me","mi","mis","tu","tus","nos","ese","esa","esto","esta","aqui","cuando","como","donde",
