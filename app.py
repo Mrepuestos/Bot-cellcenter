@@ -11,7 +11,7 @@ import pytz
 from supabase import create_client
 
 # ── NUEVO: Módulo de pagos ────────────────────────────────────────────────────
-from pagos_extractor import procesar_imagen_pago, inicializar_db
+from pagos_extractor import procesar_imagen_pago, inicializar_db, borrar_pago_por_msg_id
 
 app = Flask(__name__)
 
@@ -499,6 +499,14 @@ def webhook():
                     and msg.get("type") == "image"):
                 print(f"📥 Imagen de pago recibida de {msg.get('from_name', msg.get('from', ''))}")
                 procesar_imagen_pago(msg)
+                continue
+            # ── NUEVO: Capturar borrado de mensajes del grupo de pagos ──────────
+            if (GRUPO_PAGOS_ID
+                    and chat_id == GRUPO_PAGOS_ID
+                    and msg.get("type") == "revoke"):
+                deleted_id = msg.get("revoked_msg_id") or msg.get("id", "")
+                print(f"🗑️ Mensaje borrado en grupo de pagos: {deleted_id}")
+                borrar_pago_por_msg_id(deleted_id)
                 continue
             # ─────────────────────────────────────────────────────────────────
 
