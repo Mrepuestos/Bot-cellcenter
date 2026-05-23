@@ -86,6 +86,8 @@ CORRECCIONES_MARCAS = {
 MODELOS_ABREVIADOS = {
     "2023": "Tecno Spark Go 2023",
     "2024": "Tecno Spark Go 2024",
+    "go2023": "Tecno Spark Go 2023",
+    "go2024": "Tecno Spark Go 2024",
 }
 
 
