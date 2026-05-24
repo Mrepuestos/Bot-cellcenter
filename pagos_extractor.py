@@ -192,17 +192,23 @@ Si la imagen muestra alguna de estas cosas NO es válida:
 - Cualquier cosa que NO sea un comprobante de transferencia
 → responde exactamente: NO_ES_PAGO
 
-PASO 2 — Si es un comprobante válido, busca el campo CONCEPTO y extrae SOLO el nombre de la persona.
-REGLAS ESTRICTAS:
-- "Pago a Gabriel carpintero" → Gabriel carpintero
-- "Pago a Juan" → Juan
-- "Transferencia a Maria Lopez" → Maria Lopez
-- NUNCA incluyas "Pago a", "Transferencia a" ni palabras similares
-- SOLO el nombre de la persona, nada más
-- Si el concepto no tiene nombre de persona → sin_nombre
-- Si no hay campo CONCEPTO → sin_nombre
+PASO 2 — Busca el campo CONCEPTO y extrae SOLO el nombre.
+El campo CONCEPTO dice algo como "Pago a [NOMBRE]".
+Tu tarea es devolver SOLO el [NOMBRE], sin nada más.
 
-Responde ÚNICAMENTE con el nombre, "sin_nombre" o "NO_ES_PAGO". Sin explicaciones."""
+EJEMPLOS:
+CONCEPTO dice "Pago a Efrain" → devuelves: Efrain
+CONCEPTO dice "Pago a Maria Lopez" → devuelves: Maria Lopez
+CONCEPTO dice "Pago a adelson" → devuelves: adelson
+CONCEPTO dice "pago" → devuelves: sin_nombre
+CONCEPTO no existe → devuelves: sin_nombre
+
+PROHIBIDO devolver:
+- "Pago a Efrain" ❌
+- "Transferencia a Maria" ❌
+- Cualquier palabra antes del nombre ❌
+
+Devuelve ÚNICAMENTE el nombre, "sin_nombre" o "NO_ES_PAGO".
 
     response = client.messages.create(
         model=CLAUDE_MODEL,
