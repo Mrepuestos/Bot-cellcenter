@@ -1,7 +1,8 @@
 """
 PAGOS EXTRACTOR
 - Ignora imágenes que no sean comprobantes de pago (ej: consulta de saldo)
-- Extrae nombre del campo CONCEPTO
+- Extrae nombre del campo CONCEPTO (sin "Pago a")
+- Procesa tanto "Operación Exitosa" como "Operación en Proceso"
 - Si no hay nombre en concepto usa IDENTIFICACIÓN RECEPTOR
 - Monto viene del caption/texto que acompaña la foto
 - Soporta borrado cuando se elimina el mensaje en WhatsApp
@@ -139,18 +140,27 @@ def _extraer_nombre_con_claude(image_b64, mime_type):
 
     prompt = """Analiza esta imagen y sigue estos pasos:
 
-PASO 1 — Verifica si es un comprobante de transferencia/pago exitoso.
-Si la imagen muestra alguna de estas cosas:
+PASO 1 — Verifica si es un comprobante de transferencia/pago bancario.
+Comprobantes VÁLIDOS a procesar:
+- "¡Operación Exitosa!"
+- "Operación en Proceso"
+- Cualquier comprobante de transferencia aunque esté pendiente
+
+Si la imagen muestra alguna de estas cosas NO es válida:
 - Consulta de saldo bancario
 - Pantalla de inicio de una app bancaria
-- Cualquier cosa que NO sea un comprobante de transferencia completada
+- Cualquier cosa que NO sea un comprobante de transferencia
 → responde exactamente: NO_ES_PAGO
 
-PASO 2 — Si sí es un comprobante de transferencia, busca el campo "CONCEPTO" y extrae el nombre de la persona.
-- "Pago a Gabriel carpintero" → responde: Gabriel carpintero
-- "Pago a Juan" → responde: Juan
-- Si el concepto no tiene nombre (solo dice "pago", "transferencia", etc.) → responde: sin_nombre
-- Si no hay campo CONCEPTO → responde: sin_nombre
+PASO 2 — Si es un comprobante válido, busca el campo CONCEPTO y extrae SOLO el nombre de la persona.
+REGLAS ESTRICTAS:
+- "Pago a Gabriel carpintero" → Gabriel carpintero
+- "Pago a Juan" → Juan
+- "Transferencia a Maria Lopez" → Maria Lopez
+- NUNCA incluyas "Pago a", "Transferencia a" ni palabras similares
+- SOLO el nombre de la persona, nada más
+- Si el concepto no tiene nombre de persona → sin_nombre
+- Si no hay campo CONCEPTO → sin_nombre
 
 Responde ÚNICAMENTE con el nombre, "sin_nombre" o "NO_ES_PAGO". Sin explicaciones."""
 
@@ -228,7 +238,7 @@ def _procesar_sync(mensaje):
 
         # Si no es un comprobante de pago → ignorar completamente
         if nombre == "NO_ES_PAGO":
-            print("⏭️ Imagen ignorada: no es un comprobante de pago (consulta de saldo u otro)")
+            print("⏭️ Imagen ignorada: no es un comprobante de pago")
             return
 
         # Si no hay nombre en concepto → usar IDENTIFICACIÓN RECEPTOR
