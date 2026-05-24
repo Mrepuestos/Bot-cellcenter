@@ -6,6 +6,7 @@ PAGOS EXTRACTOR
 - Si no hay nombre en concepto usa IDENTIFICACIÓN RECEPTOR
 - Monto viene del caption/texto que acompaña la foto
 - Soporta borrado cuando se elimina el mensaje en WhatsApp
+- Envía alerta por WhatsApp cuando ocurre un error
 """
 
 import os
@@ -21,17 +22,39 @@ from google.oauth2.service_account import Credentials
 
 # ─── CONFIGURACIÓN ────────────────────────────────────────────────────
 WHAPI_TOKEN         = os.environ.get("WHAPI_TOKEN", "")
+WHAPI_API_URL       = os.environ.get("WHAPI_API_URL", "https://gate.whapi.cloud")
 ANTHROPIC_API_KEY   = os.environ.get("ANTHROPIC_API_KEY", "")
 GOOGLE_SHEET_ID     = os.environ.get("GOOGLE_SHEET_ID", "")
 GOOGLE_CLIENT_EMAIL = os.environ.get("GOOGLE_CLIENT_EMAIL", "")
 GOOGLE_PRIVATE_KEY  = os.environ.get("GOOGLE_PRIVATE_KEY", "").replace("\\n", "\n")
 GOOGLE_PROJECT_ID   = os.environ.get("GOOGLE_PROJECT_ID", "controlpagos-497014")
 
+# Número que recibe las alertas de error
+ALERTA_NUMERO = "584149202844"
+
 CLAUDE_MODEL = "claude-haiku-4-5-20251001"
 
 logger = logging.getLogger("pagos_extractor")
 _anthropic_client = None
 _sheets_client    = None
+
+
+# ─── ALERTA POR WHATSAPP ──────────────────────────────────────────────
+def _enviar_alerta(error, remitente="Desconocido"):
+    try:
+        hora = datetime.now().strftime("%d/%m/%Y %H:%M")
+        mensaje = (
+            f"⚠️ *ERROR en Extractor de Pagos*\n"
+            f"Tipo: {error}\n"
+            f"Mensaje de: {remitente}\n"
+            f"Hora: {hora}"
+        )
+        url = f"{WHAPI_API_URL}/messages/text"
+        headers = {"Authorization": f"Bearer {WHAPI_TOKEN}", "Content-Type": "application/json"}
+        requests.post(url, json={"to": ALERTA_NUMERO, "body": mensaje}, headers=headers, timeout=10)
+        print(f"🔔 Alerta enviada a {ALERTA_NUMERO}")
+    except Exception as e:
+        print(f"Error enviando alerta: {e}")
 
 
 # ─── CLIENTES ─────────────────────────────────────────────────────────
@@ -115,7 +138,6 @@ def borrar_pago_por_msg_id(msg_id):
 
 # ─── DESCARGA DE IMAGEN ───────────────────────────────────────────────
 def _descargar_imagen(image_data):
-    # Intentar URL directa primero
     url = (
         image_data.get("link") or
         image_data.get("url") or
@@ -131,7 +153,7 @@ def _descargar_imagen(image_data):
             try:
                 headers = {"Authorization": f"Bearer {WHAPI_TOKEN}"}
                 r = requests.get(
-                    f"https://gate.whapi.cloud/media/{file_id}",
+                    f"{WHAPI_API_URL}/media/{file_id}",
                     headers=headers, timeout=30
                 )
                 if r.ok:
@@ -273,12 +295,14 @@ def _procesar_sync(mensaje):
         )
 
     except Exception as e:
-        print(f"❌ Error procesando msg {msg_id}: {e}")
+        error_msg = str(e)
+        print(f"❌ Error procesando msg {msg_id}: {error_msg}")
+        _enviar_alerta(error_msg, remitente_nombre)
         _guardar_pago(
             msg_id=msg_id,
             fecha_msg=fecha_msg,
             remitente_nombre=remitente_nombre,
             nombre="Error",
             monto=monto,
-            estado=f"Error: {str(e)[:50]}",
+            estado=f"Error: {error_msg[:50]}",
         )
