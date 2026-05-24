@@ -115,6 +115,7 @@ def borrar_pago_por_msg_id(msg_id):
 
 # ─── DESCARGA DE IMAGEN ───────────────────────────────────────────────
 def _descargar_imagen(image_data):
+    # Intentar URL directa primero
     url = (
         image_data.get("link") or
         image_data.get("url") or
@@ -122,6 +123,23 @@ def _descargar_imagen(image_data):
         image_data.get("mediaUrl") or
         image_data.get("media_url")
     )
+
+    # Si no hay URL directa, pedirla a Whapi con el id del archivo
+    if not url:
+        file_id = image_data.get("id")
+        if file_id:
+            try:
+                headers = {"Authorization": f"Bearer {WHAPI_TOKEN}"}
+                r = requests.get(
+                    f"https://gate.whapi.cloud/media/{file_id}",
+                    headers=headers, timeout=30
+                )
+                if r.ok:
+                    data = r.json()
+                    url = data.get("url") or data.get("link")
+            except Exception as e:
+                print(f"Error obteniendo URL de media: {e}")
+
     if not url:
         print(f"image_data keys: {list(image_data.keys())}")
         raise ValueError("No se encontró URL de imagen")
