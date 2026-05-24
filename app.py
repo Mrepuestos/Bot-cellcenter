@@ -448,12 +448,6 @@ MÚLTIPLES PRODUCTOS: Si el inventario muestra varios productos, responde en lis
 
 COMPATIBILIDADES: Si el inventario dice "PRODUCTOS COMPATIBLES", responde con una de estas frases variando cada vez, seguida del precio:
 "Tenemos una pantalla compatible para ese modelo 👍"
-"¡Buenas noticias! Tenemos una compatible 😊"
-"No tenemos la exacta, pero sí una compatible 👌"
-"Tenemos algo compatible para ti ✅"
-
-Formato siempre así:
-[frase variable]
 
 ✅ *[nombre exacto del producto]*: $XX USD / Bs. XX,XXX
 
