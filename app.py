@@ -446,8 +446,16 @@ MÚLTIPLES PRODUCTOS: Si el inventario muestra varios productos, responde en lis
 ✅ *Modelo*: $12 USD / Bs. 8,243
 ✅ *Modelo*: $13 USD / Bs. 8,856
 
-COMPATIBILIDADES: Si el inventario dice "PRODUCTO COMPATIBLE", responde:
-"No tenemos la pantalla para [modelo pedido], pero tenemos una compatible: *[nombre producto]*: $XX USD / Bs. XX,XXX"
+COMPATIBILIDADES: Si el inventario dice "PRODUCTOS COMPATIBLES", responde con una de estas frases variando cada vez, seguida del precio:
+"Tenemos una pantalla compatible para ese modelo 👍"
+"¡Buenas noticias! Tenemos una compatible 😊"
+"No tenemos la exacta, pero sí una compatible 👌"
+"Tenemos algo compatible para ti ✅"
+
+Formato siempre así:
+[frase variable]
+
+✅ *[nombre exacto del producto]*: $XX USD / Bs. XX,XXX
 
 STOCK 1 o 2: da el precio y avisa que queda muy poco. Varía las frases:
 "Por cierto, este modelo está casi agotado. ¿Lo reservamos?"
