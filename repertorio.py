@@ -80,14 +80,6 @@ CORRECCIONES_MARCAS = {
     "reame": "realme",
     "realmi": "realme",
     "relme": "realme",
-
-    # Oppo
-    "opo": "oppo",
-    "opoo": "oppo",
-
-    # Vivo
-    "vibo": "vivo",
-    "vio": "vivo",
 }
 
 # ── Modelos abreviados ────────────────────────────────────────────────────────
@@ -95,16 +87,16 @@ CORRECCIONES_MARCAS = {
 MODELOS_ABREVIADOS = {
     "2023": "Tecno Spark Go 2023",
     "2024": "Tecno Spark Go 2024",
-    "go2023": "Tecno Spark Go 2023",
-    "go2024": "Tecno Spark Go 2024",
+    "go 2023": "Tecno Spark Go 2023",
+    "go 2024": "Tecno Spark Go 2024",
     "11 play": "Infinix Hot 11 Play",
-    "12 Play": "Infinix Hot 12 Play",
-    "30 Play": "Infinix Hot 30 Play",
-    "30i": "Infinix Hot 30i",
+    "12 play": "Infinix Hot 12 Play",
+    "30 play": "Infinix Hot 30 Play",
+    "30 i": "Infinix Hot 30i",
 
-    "go24": "Tecno Spark Go 2024",
-    "go23": "Tecno Spark Go 2023",
-    "10Pro": "Tecno Spark 10 Pro",
+    "go 24": "Tecno Spark Go 2024",
+    "go 23": "Tecno Spark Go 2023",
+    "10 Pro": "Tecno Spark 10 Pro",
 }
 
 # ── Palabras a ignorar en la búsqueda ─────────────────────────────────────────
