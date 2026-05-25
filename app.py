@@ -51,50 +51,7 @@ stock_bajo_pendiente = {}
 
 PALABRAS_SI = ["si","sí","yes","claro","dale","ok","okay","quiero","aparta","reserva","separa","confirmado","afirmativo","me interesa","la quiero"]
 
-PALABRAS_IGNORAR = {
-    "de","el","la","los","las","un","una","para","del","con","por","que","y","o","a","en","al","lo","le","se","su","sus","es","son",
-    "tienes","tienen","hay","tengo","tiene","dame","dime","quiero","quieres","puedes","puede","necesito",
-    "pantalla","3/4","precio","cuanto","cuánto","stock","disponibles","disponible","cuales","hola","buenas","buenos",
-    "dias","día","dia","tardes","noches","saludos","favor","porfavor","porfa","gracias","please",
-    "mano","hermano","brother","bro","amigo","chamo","pana","jefe","señor","señora","maestro","socio","papi","mami",
-    "me","mi","mis","tu","tus","nos","ese","esa","esto","esta","aqui","cuando","como","donde",
-    "mas","más","muy","bien","mal","solo","también","tampoco","d","q","x","k","tendrás","podria","podría",
-    "teneis","tenes","tene","tiene","hay","tienen","buen","xfa",
-    "bolivares","bolívares","divisa","divisas","dolar","dólares","dolares","dólar"
-}
-
-CORRECCIONES_MARCAS = {
-    "remi": "redmi",
-    "samsug": "samsung",
-    "samsum": "samsung",
-    "samsun": "samsung",
-    "infnix": "infinix",
-    "infinik": "infinix",
-    "ifninx": "infinix",
-    "infinity": "infinix",
-    "infiniti": "infinix",
-    "iph": "iphone",
-    "aifon": "iphone",
-    "aiphone": "iphone",
-    "huawe": "huawei",
-    "huawey": "huawei",
-    "huawai": "huawei",
-    "tecnho": "tecno",
-    "tekno": "tecno",
-    "motoral": "motorola",
-    "motarola": "motorola",
-    "alkatel": "alcatel",
-    "alcater": "alcatel",
-    "onor": "honor",
-    "onour": "honor",
-}
-
-MODELOS_ABREVIADOS = {
-    "2023": "Tecno Spark Go 2023",
-    "2024": "Tecno Spark Go 2024",
-    "go2023": "Tecno Spark Go 2023",
-    "go2024": "Tecno Spark Go 2024",
-}
+from repertorio import CORRECCIONES_MARCAS, MODELOS_ABREVIADOS, PALABRAS_IGNORAR
 
 
 # ── Utilidades generales ──────────────────────────────────────────────────────
