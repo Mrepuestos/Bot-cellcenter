@@ -212,7 +212,7 @@ def buscar_exacto(todos, palabras_clave):
     encontrados = []
     for producto in todos:
         nombre_norm = normalizar_texto(producto['name'])
-        palabras_nombre = nombre_norm.split()
+        palabras_nombre = [p for p in nombre_norm.split() if p not in PALABRAS_IGNORAR]
 
         if not all(p in palabras_nombre for p in palabras_clave):
             continue
