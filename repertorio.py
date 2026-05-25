@@ -97,6 +97,14 @@ MODELOS_ABREVIADOS = {
     "2024": "Tecno Spark Go 2024",
     "go2023": "Tecno Spark Go 2023",
     "go2024": "Tecno Spark Go 2024",
+    "11 play": "Infinix Hot 11 Play",
+    "12 Play": "Infinix Hot 12 Play",
+    "30 Play": "Infinix Hot 30 Play",
+    "30i": "Infinix Hot 30i",
+
+    "go24": "Tecno Spark Go 2024",
+    "go23": "Tecno Spark Go 2023",
+    "10Pro": "Tecno Spark 10 Pro",
 }
 
 # ── Palabras a ignorar en la búsqueda ─────────────────────────────────────────
