@@ -10,14 +10,14 @@ from datetime import datetime
 import pytz
 from supabase import create_client
 
-# ── NUEVO: Módulo de pagos ────────────────────────────────────────────────────
+# ── Módulo de pagos ────────────────────────────────────────────────────────────
 from pagos_extractor import procesar_imagen_pago, inicializar_db, borrar_pago_por_msg_id
 
 app = Flask(__name__)
 
 BOT_START_TIME = time.time()
 
-# ── NUEVO: ID del grupo de pagos ──────────────────────────────────────────────
+# ── ID del grupo de pagos ──────────────────────────────────────────────────────
 GRUPO_PAGOS_ID = os.environ.get("GRUPO_PAGOS_ID", "")
 
 NUMEROS_AUTORIZADOS = [
@@ -42,8 +42,8 @@ SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 TABLA_PRECIOS = {
-    11: 15, 12: 16, 13: 17, 14: 19, 15: 20,
-    17: 23, 19: 26, 21: 28, 24: 32
+    10: 13, 11: 14, 12: 15, 13: 17, 14: 18,
+    15: 19, 16: 21, 21: 27, 26: 31
 }
 
 tasa_bcv_cache = {"tasa": 515.0, "fecha": ""}
@@ -136,7 +136,7 @@ def calcular_precio_bs(precio_usd_odoo):
     precio_int = int(precio_usd_odoo)
     precio_tabla = TABLA_PRECIOS.get(precio_int, round(precio_usd_odoo * 1.35))
     precio_bs = round(precio_tabla * obtener_tasa_bcv())
-    return precio_usd_odoo, precio_bs
+    return precio_usd_odoo, precio_tabla, precio_bs
 
 
 def esta_abierto():
@@ -409,8 +409,7 @@ def consultar_odoo(mensaje):
         print(f"Error consultando Odoo: {e}")
         return None, None, None
 
-
-# ── Mensajería y asesores ─────────────────────────────────────────────────────
+    # ── Mensajería y asesores ─────────────────────────────────────────────────────
 
 def send_whapi_message(to: str, text: str):
     url = f"{WHAPI_API_URL}/messages/text"
@@ -440,16 +439,19 @@ La tienda está actualmente: {estado_tienda}
 
 REGLA PRINCIPAL: Cuando el inventario muestre productos con stock mayor a 0, SIEMPRE da el precio. NUNCA digas que no está disponible si hay stock. NUNCA preguntes si es para pantalla o celular, asume que siempre es para pantalla.
 
-1. PANTALLAS: Si el inventario muestra productos disponibles, responde con precio en USD y bolívares. No menciones cantidad de stock.
+1. PANTALLAS: Si el inventario muestra productos disponibles, responde con precio en USD y bolívares. Formato EXACTO:
+✅ *Nombre producto*: $XX USD / ($YY) Bs. XX,XXX
+
+Donde $XX es el precio Odoo, $YY es el precio equivalente y Bs. XX,XXX es el precio en bolívares.
 
 MÚLTIPLES PRODUCTOS: Si el inventario muestra varios productos, responde en lista:
-✅ *Modelo*: $12 USD / Bs. 8,243
-✅ *Modelo*: $13 USD / Bs. 8,856
+✅ *Modelo*: $12 USD / ($15) Bs. 8,243
+✅ *Modelo*: $13 USD / ($17) Bs. 8,856
 
-COMPATIBILIDADES: Si el inventario dice "PRODUCTOS COMPATIBLES", responde con una de estas frases variando cada vez, seguida del precio:
-"Tenemos una pantalla compatible para ese modelo 👍"
+COMPATIBILIDADES: Si el inventario dice "PRODUCTOS COMPATIBLES", responde EXACTAMENTE así:
+"Tenemos una pantalla compatible para ese modelo 👍
 
-✅ *[nombre exacto del producto]*: $XX USD / Bs. XX,XXX
+✅ *[nombre exacto del producto]*: $XX USD / ($YY) Bs. XX,XXX"
 
 STOCK 1 o 2: da el precio y avisa que queda muy poco. Varía las frases:
 "Por cierto, este modelo está casi agotado. ¿Lo reservamos?"
@@ -477,7 +479,7 @@ Responde siempre corto y directo. Muestra el nombre exacto del producto como apa
 
 client = anthropic.Anthropic()
 
-# ── NUEVO: Inicializar Google Sheets al arrancar ──────────────────────────────
+# ── Inicializar Google Sheets al arrancar ─────────────────────────────────────
 inicializar_db()
 
 
@@ -495,28 +497,22 @@ def webhook():
 
             chat_id = msg.get("chat_id", "") or msg.get("chatId", "") or ""
 
-            # ── NUEVO: Capturar imágenes del grupo de pagos ───────────────────
+            # ── Capturar imágenes del grupo de pagos ──────────────────────────
             if (GRUPO_PAGOS_ID
                     and chat_id == GRUPO_PAGOS_ID
                     and msg.get("type") == "image"):
                 print(f"📥 Imagen de pago recibida de {msg.get('from_name', msg.get('from', ''))}")
                 procesar_imagen_pago(msg)
                 continue
-            # ── NUEVO: Capturar borrado de mensajes del grupo de pagos ──────────
+
+            # ── Capturar borrado de mensajes del grupo de pagos ───────────────
             if (GRUPO_PAGOS_ID
                     and chat_id == GRUPO_PAGOS_ID
-                    and msg.get("type") in ("revoke", "action")):
-                # Whapi puede enviar el borrado como "revoke" o "action"
-                deleted_id = (
-                    msg.get("action", {}).get("target") or
-                    msg.get("revoked_msg_id") or
-                    msg.get("id", "")
-                )
-                print(f"🗑️ Evento borrado en grupo (tipo={msg.get('type')}) id={deleted_id}")
-                print(f"🔍 msg completo: {msg}")
+                    and msg.get("type") == "revoke"):
+                deleted_id = msg.get("revoked_msg_id") or msg.get("id", "")
+                print(f"🗑️ Mensaje borrado en grupo de pagos: {deleted_id}")
                 borrar_pago_por_msg_id(deleted_id)
                 continue
-            # ─────────────────────────────────────────────────────────────────
 
             from_number = msg.get("from", "")
             if not from_number:
@@ -568,10 +564,10 @@ def webhook():
                 if productos:
                     contexto_odoo += "\n\nINFORMACIÓN DEL INVENTARIO:\n"
                     for p in productos:
-                        precio_usd, precio_bs = calcular_precio_bs(p['list_price'])
+                        precio_usd, precio_tabla, precio_bs = calcular_precio_bs(p['list_price'])
                         stock = int(p['qty_available'])
                         nombre = p['name']
-                        contexto_odoo += f"- {nombre}: ${precio_usd} USD / Bs. {precio_bs:,} | Stock: {stock} unidades\n"
+                        contexto_odoo += f"- {nombre}: ${precio_usd} USD / (${precio_tabla}) Bs. {precio_bs:,} | Stock: {stock} unidades\n"
                         if stock_bajo_info is None and 1 <= stock <= 2:
                             stock_bajo_info = {"producto": nombre, "stock": stock}
 
@@ -579,20 +575,20 @@ def webhook():
                     contexto_odoo += "\n\nPRODUCTOS COMPATIBLES:\n"
                     if isinstance(compatibles, list):
                         for comp in compatibles:
-                            precio_usd, precio_bs = calcular_precio_bs(comp['list_price'])
+                            precio_usd, precio_tabla, precio_bs = calcular_precio_bs(comp['list_price'])
                             stock = int(comp['qty_available'])
                             nombre = comp['name']
                             modelo_pedido = comp.get('_compatible_con', '')
                             ref = comp.get('_referencia', '')
-                            contexto_odoo += f"- {nombre} (compatible con {ref or modelo_pedido}): ${precio_usd} USD / Bs. {precio_bs:,} | Stock: {stock} unidades\n"
+                            contexto_odoo += f"- {nombre} (compatible con {ref or modelo_pedido}): ${precio_usd} USD / (${precio_tabla}) Bs. {precio_bs:,} | Stock: {stock} unidades\n"
                             if stock_bajo_info is None and 1 <= stock <= 2:
                                 stock_bajo_info = {"producto": nombre, "stock": stock}
                     else:
-                        precio_usd, precio_bs = calcular_precio_bs(compatibles['list_price'])
+                        precio_usd, precio_tabla, precio_bs = calcular_precio_bs(compatibles['list_price'])
                         stock = int(compatibles['qty_available'])
                         nombre = compatibles['name']
                         modelo_pedido = compatibles.get('_compatible_con', '')
-                        contexto_odoo += f"- {nombre} (compatible con {modelo_pedido}): ${precio_usd} USD / Bs. {precio_bs:,} | Stock: {stock} unidades\n"
+                        contexto_odoo += f"- {nombre} (compatible con {modelo_pedido}): ${precio_usd} USD / (${precio_tabla}) Bs. {precio_bs:,} | Stock: {stock} unidades\n"
                         if stock_bajo_info is None and 1 <= stock <= 2:
                             stock_bajo_info = {"producto": nombre, "stock": stock}
 
