@@ -208,7 +208,7 @@ PROHIBIDO devolver:
 - "Transferencia a Maria" ❌
 - Cualquier palabra antes del nombre ❌
 
-Devuelve ÚNICAMENTE el nombre, "sin_nombre" o "NO_ES_PAGO".
+Devuelve ÚNICAMENTE el nombre, "sin_nombre" o "NO_ES_PAGO"."""
 
     response = client.messages.create(
         model=CLAUDE_MODEL,
