@@ -147,7 +147,7 @@ def expandir_abreviacion(mensaje):
     """Expande abreviaciones de 1, 2 o 3 palabras"""
     palabras_temp, _ = extraer_palabras_clave(mensaje)
 
-    # Buscar combinacion de 3 palabras
+    # Buscar combinacion de 3 palabras con espacio
     for i in range(len(palabras_temp) - 2):
         combinacion = " ".join(palabras_temp[i:i+3])
         if combinacion in MODELOS_ABREVIADOS:
@@ -155,9 +155,17 @@ def expandir_abreviacion(mensaje):
             print(f"Abreviación expandida: '{mensaje}' → '{expandido}'")
             return expandido
 
-    # Buscar combinacion de 2 palabras
+    # Buscar combinacion de 2 palabras con espacio
     for i in range(len(palabras_temp) - 1):
         combinacion = " ".join(palabras_temp[i:i+2])
+        if combinacion in MODELOS_ABREVIADOS:
+            expandido = MODELOS_ABREVIADOS[combinacion]
+            print(f"Abreviación expandida: '{mensaje}' → '{expandido}'")
+            return expandido
+
+    # Buscar combinacion de 2 palabras unidas sin espacio
+    for i in range(len(palabras_temp) - 1):
+        combinacion = palabras_temp[i] + palabras_temp[i+1]
         if combinacion in MODELOS_ABREVIADOS:
             expandido = MODELOS_ABREVIADOS[combinacion]
             print(f"Abreviación expandida: '{mensaje}' → '{expandido}'")
