@@ -598,6 +598,7 @@ def webhook():
                         contexto_odoo += f"- {ref}: no encontrado exacto\n"
 
                 historial = cargar_historial(from_number)
+                print(f"Contexto Odoo: {contexto_odoo}")
                 historial.append({"role": "user", "content": body + contexto_odoo})
                 if len(historial) > 4:
                     historial = historial[-4:]
