@@ -13,6 +13,9 @@ from supabase import create_client
 # ── Módulo de pagos ────────────────────────────────────────────────────────────
 from pagos_extractor import procesar_imagen_pago, inicializar_db, borrar_pago_por_msg_id
 
+# ── Repertorio de correcciones ─────────────────────────────────────────────────
+from repertorio import CORRECCIONES_MARCAS, MODELOS_ABREVIADOS, PALABRAS_IGNORAR
+
 app = Flask(__name__)
 
 BOT_START_TIME = time.time()
@@ -50,8 +53,6 @@ tasa_bcv_cache = {"tasa": 515.0, "fecha": ""}
 stock_bajo_pendiente = {}
 
 PALABRAS_SI = ["si","sí","yes","claro","dale","ok","okay","quiero","aparta","reserva","separa","confirmado","afirmativo","me interesa","la quiero"]
-
-from repertorio import CORRECCIONES_MARCAS, MODELOS_ABREVIADOS, PALABRAS_IGNORAR
 
 
 # ── Utilidades generales ──────────────────────────────────────────────────────
@@ -143,12 +144,32 @@ def extraer_palabras_clave(mensaje):
 
 
 def expandir_abreviacion(mensaje):
+    """Expande abreviaciones de 1, 2 o 3 palabras"""
     palabras_temp, _ = extraer_palabras_clave(mensaje)
+
+    # Buscar combinacion de 3 palabras
+    for i in range(len(palabras_temp) - 2):
+        combinacion = " ".join(palabras_temp[i:i+3])
+        if combinacion in MODELOS_ABREVIADOS:
+            expandido = MODELOS_ABREVIADOS[combinacion]
+            print(f"Abreviación expandida: '{mensaje}' → '{expandido}'")
+            return expandido
+
+    # Buscar combinacion de 2 palabras
+    for i in range(len(palabras_temp) - 1):
+        combinacion = " ".join(palabras_temp[i:i+2])
+        if combinacion in MODELOS_ABREVIADOS:
+            expandido = MODELOS_ABREVIADOS[combinacion]
+            print(f"Abreviación expandida: '{mensaje}' → '{expandido}'")
+            return expandido
+
+    # Buscar palabra sola
     for palabra in palabras_temp:
         if palabra in MODELOS_ABREVIADOS:
             expandido = MODELOS_ABREVIADOS[palabra]
             print(f"Abreviación expandida: '{mensaje}' → '{expandido}'")
             return expandido
+
     return mensaje
 
 
@@ -204,7 +225,7 @@ def buscar_compatible_exacto(todos, palabras_clave):
 
             for modelo_odoo in compatible_texto.split(','):
                 modelo_norm = normalizar_texto(modelo_odoo.strip())
-                palabras_modelo = modelo_norm.split()
+                palabras_modelo = [p for p in modelo_norm.split() if p not in PALABRAS_IGNORAR]
 
                 if not palabras_modelo:
                     continue
@@ -350,6 +371,7 @@ def consultar_odoo(mensaje):
             if con_stock:
                 return encontrados, None, None
             else:
+                print("Sin stock, buscando compatible...")
                 compatible = buscar_compatible_exacto(todos, palabras_clave)
                 if compatible:
                     return None, compatible, None
@@ -555,7 +577,6 @@ def webhook():
                         contexto_odoo += f"- {ref}: no encontrado exacto\n"
 
                 historial = cargar_historial(from_number)
-                print(f"Contexto Odoo: {contexto_odoo}")
                 historial.append({"role": "user", "content": body + contexto_odoo})
                 if len(historial) > 4:
                     historial = historial[-4:]
