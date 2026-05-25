@@ -96,7 +96,7 @@ MODELOS_ABREVIADOS = {
 
     "go24": "Tecno Spark Go 2024",
     "go23": "Tecno Spark Go 2023",
-    "10Pro": "Tecno Spark 10 Pro",
+    "10pro": "Tecno Spark 10 Pro",
 }
 
 # ── Palabras a ignorar en la búsqueda ─────────────────────────────────────────
