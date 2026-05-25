@@ -229,7 +229,7 @@ Devuelve ÚNICAMENTE el nombre, "sin_nombre" o "NO_ES_PAGO".
 def _extraer_identificacion_con_claude(image_b64, mime_type):
     client = _get_anthropic()
     prompt = """Extrae SOLO el valor del campo "IDENTIFICACIÓN RECEPTOR" de este comprobante.
-Ejemplo: "V-11691262" → responde: V-11691262
+Ejemplo: "V-11691262" - responde: V-11691262
 Si no existe ese campo responde: No encontrado"""
 
     response = client.messages.create(
