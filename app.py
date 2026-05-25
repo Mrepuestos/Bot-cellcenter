@@ -54,6 +54,12 @@ stock_bajo_pendiente = {}
 
 PALABRAS_SI = ["si","sí","yes","claro","dale","ok","okay","quiero","aparta","reserva","separa","confirmado","afirmativo","me interesa","la quiero"]
 
+# ── Marcas conocidas para búsqueda sin marca ──────────────────────────────────
+MARCAS_CONOCIDAS = {
+    "samsung", "redmi", "xiaomi", "infinix", "iphone", "huawei",
+    "tecno", "motorola", "alcatel", "honor", "realme"
+}
+
 
 # ── Utilidades generales ──────────────────────────────────────────────────────
 
@@ -192,6 +198,7 @@ def dividir_mensaje(mensaje):
 # ── Búsqueda exacta ───────────────────────────────────────────────────────────
 
 def buscar_exacto(todos, palabras_clave):
+    """Búsqueda exacta — todas las palabras clave deben estar en el nombre."""
     if not palabras_clave:
         return []
 
@@ -211,6 +218,51 @@ def buscar_exacto(todos, palabras_clave):
         print(f"Match exacto: {producto['name']}")
 
     return encontrados
+
+
+def buscar_sin_marca(todos, palabras_clave, max_resultados=5):
+    """
+    Búsqueda secundaria — quita las marcas del nombre del producto
+    y busca solo por modelo. Retorna hasta max_resultados productos
+    con stock > 0 primero, luego sin stock.
+    """
+    if not palabras_clave:
+        return []
+
+    # Si las palabras clave ya incluyen una marca, no aplicar esta búsqueda
+    if any(p in MARCAS_CONOCIDAS for p in palabras_clave):
+        return []
+
+    encontrados_con_stock = []
+    encontrados_sin_stock = []
+
+    for producto in todos:
+        nombre_norm = normalizar_texto(producto['name'])
+        # Quitar marcas conocidas del nombre del producto
+        palabras_nombre = [p for p in nombre_norm.split()
+                          if p not in PALABRAS_IGNORAR and p not in MARCAS_CONOCIDAS]
+
+        if not palabras_nombre:
+            continue
+
+        if not all(p in palabras_nombre for p in palabras_clave):
+            continue
+
+        palabras_extra = len(palabras_nombre) - len(palabras_clave)
+        if palabras_extra > 0:
+            continue
+
+        stock = int(producto['qty_available'])
+        print(f"Match sin marca: {producto['name']} | Stock: {stock}")
+
+        if stock > 0:
+            encontrados_con_stock.append(producto)
+        else:
+            encontrados_sin_stock.append(producto)
+
+    # Combinar con stock primero
+    resultado = encontrados_con_stock + encontrados_sin_stock
+    return resultado[:max_resultados]
 
 
 def buscar_compatible_exacto(todos, palabras_clave):
@@ -306,6 +358,7 @@ def buscar_referencia(todos, ref):
     if not palabras_clave:
         return None, None, None
 
+    # Paso 1: búsqueda exacta normal
     encontrados = buscar_exacto(todos, palabras_clave)
     if encontrados:
         con_stock = [p for p in encontrados if int(p['qty_available']) > 0]
@@ -317,10 +370,18 @@ def buscar_referencia(todos, ref):
                 return None, compatible, None
             return encontrados, None, None
 
+    # Paso 2: búsqueda sin marca
+    encontrados_sin_marca = buscar_sin_marca(todos, palabras_clave)
+    if encontrados_sin_marca:
+        print(f"Resultados sin marca: {[p['name'] for p in encontrados_sin_marca]}")
+        return encontrados_sin_marca, None, None
+
+    # Paso 3: buscar compatible
     compatible = buscar_compatible_exacto(todos, palabras_clave)
     if compatible:
         return None, compatible, None
 
+    # Paso 4: similares
     similares = buscar_similares(todos, palabras_clave)
     return None, None, similares
 
@@ -373,6 +434,7 @@ def consultar_odoo(mensaje):
         if not palabras_clave:
             return None, None, None
 
+        # Paso 1: búsqueda exacta normal
         encontrados = buscar_exacto(todos, palabras_clave)
         if encontrados:
             con_stock = [p for p in encontrados if int(p['qty_available']) > 0]
@@ -385,10 +447,18 @@ def consultar_odoo(mensaje):
                     return None, compatible, None
                 return encontrados, None, None
 
+        # Paso 2: búsqueda sin marca
+        encontrados_sin_marca = buscar_sin_marca(todos, palabras_clave)
+        if encontrados_sin_marca:
+            print(f"Resultados sin marca: {[p['name'] for p in encontrados_sin_marca]}")
+            return encontrados_sin_marca, None, None
+
+        # Paso 3: buscar compatible
         compatible = buscar_compatible_exacto(todos, palabras_clave)
         if compatible:
             return None, compatible, None
 
+        # Paso 4: similares
         similares = buscar_similares(todos, palabras_clave)
         return None, None, similares
 
