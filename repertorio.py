@@ -87,12 +87,12 @@ CORRECCIONES_MARCAS = {
 MODELOS_ABREVIADOS = {
     "2023": "Tecno Spark Go 2023",
     "2024": "Tecno Spark Go 2024",
-    "go 2023": "Tecno Spark Go 2023",
-    "go 2024": "Tecno Spark Go 2024",
-    "11 play": "Infinix Hot 11 Play",
-    "12 play": "Infinix Hot 12 Play",
-    "30 play": "Infinix Hot 30 Play",
-    "30 i": "Infinix Hot 30i",
+    "go2023": "Tecno Spark Go 2023",
+    "go2024": "Tecno Spark Go 2024",
+    "11play": "Infinix Hot 11 Play",
+    "12play": "Infinix Hot 12 Play",
+    "30play": "Infinix Hot 30 Play",
+    "30i": "Infinix Hot 30i",
 
     "go24": "Tecno Spark Go 2024",
     "go23": "Tecno Spark Go 2023",
