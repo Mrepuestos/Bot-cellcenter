@@ -638,6 +638,20 @@ def webhook():
 
             numero_limpio = from_number.replace("@s.whatsapp.net", "").replace("+", "")
 
+            # ── Obtener body aquí para que esté disponible en ambos flujos ──────
+            body = msg.get("text", {}).get("body", "").strip()
+            if not body:
+                continue
+
+            # ── Comando secreto para limpiar historial (funciona en ambos flujos)
+            if body.strip().lower() == "reset_historial":
+                try:
+                    supabase.table("Clientes").delete().eq("numero", numero_limpio).execute()
+                    send_whapi_message(from_number, "✅ Historial limpiado. Puedes empezar una conversación nueva.")
+                except Exception as e:
+                    send_whapi_message(from_number, f"❌ Error limpiando historial: {e}")
+                continue
+
             # ── Determinar comportamiento según el número ──────────────────────
             es_cliente_celulares = numero_limpio not in NUMEROS_AUTORIZADOS
 
@@ -671,18 +685,34 @@ def webhook():
             if numero_limpio not in NUMEROS_AUTORIZADOS:
                 print("Número no autorizado: " + numero_limpio)
                 continue
+                # ── Flujo para clientes de celulares (Google Sheets) ───────────
+                print(f"Cliente celulares: {numero_limpio}")
 
-            body = msg.get("text", {}).get("body", "").strip()
-            if not body:
-                continue
+                historial = cargar_historial(numero_limpio)
+                historial.append({"role": "user", "content": body})
+                if len(historial) > 4:
+                    historial = historial[-4:]
 
-            # ── Comando secreto para limpiar historial (solo pruebas) ──────────
-            if body.strip().lower() == "reset_historial":
-                try:
-                    supabase.table("Clientes").delete().eq("numero", numero_limpio).execute()
-                    send_whapi_message(from_number, "✅ Historial limpiado. Puedes empezar una conversación nueva.")
-                except Exception as e:
-                    send_whapi_message(from_number, f"❌ Error limpiando historial: {e}")
+                response = client.messages.create(
+                    model="claude-haiku-4-5-20251001",
+                    max_tokens=400,
+                    system=get_system_prompt_celulares(),
+                    messages=historial
+                )
+                reply = response.content[0].text
+
+                if "DERIVAR_ASESOR" in reply:
+                    notificar_asesor(ASESOR_CELULARES, "celular o accesorio", from_number)
+                    reply = "Un momento, un asesor te atenderá enseguida 👋"
+
+                historial.append({"role": "assistant", "content": reply})
+                guardar_historial(numero_limpio, historial)
+                send_whapi_message(from_number, reply)
+                continue  # ← no cae al flujo de repuestos
+
+            # ── Flujo original para clientes de repuestos (sin tocar) ──────────
+            if numero_limpio not in NUMEROS_AUTORIZADOS:
+                print("Número no autorizado: " + numero_limpio)
                 continue
 
             if from_number in stock_bajo_pendiente:
