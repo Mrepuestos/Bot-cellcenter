@@ -16,6 +16,9 @@ from pagos_extractor import procesar_imagen_pago, inicializar_db, borrar_pago_po
 # ── Repertorio de correcciones ─────────────────────────────────────────────────
 from repertorio import CORRECCIONES_MARCAS, MODELOS_ABREVIADOS, PALABRAS_IGNORAR
 
+# ── Módulo catálogo celulares ──────────────────────────────────────────────────
+from sheets_celulares import obtener_catalogo_celulares
+
 app = Flask(__name__)
 
 BOT_START_TIME = time.time()
@@ -32,6 +35,9 @@ NUMEROS_AUTORIZADOS = [
 ASESOR_TECNICO = "584241564298"
 ASESOR_ACCESORIOS = "584126093756"
 ASESOR_STOCK = "584126093756"
+
+# ── Asesor para clientes de celulares ─────────────────────────────────────────
+ASESOR_CELULARES = "584241346346"
 
 WHAPI_TOKEN = os.environ.get("WHAPI_TOKEN", "")
 WHAPI_API_URL = os.environ.get("WHAPI_API_URL", "https://gate.whapi.cloud")
@@ -533,6 +539,41 @@ STOCK 0: solo di que no está disponible. NUNCA sugieras contactar, reservar o e
 
 Responde siempre corto y directo. Muestra el nombre exacto del producto como aparece en el inventario."""
 
+def get_system_prompt_celulares():
+    """System prompt para clientes que preguntan por celulares."""
+    estado_tienda = "ABIERTA" if esta_abierto() else "CERRADA"
+    catalogo = obtener_catalogo_celulares()
+    return f"""Eres el asistente virtual de una tienda de celulares en Venezuela.
+Eres amable, directo y conciso. La tienda está actualmente: {estado_tienda}
+
+REGLAS PRINCIPALES:
+- Solo ofreces los celulares que aparecen en el catálogo como disponibles
+- Si preguntan por un modelo que no está en el catálogo, dilo claramente
+- Si el cliente quiere pagar en divisas (Zelle o USDT), menciona el descuento especial
+- Las cuotas se pagan cada 15 días desde la fecha de compra
+- En Krece: la inicial se calcula sobre el precio BCV sin el recargo del 20%
+- Responde siempre corto y directo, máximo 3-4 líneas
+
+FORMATO DE PRECIO (úsalo siempre que respondas precios):
+✅ *Marca Modelo*
+💵 Contado: $X paralelo / $X BCV (Bs X)
+💛 Cashea: $X inicial + 3 cuotas de $X
+💙 Krece: $X inicial + 4 cuotas de $X
+💜 CrediTienda: $X inicial + 4 cuotas de $X
+
+HORARIO — La tienda está: {estado_tienda}
+- Lunes a sábado 8:30am-5:30pm
+- Domingos y feriados 9:00am-2:00pm
+- Si está CERRADA: avisa pero sigue respondiendo preguntas de precios
+
+DERIVACIONES:
+- Servicio técnico o reparación → responde exactamente: DERIVAR_ASESOR
+- Accesorios → responde exactamente: DERIVAR_ASESOR
+- Temas no relacionados con celulares → responde amablemente que solo manejas celulares
+
+CATÁLOGO ACTUALIZADO:
+{catalogo}
+"""
 
 client = anthropic.Anthropic()
 
@@ -597,6 +638,37 @@ def webhook():
                 continue
 
             numero_limpio = from_number.replace("@s.whatsapp.net", "").replace("+", "")
+
+            # ── Determinar comportamiento según el número ──────────────────────
+            es_cliente_celulares = numero_limpio not in NUMEROS_AUTORIZADOS
+
+            if es_cliente_celulares:
+                # ── Flujo para clientes de celulares (Google Sheets) ───────────
+                print(f"Cliente celulares: {numero_limpio}")
+
+                historial = cargar_historial(numero_limpio)
+                historial.append({"role": "user", "content": body})
+                if len(historial) > 4:
+                    historial = historial[-4:]
+
+                response = client.messages.create(
+                    model="claude-haiku-4-5-20251001",
+                    max_tokens=400,
+                    system=get_system_prompt_celulares(),
+                    messages=historial
+                )
+                reply = response.content[0].text
+
+                if "DERIVAR_ASESOR" in reply:
+                    notificar_asesor(ASESOR_CELULARES, "celular o accesorio", from_number)
+                    reply = "Un momento, un asesor te atenderá enseguida 👋"
+
+                historial.append({"role": "assistant", "content": reply})
+                guardar_historial(numero_limpio, historial)
+                send_whapi_message(from_number, reply)
+                continue  # ← no cae al flujo de repuestos
+
+            # ── Flujo original para clientes de repuestos (sin tocar) ──────────
             if numero_limpio not in NUMEROS_AUTORIZADOS:
                 print("Número no autorizado: " + numero_limpio)
                 continue
