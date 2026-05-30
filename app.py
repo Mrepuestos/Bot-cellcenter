@@ -27,7 +27,6 @@ BOT_START_TIME = time.time()
 GRUPO_PAGOS_ID = os.environ.get("GRUPO_PAGOS_ID", "")
 
 NUMEROS_AUTORIZADOS = [
-    "584149202844",
     "584241564298",
     "584126093756"
 ]
@@ -675,6 +674,15 @@ def webhook():
 
             body = msg.get("text", {}).get("body", "").strip()
             if not body:
+                continue
+
+            # ── Comando secreto para limpiar historial (solo pruebas) ──────────
+            if body.strip().lower() == "reset_historial":
+                try:
+                    supabase.table("Clientes").delete().eq("numero", numero_limpio).execute()
+                    send_whapi_message(from_number, "✅ Historial limpiado. Puedes empezar una conversación nueva.")
+                except Exception as e:
+                    send_whapi_message(from_number, f"❌ Error limpiando historial: {e}")
                 continue
 
             if from_number in stock_bajo_pendiente:
