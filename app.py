@@ -685,35 +685,6 @@ def webhook():
             if numero_limpio not in NUMEROS_AUTORIZADOS:
                 print("Número no autorizado: " + numero_limpio)
                 continue
-                # ── Flujo para clientes de celulares (Google Sheets) ───────────
-                print(f"Cliente celulares: {numero_limpio}")
-
-                historial = cargar_historial(numero_limpio)
-                historial.append({"role": "user", "content": body})
-                if len(historial) > 4:
-                    historial = historial[-4:]
-
-                response = client.messages.create(
-                    model="claude-haiku-4-5-20251001",
-                    max_tokens=400,
-                    system=get_system_prompt_celulares(),
-                    messages=historial
-                )
-                reply = response.content[0].text
-
-                if "DERIVAR_ASESOR" in reply:
-                    notificar_asesor(ASESOR_CELULARES, "celular o accesorio", from_number)
-                    reply = "Un momento, un asesor te atenderá enseguida 👋"
-
-                historial.append({"role": "assistant", "content": reply})
-                guardar_historial(numero_limpio, historial)
-                send_whapi_message(from_number, reply)
-                continue  # ← no cae al flujo de repuestos
-
-            # ── Flujo original para clientes de repuestos (sin tocar) ──────────
-            if numero_limpio not in NUMEROS_AUTORIZADOS:
-                print("Número no autorizado: " + numero_limpio)
-                continue
 
             if from_number in stock_bajo_pendiente:
                 if any(palabra in body.lower() for palabra in PALABRAS_SI):
