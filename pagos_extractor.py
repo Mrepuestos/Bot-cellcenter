@@ -1,255 +1,195 @@
 """
-PAGOS EXTRACTOR
-- Ignora imágenes que no sean comprobantes de pago (ej: consulta de saldo)
-- Extrae nombre del campo CONCEPTO (sin "Pago a")
-- Procesa tanto "Operación Exitosa" como "Operación en Proceso"
-- Si no hay nombre en concepto usa IDENTIFICACIÓN RECEPTOR
-- Monto viene del caption/texto que acompaña la foto
-- Soporta borrado cuando se elimina el mensaje en WhatsApp
-- Envía alerta por WhatsApp cuando ocurre un error
+═══════════════════════════════════════════════════════════════════════
+  PAGOS EXTRACTOR — Módulo independiente
+  Procesa imágenes de comprobantes de pago de un grupo de WhatsApp
+  Extrae Nombre + Monto con Claude AI y los guarda en SQLite
+
+  USO:
+    from pagos_extractor import procesar_imagen_pago, inicializar_db
+
+    # Al iniciar tu app Flask:
+    inicializar_db()
+
+    # En tu webhook handler, cuando llegue un mensaje:
+    if msg.get('chat_id') == GRUPO_PAGOS_ID and msg.get('type') == 'image':
+        procesar_imagen_pago(msg)
+
+  INSTALACIÓN:
+    pip install anthropic requests
+═══════════════════════════════════════════════════════════════════════
 """
 
 import os
+import sqlite3
 import base64
+import json
 import logging
 import threading
 from datetime import datetime
+from pathlib import Path
 
 import requests
 from anthropic import Anthropic
-import gspread
-from google.oauth2.service_account import Credentials
 
 # ─── CONFIGURACIÓN ────────────────────────────────────────────────────
-WHAPI_TOKEN         = os.environ.get("WHAPI_TOKEN", "")
-WHAPI_API_URL       = os.environ.get("WHAPI_API_URL", "https://gate.whapi.cloud")
-ANTHROPIC_API_KEY   = os.environ.get("ANTHROPIC_API_KEY", "")
-GOOGLE_SHEET_ID     = os.environ.get("GOOGLE_SHEET_ID", "")
-GOOGLE_CLIENT_EMAIL = os.environ.get("GOOGLE_CLIENT_EMAIL", "")
-GOOGLE_PRIVATE_KEY  = os.environ.get("GOOGLE_PRIVATE_KEY", "").replace("\\n", "\n")
-GOOGLE_PROJECT_ID   = os.environ.get("GOOGLE_PROJECT_ID", "controlpagos-497014")
+WHAPI_TOKEN       = os.getenv("WHAPI_TOKEN", "")
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+GRUPO_PAGOS_ID    = os.getenv("GRUPO_PAGOS_ID", "")
 
-# Número que recibe las alertas de error
-ALERTA_NUMERO = "584149202844"
+# Archivo de base de datos SQLite (se crea automáticamente)
+DB_PATH = Path(__file__).parent / "pagos.db"
 
-CLAUDE_MODEL = "claude-haiku-4-5-20251001"
+# Modelo de Claude para análisis de imágenes
+CLAUDE_MODEL = "claude-sonnet-4-20250514"
 
+# Logger
 logger = logging.getLogger("pagos_extractor")
+logger.setLevel(logging.INFO)
+
+# Cliente de Anthropic (se inicializa una sola vez)
 _anthropic_client = None
-_sheets_client    = None
 
 
-# ─── ALERTA POR WHATSAPP ──────────────────────────────────────────────
-def _enviar_alerta(error, remitente="Desconocido"):
-    try:
-        hora = datetime.now().strftime("%d/%m/%Y %H:%M")
-        mensaje = (
-            f"⚠️ *ERROR en Extractor de Pagos*\n"
-            f"Tipo: {error}\n"
-            f"Mensaje de: {remitente}\n"
-            f"Hora: {hora}"
-        )
-        url = f"{WHAPI_API_URL}/messages/text"
-        headers = {"Authorization": f"Bearer {WHAPI_TOKEN}", "Content-Type": "application/json"}
-        requests.post(url, json={"to": ALERTA_NUMERO, "body": mensaje}, headers=headers, timeout=10)
-        print(f"🔔 Alerta enviada a {ALERTA_NUMERO}")
-    except Exception as e:
-        print(f"Error enviando alerta: {e}")
-
-
-# ─── CLIENTES ─────────────────────────────────────────────────────────
-def _get_anthropic():
-    global _anthropic_client
-    if _anthropic_client is None:
-        _anthropic_client = Anthropic(api_key=ANTHROPIC_API_KEY)
-    return _anthropic_client
-
-
-def _get_sheet():
-    global _sheets_client
-    if _sheets_client is None:
-        creds_dict = {
-            "type": "service_account",
-            "project_id": GOOGLE_PROJECT_ID,
-            "private_key_id": "",
-            "private_key": GOOGLE_PRIVATE_KEY,
-            "client_email": GOOGLE_CLIENT_EMAIL,
-            "client_id": "",
-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-            "token_uri": "https://oauth2.googleapis.com/token",
-        }
-        scopes = [
-            "https://spreadsheets.google.com/feeds",
-            "https://www.googleapis.com/auth/drive",
-        ]
-        creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
-        _sheets_client = gspread.authorize(creds)
-    return _sheets_client
-
-
-# ─── INICIALIZAR ──────────────────────────────────────────────────────
+# ─── BASE DE DATOS ────────────────────────────────────────────────────
 def inicializar_db():
-    try:
-        gc = _get_sheet()
-        sh = gc.open_by_key(GOOGLE_SHEET_ID)
-        hoja = sh.sheet1
-        valores = hoja.row_values(1)
-        if not valores:
-            hoja.append_row(["#", "Nombre", "Monto", "Remitente", "Fecha", "Estado", "msg_id"])
-            print("✅ Encabezados creados en Google Sheets")
-        print("✅ Conexión con Google Sheets verificada")
-    except Exception as e:
-        print(f"⚠️ Error conectando a Google Sheets: {e}")
+    """Crea la tabla de pagos si no existe. Llamar al iniciar la app."""
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS pagos (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            mensaje_id       TEXT UNIQUE,
+            fecha_mensaje    TEXT,
+            fecha_procesado  TEXT DEFAULT CURRENT_TIMESTAMP,
+            remitente_id     TEXT,
+            remitente_nombre TEXT,
+            nombre_pagador   TEXT,
+            monto            TEXT,
+            estado           TEXT,
+            error            TEXT
+        )
+    """)
+    conn.commit()
+    conn.close()
+    logger.info(f"Base de datos de pagos lista en {DB_PATH}")
 
 
-# ─── GUARDAR PAGO ─────────────────────────────────────────────────────
-def _guardar_pago(msg_id, fecha_msg, remitente_nombre, nombre, monto, estado):
+def _guardar_pago(mensaje_id, fecha_msg, remitente_id, remitente_nombre,
+                  nombre, monto, estado, error=None):
+    """Inserta un pago en la DB. Ignora duplicados por mensaje_id."""
     try:
-        gc = _get_sheet()
-        sh = gc.open_by_key(GOOGLE_SHEET_ID)
-        hoja = sh.sheet1
-        num = len(hoja.get_all_values())
-        hoja.append_row([num, nombre, monto, remitente_nombre, fecha_msg, estado, msg_id])
-        print(f"✅ Pago guardado en Sheets: {nombre} → {monto}")
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT OR IGNORE INTO pagos
+            (mensaje_id, fecha_mensaje, remitente_id, remitente_nombre,
+             nombre_pagador, monto, estado, error)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (mensaje_id, fecha_msg, remitente_id, remitente_nombre,
+              nombre, monto, estado, error))
+        conn.commit()
+        conn.close()
         return True
     except Exception as e:
-        print(f"❌ Error guardando en Google Sheets: {e}")
+        logger.error(f"Error guardando pago en DB: {e}")
         return False
 
 
-# ─── BORRAR PAGO ──────────────────────────────────────────────────────
 def borrar_pago_por_msg_id(msg_id):
+    """Elimina un pago por su mensaje_id (cuando se borra el mensaje en WhatsApp)."""
     try:
-        gc = _get_sheet()
-        sh = gc.open_by_key(GOOGLE_SHEET_ID)
-        hoja = sh.sheet1
-        todas = hoja.get_all_values()
-        for i, fila in enumerate(todas):
-            if len(fila) > 6 and fila[6] == msg_id:
-                hoja.delete_rows(i + 1)
-                print(f"🗑️ Pago eliminado del Sheet (msg_id: {msg_id})")
-                return True
-        print(f"⚠️ No se encontró fila con msg_id: {msg_id}")
-        return False
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
+        cur.execute("DELETE FROM pagos WHERE mensaje_id = ?", (msg_id,))
+        conn.commit()
+        conn.close()
+        logger.info(f"🗑️ Pago eliminado (msg_id: {msg_id})")
+        return True
     except Exception as e:
-        print(f"❌ Error borrando pago: {e}")
+        logger.error(f"Error borrando pago: {e}")
         return False
 
 
-# ─── DESCARGA DE IMAGEN ───────────────────────────────────────────────
+# ─── DESCARGA DE IMAGEN DESDE WHAPI ───────────────────────────────────
 def _descargar_imagen(image_data):
-    url = (
-        image_data.get("link") or
-        image_data.get("url") or
-        image_data.get("body") or
-        image_data.get("mediaUrl") or
-        image_data.get("media_url")
-    )
-
-    # Si no hay URL directa, pedirla a Whapi con el id del archivo
+    """Descarga la imagen del mensaje de Whapi. Retorna (base64, mime_type)."""
+    url = image_data.get("link") or image_data.get("url")
     if not url:
-        file_id = image_data.get("id")
-        if file_id:
-            try:
-                headers = {"Authorization": f"Bearer {WHAPI_TOKEN}"}
-                r = requests.get(
-                    f"{WHAPI_API_URL}/media/{file_id}",
-                    headers=headers, timeout=30
-                )
-                if r.ok:
-                    data = r.json()
-                    url = data.get("url") or data.get("link")
-            except Exception as e:
-                print(f"Error obteniendo URL de media: {e}")
-
-    if not url:
-        print(f"image_data keys: {list(image_data.keys())}")
-        raise ValueError("No se encontró URL de imagen")
+        raise ValueError("No se encontró URL de imagen en el mensaje")
 
     headers = {"Authorization": f"Bearer {WHAPI_TOKEN}"}
     resp = requests.get(url, headers=headers, timeout=30)
     resp.raise_for_status()
+
     mime_type = resp.headers.get("Content-Type", "image/jpeg").split(";")[0]
     b64_data = base64.standard_b64encode(resp.content).decode("utf-8")
     return b64_data, mime_type
 
 
 # ─── EXTRACCIÓN CON CLAUDE ────────────────────────────────────────────
-def _extraer_nombre_con_claude(image_b64, mime_type):
-    client = _get_anthropic()
+def _get_anthropic_client():
+    global _anthropic_client
+    if _anthropic_client is None:
+        _anthropic_client = Anthropic(api_key=ANTHROPIC_API_KEY)
+    return _anthropic_client
 
-    prompt = """Analiza esta imagen y sigue estos pasos:
 
-PASO 1 — Verifica si es un comprobante de transferencia/pago bancario.
-Comprobantes VÁLIDOS a procesar:
-- "¡Operación Exitosa!"
-- "Operación en Proceso"
-- Cualquier comprobante de transferencia aunque esté pendiente
+def _extraer_datos_con_claude(image_b64, mime_type):
+    """Envía la imagen a Claude y extrae nombre + monto. Retorna dict."""
+    client = _get_anthropic_client()
 
-Si la imagen muestra alguna de estas cosas NO es válida:
-- Consulta de saldo bancario
-- Pantalla de inicio de una app bancaria
-- Cualquier cosa que NO sea un comprobante de transferencia
-→ responde exactamente: NO_ES_PAGO
+    prompt = """Analiza este comprobante de pago/transferencia bancaria y extrae SOLO:
+1. NOMBRE del remitente/pagador (quien hizo el pago)
+2. MONTO pagado con su moneda (ej: $50.000 COP, $100 USD, Bs 200)
 
-PASO 2 — Busca el campo CONCEPTO y extrae SOLO el nombre.
-El campo CONCEPTO dice algo como "Pago a [NOMBRE]".
-Tu tarea es devolver SOLO el [NOMBRE], sin nada más.
+Responde ÚNICAMENTE en este formato JSON exacto, sin texto adicional, sin markdown:
+{"nombre": "...", "monto": "..."}
 
-EJEMPLOS:
-CONCEPTO dice "Pago a Efrain" → devuelves: Efrain
-CONCEPTO dice "Pago a Maria Lopez" → devuelves: Maria Lopez
-CONCEPTO dice "Pago a adelson" → devuelves: adelson
-CONCEPTO dice "pago" → devuelves: sin_nombre
-CONCEPTO no existe → devuelves: sin_nombre
-
-PROHIBIDO devolver:
-- "Pago a Efrain" ❌
-- "Transferencia a Maria" ❌
-- Cualquier palabra antes del nombre ❌
-
-Devuelve ÚNICAMENTE el nombre, "sin_nombre" o "NO_ES_PAGO"."""
+Si no puedes identificar algún dato, usa "No encontrado"."""
 
     response = client.messages.create(
         model=CLAUDE_MODEL,
-        max_tokens=100,
+        max_tokens=300,
         messages=[{
             "role": "user",
             "content": [
-                {"type": "image", "source": {"type": "base64", "media_type": mime_type, "data": image_b64}},
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": mime_type,
+                        "data": image_b64,
+                    },
+                },
                 {"type": "text", "text": prompt},
             ],
         }],
     )
-    nombre = response.content[0].text.strip()
-    print(f"Resultado Claude (concepto): '{nombre}'")
-    return nombre
 
+    text = response.content[0].text.strip()
+    text = text.replace("```json", "").replace("```", "").strip()
 
-def _extraer_identificacion_con_claude(image_b64, mime_type):
-    client = _get_anthropic()
-    prompt = """Extrae SOLO el valor del campo "IDENTIFICACIÓN RECEPTOR" de este comprobante.
-Ejemplo: "V-11691262" - responde: V-11691262
-Si no existe ese campo responde: No encontrado"""
-
-    response = client.messages.create(
-        model=CLAUDE_MODEL,
-        max_tokens=50,
-        messages=[{
-            "role": "user",
-            "content": [
-                {"type": "image", "source": {"type": "base64", "media_type": mime_type, "data": image_b64}},
-                {"type": "text", "text": prompt},
-            ],
-        }],
-    )
-    identificacion = response.content[0].text.strip()
-    print(f"Identificación receptor: '{identificacion}'")
-    return identificacion
+    try:
+        data = json.loads(text)
+        return {
+            "nombre": data.get("nombre", "No encontrado"),
+            "monto":  data.get("monto",  "No encontrado"),
+        }
+    except json.JSONDecodeError:
+        logger.warning(f"Respuesta de Claude no es JSON válido: {text}")
+        return {"nombre": "Error de parseo", "monto": "Error de parseo"}
 
 
 # ─── FUNCIÓN PRINCIPAL ────────────────────────────────────────────────
 def procesar_imagen_pago(mensaje, async_mode=True):
+    """
+    Procesa un mensaje de imagen de WhatsApp y guarda el pago extraído.
+
+    Parámetros:
+        mensaje (dict): el objeto de mensaje recibido en el webhook de Whapi.
+        async_mode (bool): si True, procesa en background sin bloquear
+                           la respuesta al webhook (recomendado).
+    """
     if async_mode:
         thread = threading.Thread(target=_procesar_sync, args=(mensaje,), daemon=True)
         thread.start()
@@ -258,7 +198,9 @@ def procesar_imagen_pago(mensaje, async_mode=True):
 
 
 def _procesar_sync(mensaje):
+    """Procesamiento real (síncrono). Se ejecuta en un thread aparte."""
     msg_id           = mensaje.get("id", "sin_id")
+    remitente_id     = mensaje.get("from", "desconocido")
     remitente_nombre = mensaje.get("from_name", "Desconocido")
     ts               = mensaje.get("timestamp")
     fecha_msg        = (
@@ -267,48 +209,85 @@ def _procesar_sync(mensaje):
     )
     image_data = mensaje.get("image", {})
 
-    # Monto: viene del caption que acompaña la foto en WhatsApp
-    monto = (
-        image_data.get("caption") or
-        mensaje.get("caption") or
-        "Sin monto"
-    )
-    monto = monto.strip() or "Sin monto"
-    print(f"📥 Procesando imagen de {remitente_nombre} | Caption: {monto}")
+    logger.info(f"📥 Procesando pago de {remitente_nombre} (msg {msg_id})")
 
     try:
         img_b64, mime = _descargar_imagen(image_data)
-
-        # Verificar si es comprobante y extraer nombre del CONCEPTO
-        nombre = _extraer_nombre_con_claude(img_b64, mime)
-
-        # Si no es un comprobante de pago → ignorar completamente
-        if nombre == "NO_ES_PAGO":
-            print("⏭️ Imagen ignorada: no es un comprobante de pago")
-            return
-
-        # Si no hay nombre en concepto → usar IDENTIFICACIÓN RECEPTOR
-        if not nombre or nombre.lower() == "sin_nombre":
-            nombre = _extraer_identificacion_con_claude(img_b64, mime)
-
+        datos = _extraer_datos_con_claude(img_b64, mime)
         _guardar_pago(
-            msg_id=msg_id,
+            mensaje_id=msg_id,
             fecha_msg=fecha_msg,
+            remitente_id=remitente_id,
             remitente_nombre=remitente_nombre,
-            nombre=nombre,
-            monto=monto,
-            estado="OK",
+            nombre=datos["nombre"],
+            monto=datos["monto"],
+            estado="ok",
         )
+        logger.info(f"✅ Pago guardado: {datos['nombre']} → {datos['monto']}")
 
     except Exception as e:
-        error_msg = str(e)
-        print(f"❌ Error procesando msg {msg_id}: {error_msg}")
-        _enviar_alerta(error_msg, remitente_nombre)
+        logger.error(f"❌ Error procesando msg {msg_id}: {e}")
         _guardar_pago(
-            msg_id=msg_id,
+            mensaje_id=msg_id,
             fecha_msg=fecha_msg,
+            remitente_id=remitente_id,
             remitente_nombre=remitente_nombre,
             nombre="Error",
-            monto=monto,
-            estado=f"Error: {error_msg[:50]}",
+            monto="Error",
+            estado="error",
+            error=str(e),
         )
+
+
+# ─── FUNCIONES DE CONSULTA ────────────────────────────────────────────
+def listar_pagos_hoy():
+    """Retorna lista de pagos procesados hoy."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT * FROM pagos
+        WHERE DATE(fecha_mensaje) = DATE('now', 'localtime')
+        ORDER BY fecha_mensaje DESC
+    """)
+    rows = [dict(r) for r in cur.fetchall()]
+    conn.close()
+    return rows
+
+
+def listar_pagos_rango(fecha_inicio, fecha_fin):
+    """Pagos entre dos fechas (formato YYYY-MM-DD)."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT * FROM pagos
+        WHERE DATE(fecha_mensaje) BETWEEN ? AND ?
+        ORDER BY fecha_mensaje DESC
+    """, (fecha_inicio, fecha_fin))
+    rows = [dict(r) for r in cur.fetchall()]
+    conn.close()
+    return rows
+
+
+def exportar_csv(ruta_archivo="pagos_export.csv"):
+    """Exporta todos los pagos a CSV."""
+    import csv
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM pagos ORDER BY fecha_mensaje DESC")
+    rows = cur.fetchall()
+    conn.close()
+
+    if not rows:
+        return None
+
+    with open(ruta_archivo, "w", newline="", encoding="utf-8-sig") as f:
+        writer = csv.DictWriter(f, fieldnames=rows[0].keys())
+        writer.writeheader()
+        for r in rows:
+            writer.writerow(dict(r))
+
+    return ruta_archivo
+    
