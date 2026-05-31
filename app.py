@@ -604,9 +604,13 @@ def webhook():
 
             # ── Capturar borrado de mensajes del grupo de pagos ───────────────
             if (GRUPO_PAGOS_ID
-                    and chat_id == GRUPO_PAGOS_ID
-                    and msg.get("type") == "revoke"):
-                deleted_id = msg.get("revoked_msg_id") or msg.get("id", "")
+                     and chat_id == GRUPO_PAGOS_ID
+                     and msg.get("type") in ("revoke", "action")):
+                deleted_id = (
+                     msg.get("action", {}).get("target") or
+                     msg.get("revoked_msg_id") or
+                     msg.get("id", "")
+                )
                 print(f"🗑️ Mensaje borrado en grupo de pagos: {deleted_id}")
                 borrar_pago_por_msg_id(deleted_id)
                 continue
