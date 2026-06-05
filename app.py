@@ -471,13 +471,15 @@ def buscar_referencia(todos, ref):
 
 def consultar_odoo(mensaje):
     try:
+        import socket
+        socket.setdefaulttimeout(15)
         common = xmlrpc.client.ServerProxy(f"{ODOO_URL}/xmlrpc/2/common")
         uid = common.authenticate(ODOO_DB, ODOO_USER, ODOO_API_KEY, {})
         print(f"Odoo UID: {uid}")
         if not uid:
             return None, None, None
 
-        models = xmlrpc.client.ServerProxy(f"{ODOO_URL}/xmlrpc/2/object")
+        models = xmlrpc.client.ServerProxy(f"{ODOO_URL}/xmlrpc/2/object", allow_none=True)
         todos = models.execute_kw(
             ODOO_DB, uid, ODOO_API_KEY,
             'product.product', 'search_read',
