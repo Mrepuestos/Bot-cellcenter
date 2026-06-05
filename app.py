@@ -406,10 +406,17 @@ def buscar_referencia(todos, ref):
         return encontrados_sin_marca, None, None
 
     # Paso 3: búsqueda sin espacios
-    encontrados_sin_espacios = buscar_sin_espacios(todos, palabras_clave)
-    if encontrados_sin_espacios:
-        print(f"Resultados sin espacios: {[p['name'] for p in encontrados_sin_espacios]}")
-        return encontrados_sin_espacios, None, None
+        encontrados_sin_espacios = buscar_sin_espacios(todos, palabras_clave)
+        if encontrados_sin_espacios:
+            print(f"Resultados sin espacios: {[p['name'] for p in encontrados_sin_espacios]}")
+            con_stock = [p for p in encontrados_sin_espacios if int(p['qty_available']) > 0]
+            if con_stock:
+                return encontrados_sin_espacios, None, None
+            else:
+                compatible = buscar_compatible_exacto(todos, palabras_clave)
+                if compatible:
+                    return None, compatible, None
+                return encontrados_sin_espacios, None, None
 
     # Paso 4: buscar compatible
     compatible = buscar_compatible_exacto(todos, palabras_clave)
@@ -492,7 +499,14 @@ def consultar_odoo(mensaje):
         encontrados_sin_espacios = buscar_sin_espacios(todos, palabras_clave)
         if encontrados_sin_espacios:
             print(f"Resultados sin espacios: {[p['name'] for p in encontrados_sin_espacios]}")
-            return encontrados_sin_espacios, None, None
+            con_stock = [p for p in encontrados_sin_espacios if int(p['qty_available']) > 0]
+            if con_stock:
+                return encontrados_sin_espacios, None, None
+            else:
+                compatible = buscar_compatible_exacto(todos, palabras_clave)
+                if compatible:
+                    return None, compatible, None
+                return encontrados_sin_espacios, None, None
 
         # Paso 4: buscar compatible
         compatible = buscar_compatible_exacto(todos, palabras_clave)
