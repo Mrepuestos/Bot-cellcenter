@@ -704,6 +704,13 @@ def webhook():
 
         for msg in messages_list:
             if msg.get("from_me", False):
+                # Detectar si el asesor escribe ** para pausar el bot
+                body_asesor = msg.get("text", {}).get("body", "").strip()
+                if body_asesor == "**":
+                    chat_id_pausa = msg.get("chat_id", "") or msg.get("chatId", "") or ""
+                    numero_cliente = chat_id_pausa.replace("@s.whatsapp.net", "").replace("+", "")
+                    pausas_activas[numero_cliente] = time.time() + 900  # 15 minutos
+                    print(f"Bot pausado para {numero_cliente} por 15 minutos")
                 continue
 
             chat_id = msg.get("chat_id", "") or msg.get("chatId", "") or ""
