@@ -604,6 +604,8 @@ STOCK 0: solo di que no está disponible. NUNCA sugieras contactar, reservar o e
 
 Responde siempre corto y directo. Muestra el nombre exacto del producto como aparece en el inventario."""
 
+7. PAGO o datos bancarios: Si el cliente pregunta cómo pagar, pide datos de pago, menciona pago móvil, transferencia o cualquier intención de pagar, responde exactamente: "DATOS_PAGO"
+
 def get_system_prompt_celulares():
     """System prompt vendedor persuasivo de celulares."""
     estado_tienda = "ABIERTA" if esta_abierto() else "CERRADA"
@@ -870,6 +872,8 @@ def webhook():
                 elif "DERIVAR_ACCESORIOS" in reply:
                     notificar_asesor(ASESOR_ACCESORIOS, "accesorios", from_number)
                     reply = "Un momento, un asesor te atenderá enseguida 👋"
+                elif "DATOS_PAGO" in reply:
+                    reply = "📱 *Datos de Pago Móvil*\n\n04149202844\nJ401188613\n0134\nServicio Técnico Cellcenter"
 
                 if stock_bajo_info:
                     stock_bajo_pendiente[from_number] = stock_bajo_info
@@ -922,6 +926,8 @@ def webhook():
                 elif "DERIVAR_ACCESORIOS" in reply:
                     notificar_asesor(ASESOR_ACCESORIOS, "accesorios", from_number)
                     reply = "Un momento, un asesor te atenderá enseguida 👋"
+                elif "DATOS_PAGO" in reply:
+                    reply = "📱 *Datos de Pago Móvil*\n\n04149202844\nJ401188613\n0134\nServicio Técnico Cellcenter"
 
                 send_whapi_message(from_number, reply)
 
