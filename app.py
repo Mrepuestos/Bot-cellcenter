@@ -197,6 +197,7 @@ def dividir_mensaje(mensaje):
     partes = re.split(separadores, mensaje, flags=re.IGNORECASE)
     partes = [p.strip() for p in partes if p.strip()]
     print(f"Referencias divididas: {partes}")
+    print(f"Número de partes: {len(partes)}")
     return partes if len(partes) > 1 else None
 
 
