@@ -323,6 +323,7 @@ def buscar_compatible_exacto(todos, palabras_clave):
                 palabras_extra = len(palabras_modelo) - len(palabras_clave)
                 modelo_junto = "".join(palabras_modelo)
                 clave_junta = "".join(palabras_clave)
+                print(f"Comparando: clave='{clave_junta}' vs modelo='{modelo_junto}'")
                 if (all(p in palabras_modelo for p in palabras_clave) and palabras_extra <= 1) or clave_junta == modelo_junto:
                     producto_copia = dict(producto)
                     producto_copia['_compatible_con'] = modelo_odoo.strip()
