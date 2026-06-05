@@ -270,6 +270,30 @@ def buscar_sin_marca(todos, palabras_clave, max_resultados=5):
     return resultado[:max_resultados]
 
 
+def buscar_sin_espacios(todos, palabras_clave):
+    if not palabras_clave:
+        return []
+
+    clave_junta = "".join(palabras_clave)
+    encontrados_con_stock = []
+    encontrados_sin_stock = []
+
+    for producto in todos:
+        nombre_norm = normalizar_texto(producto['name'])
+        palabras_nombre = [p for p in nombre_norm.split() if p not in MARCAS_CONOCIDAS and p not in PALABRAS_IGNORAR]
+        nombre_junto = "".join(palabras_nombre)
+
+        if clave_junta == nombre_junto:
+            stock = int(producto['qty_available'])
+            print(f"Match sin espacios: {producto['name']} | Stock: {stock}")
+            if stock > 0:
+                encontrados_con_stock.append(producto)
+            else:
+                encontrados_sin_stock.append(producto)
+
+    return (encontrados_con_stock + encontrados_sin_stock)[:5]
+
+
 def buscar_compatible_exacto(todos, palabras_clave):
     if not palabras_clave:
         return None
