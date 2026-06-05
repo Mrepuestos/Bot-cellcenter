@@ -602,9 +602,9 @@ STOCK 0: solo di que no está disponible. NUNCA sugieras contactar, reservar o e
 
 6. OTROS TEMAS: responde amablemente que solo manejas productos y servicios de Cell Center 4620.
 
-Responde siempre corto y directo. Muestra el nombre exacto del producto como aparece en el inventario."""
+Responde siempre corto y directo. Muestra el nombre exacto del producto como aparece en el inventario."
 
-7. PAGO o datos bancarios: Si el cliente pregunta cómo pagar, pide datos de pago, menciona pago móvil, transferencia o cualquier intención de pagar, responde exactamente: "DATOS_PAGO"
+7. PAGO o datos bancarios: Si el cliente pregunta cómo pagar, pide datos de pago, menciona pago móvil, transferencia o cualquier intención de pagar, responde exactamente: "DATOS_PAGO"""
 
 def get_system_prompt_celulares():
     """System prompt vendedor persuasivo de celulares."""
