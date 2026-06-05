@@ -197,7 +197,6 @@ def dividir_mensaje(mensaje):
     partes = re.split(separadores, mensaje, flags=re.IGNORECASE)
     partes = [p.strip() for p in partes if p.strip()]
     print(f"Referencias divididas: {partes}")
-    print(f"Número de partes: {len(partes)}")
     return partes if len(partes) > 1 else None
 
 
@@ -323,7 +322,6 @@ def buscar_compatible_exacto(todos, palabras_clave):
                 palabras_extra = len(palabras_modelo) - len(palabras_clave)
                 modelo_junto = "".join([p for p in palabras_modelo if p not in MARCAS_CONOCIDAS])
                 clave_junta = "".join(palabras_clave)
-                print(f"Comparando: clave='{clave_junta}' vs modelo='{modelo_junto}'")
                 if (all(p in palabras_modelo for p in palabras_clave) and palabras_extra <= 1) or clave_junta == modelo_junto:
                     producto_copia = dict(producto)
                     producto_copia['_compatible_con'] = modelo_odoo.strip()
