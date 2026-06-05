@@ -405,12 +405,18 @@ def buscar_referencia(todos, ref):
         print(f"Resultados sin marca: {[p['name'] for p in encontrados_sin_marca]}")
         return encontrados_sin_marca, None, None
 
-    # Paso 3: buscar compatible
+    # Paso 3: búsqueda sin espacios
+    encontrados_sin_espacios = buscar_sin_espacios(todos, palabras_clave)
+    if encontrados_sin_espacios:
+        print(f"Resultados sin espacios: {[p['name'] for p in encontrados_sin_espacios]}")
+        return encontrados_sin_espacios, None, None
+
+    # Paso 4: buscar compatible
     compatible = buscar_compatible_exacto(todos, palabras_clave)
     if compatible:
         return None, compatible, None
 
-    # Paso 4: similares
+    # Paso 5: similares
     similares = buscar_similares(todos, palabras_clave)
     return None, None, similares
 
@@ -482,12 +488,18 @@ def consultar_odoo(mensaje):
             print(f"Resultados sin marca: {[p['name'] for p in encontrados_sin_marca]}")
             return encontrados_sin_marca, None, None
 
-        # Paso 3: buscar compatible
+        # Paso 3: búsqueda sin espacios
+        encontrados_sin_espacios = buscar_sin_espacios(todos, palabras_clave)
+        if encontrados_sin_espacios:
+            print(f"Resultados sin espacios: {[p['name'] for p in encontrados_sin_espacios]}")
+            return encontrados_sin_espacios, None, None
+
+        # Paso 4: buscar compatible
         compatible = buscar_compatible_exacto(todos, palabras_clave)
         if compatible:
             return None, compatible, None
 
-        # Paso 4: similares
+        # Paso 5: similares
         similares = buscar_similares(todos, palabras_clave)
         return None, None, similares
 
