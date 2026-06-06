@@ -615,10 +615,12 @@ MÚLTIPLES PRODUCTOS: Si el inventario muestra varios productos, responde en lis
 ✅ *Modelo*: $12 USD / ($15) Bs. 8,243
 ✅ *Modelo*: $13 USD / ($17) Bs. 8,856
 
-COMPATIBILIDADES: Si el inventario dice "PRODUCTOS COMPATIBLES", responde EXACTAMENTE así:
+COMPATIBILIDADES: Si el inventario dice "PRODUCTOS COMPATIBLES":
+- Si el stock es mayor a 0, responde:
 "Tenemos una pantalla compatible para ese modelo 👍
-
 ✅ *[nombre exacto del producto]*: $XX USD / ($YY) Bs. XX,XXX"
+- Si el stock es 0, responde solo:
+"No tenemos disponible para ese modelo en este momento."
 
 STOCK 1 o 2: da el precio y avisa que queda muy poco. Varía las frases:
 "Por cierto, este modelo está casi agotado. ¿Lo reservamos?"
