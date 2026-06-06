@@ -955,11 +955,10 @@ def webhook():
                     f"✏️ *Vuelve a escribir tu modelo*"
                 )
                 send_whapi_message(from_number, reply)
-                
-            # Registrar producto no encontrado
-            registrar_producto_no_encontrado(numero_limpio, body)
 
-            else:
+            else:     
+                 # Registrar producto no encontrado
+                 registrar_producto_no_encontrado(numero_limpio, body)
                 response = client.messages.create(
                     model="claude-haiku-4-5-20251001",
                     max_tokens=300,
