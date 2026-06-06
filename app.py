@@ -966,7 +966,7 @@ def webhook():
                     model="claude-haiku-4-5-20251001",
                     max_tokens=300,
                     system=get_system_prompt(),
-                    messages=[{"role": "user", "content": body}]
+                    messages=[{"role": "user", "content": body + "\n\nINFORMACIÓN DEL INVENTARIO:\nEste producto NO existe en el inventario. Stock: 0. No inventes productos ni precios."}]
                 )
                 reply = response.content[0].text
 
