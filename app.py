@@ -19,6 +19,8 @@ from repertorio import CORRECCIONES_MARCAS, MODELOS_ABREVIADOS, PALABRAS_IGNORAR
 # ── Módulo catálogo celulares ──────────────────────────────────────────────────
 from sheets_celulares import obtener_catalogo_celulares
 
+from productos_no_encontrados import inicializar_hoja_no_encontrados, registrar_producto_no_encontrado
+
 app = Flask(__name__)
 
 BOT_START_TIME = time.time()
@@ -728,7 +730,7 @@ client = anthropic.Anthropic()
 
 # ── Inicializar Google Sheets al arrancar ─────────────────────────────────────
 inicializar_db()
-
+inicializar_hoja_no_encontrados()
 
 # ── Webhook ───────────────────────────────────────────────────────────────────
 
@@ -953,6 +955,9 @@ def webhook():
                     f"✏️ *Vuelve a escribir tu modelo*"
                 )
                 send_whapi_message(from_number, reply)
+                
+            # Registrar producto no encontrado
+            registrar_producto_no_encontrado(numero_limpio, body)
 
             else:
                 response = client.messages.create(
