@@ -954,6 +954,7 @@ def webhook():
                     f"Si no ves tu modelo aquí, es porque no lo tenemos disponible.\n\n"
                     f"✏️ *Vuelve a escribir tu modelo*"
                 )
+                registrar_producto_no_encontrado(numero_limpio, body)
                 send_whapi_message(from_number, reply)
 
             else:
