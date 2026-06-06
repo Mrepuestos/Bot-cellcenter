@@ -90,6 +90,7 @@ TABLA_PRECIOS = {
 
 tasa_bcv_cache = {"tasa": 515.0, "fecha": ""}
 stock_bajo_pendiente = {}
+pausas_activas = {}
 
 PALABRAS_SI = ["si","sí","yes","claro","dale","ok","okay","quiero","aparta","reserva","separa","confirmado","afirmativo","me interesa","la quiero"]
 
