@@ -956,16 +956,16 @@ def webhook():
                 )
                 send_whapi_message(from_number, reply)
 
-            else:     
-                    # Registrar producto no encontrado
-                    registrar_producto_no_encontrado(numero_limpio, body)
-                    response = client.messages.create(
-                        model="claude-haiku-4-5-20251001",
-                        max_tokens=300,
-                        system=get_system_prompt(),
-                        messages=[{"role": "user", "content": body}]
-                   )
-                   reply = response.content[0].text
+            else:
+                # Registrar producto no encontrado
+                registrar_producto_no_encontrado(numero_limpio, body)
+                response = client.messages.create(
+                    model="claude-haiku-4-5-20251001",
+                    max_tokens=300,
+                    system=get_system_prompt(),
+                    messages=[{"role": "user", "content": body}]
+                )
+                reply = response.content[0].text
 
                 if "DERIVAR_TECNICO" in reply:
                     notificar_asesor(ASESOR_TECNICO, "celulares o servicio técnico", from_number)
@@ -983,11 +983,6 @@ def webhook():
     except Exception as e:
         print(f"Error en webhook: {e}")
         return jsonify({"status": "error", "detail": str(e)}), 200
-
-
-@app.route('/', methods=['GET'])
-def health():
-    return "Cell Center Bot activo ✅", 200
 
 
 if __name__ == '__main__':
