@@ -957,13 +957,13 @@ def webhook():
                 send_whapi_message(from_number, reply)
 
             else:     
-                 # Registrar producto no encontrado
-                 registrar_producto_no_encontrado(numero_limpio, body)
-                response = client.messages.create(
-                    model="claude-haiku-4-5-20251001",
-                    max_tokens=300,
-                    system=get_system_prompt(),
-                    messages=[{"role": "user", "content": body}]
+                    # Registrar producto no encontrado
+                    registrar_producto_no_encontrado(numero_limpio, body)
+                    response = client.messages.create(
+                        model="claude-haiku-4-5-20251001",
+                        max_tokens=300,
+                        system=get_system_prompt(),
+                        messages=[{"role": "user", "content": body}]
                 )
                 reply = response.content[0].text
 
