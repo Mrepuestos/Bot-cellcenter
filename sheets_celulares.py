@@ -98,7 +98,7 @@ def obtener_catalogo_celulares() -> str:
             productos.append(
                 f"• {marca} {modelo}\n"
                 f"  Specs: {almac} | {ram} RAM | {camara} | {bateria}\n"
-                f"  Contado paralelo: ${precio_par} | "
+                f"  En divisas: ${precio_par} | "
                 f"Contado BCV: ${precio_bcv} (Bs {precio_bs})\n"
                 f"  CASHEA (60% ini + 3 cuotas): "
                 f"Ini ${cashea_ini} + cuotas de ${cashea_cuota}\n"
