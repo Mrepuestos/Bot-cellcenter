@@ -4,6 +4,7 @@ Todas las mejoras incluidas
 """
 
 import os
+import re
 import base64
 import logging
 import threading
@@ -24,7 +25,7 @@ GOOGLE_PRIVATE_KEY  = os.environ.get("GOOGLE_PRIVATE_KEY", "").replace("\\n", "\
 GOOGLE_PROJECT_ID   = os.environ.get("GOOGLE_PROJECT_ID", "controlpagos-497014")
 
 ALERTA_NUMERO = "584149202844"
-CLAUDE_MODEL  = "claude-haiku-4-5-20251001"
+CLAUDE_MODEL  = "claude-opus-4-8"
 
 logger = logging.getLogger("pagos_extractor")
 _anthropic_client = None
@@ -106,7 +107,9 @@ def _insertar_separador_si_es_dia_nuevo():
         sh = gc.open_by_key(GOOGLE_SHEET_ID)
         hoja = sh.sheet1
         todas = hoja.get_all_values()
-        # Buscar en TODAS las filas si ya existe el separador de hoy
+        # Buscar en TODAS las filas si ya existe el separador de hoy,
+        # no solo en la última. Así Render puede reiniciar varias veces
+        # al día sin volver a insertar el separador.
         ya_existe = any(
             any("DÍA NUEVO" in str(celda) and hoy in str(celda) for celda in fila)
             for fila in todas
@@ -200,18 +203,25 @@ PRIMERO: ¿Qué tipo de imagen es?
 - Si es pantalla de inicio de app bancaria → responde: NO_ES_PAGO
 - Si es un comprobante de transferencia ("Operación Exitosa" o "Operación en Proceso") → continúa
 
-SEGUNDO: Busca el campo CONCEPTO del comprobante.
+SEGUNDO: Busca el campo CONCEPTO y extrae SOLO el nombre.
+- El concepto casi siempre dice "Pago a <nombre>". OMITE las palabras "Pago a" / "Pago para" y devuelve SOLO el nombre.
 - "Pago a Efrain" → responde: Efrain
 - "Pago a Maria Lopez" → responde: Maria Lopez
+- "Pago a la sra Tania" → responde: la sra Tania
 - "Pago a adelson" → responde: adelson
-- "pago" sin nombre → responde: sin_nombre
+- Si el concepto dice solo "pago" o "pago movil" SIN nombre → responde: sin_nombre
 - Sin campo CONCEPTO → responde: sin_nombre
 
-IMPORTANTE:
-- NUNCA respondas "Pago a [nombre]"
-- NUNCA respondas con explicaciones
-- NUNCA uses "Paso", "Respuesta", "El concepto dice"
-- Solo el nombre o sin_nombre o NO_ES_PAGO"""
+TERCERO — TRANSCRIPCIÓN EXACTA (lo más importante):
+- Transcribe el nombre EXACTAMENTE como está escrito, letra por letra.
+- NO corrijas, NO completes, NO adivines y NO inventes nombres.
+- Respeta mayúsculas y minúsculas tal como aparecen.
+- Si no estás seguro de una letra, míralo con cuidado; nunca cambies el nombre por uno parecido.
+
+REGLAS:
+- NUNCA respondas "Pago a [nombre]", solo el nombre.
+- NUNCA uses explicaciones, "Paso", "Respuesta", "El concepto dice".
+- Solo el nombre, o sin_nombre, o NO_ES_PAGO"""
 
     response = client.messages.create(
         model=CLAUDE_MODEL,
@@ -228,9 +238,11 @@ IMPORTANTE:
     lineas = [l.strip() for l in texto.split("\n") if l.strip()]
     if lineas:
         texto = lineas[-1]
-    for prefijo in ["Respuesta:", "Nombre:", "Resultado:", "El nombre es:", "Pago a "]:
+    for prefijo in ["Respuesta:", "Nombre:", "Resultado:", "El nombre es:"]:
         if texto.lower().startswith(prefijo.lower()):
             texto = texto[len(prefijo):].strip()
+    # Quita "Pago a", "Pago para", "Pago:" al inicio si llega a colarse
+    texto = re.sub(r'^pag[oó]\s*(a|para)?\s*:?\s*', '', texto, flags=re.IGNORECASE).strip()
     print(f"Resultado Claude (concepto): '{texto}'")
     return texto
 
