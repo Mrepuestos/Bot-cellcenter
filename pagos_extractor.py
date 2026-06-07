@@ -106,11 +106,14 @@ def _insertar_separador_si_es_dia_nuevo():
         sh = gc.open_by_key(GOOGLE_SHEET_ID)
         hoja = sh.sheet1
         todas = hoja.get_all_values()
-        if todas:
-            ultima_fila = todas[-1]
-            if any(hoy in str(celda) for celda in ultima_fila):
-                _ultimo_dia_registrado = hoy
-                return
+        # Buscar en TODAS las filas si ya existe el separador de hoy
+        ya_existe = any(
+            any("DÍA NUEVO" in str(celda) and hoy in str(celda) for celda in fila)
+            for fila in todas
+        )
+        if ya_existe:
+            _ultimo_dia_registrado = hoy
+            return
         hoja.append_row(["", f"📅 DÍA NUEVO — {hoy}", "", "", "", "", ""])
         _ultimo_dia_registrado = hoy
         print(f"📅 Separador de día insertado: {hoy}")
