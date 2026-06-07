@@ -861,9 +861,9 @@ def webhook():
                     info = stock_bajo_pendiente.pop(from_number)
                     notificar_stock_bajo(from_number, info["producto"], info["stock"])
                     send_whapi_message(from_number, "✅ Listo, avisamos al asesor para coordinar el apartado.")
+                    continue
                 else:
-                    stock_bajo_pendiente.pop(from_number)
-                continue
+                    stock_bajo_pendiente.pop(from_number)               
 
             productos, compatibles, similares = consultar_odoo(body)
             stock_bajo_info = None
