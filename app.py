@@ -747,6 +747,7 @@ def webhook():
         messages_list = data.get("messages", [])
 
         for msg in messages_list:
+            print(f"📨 MSG RECIBIDO | from: {msg.get('from','')} | type: {msg.get('type','')} | body: {msg.get('text',{}).get('body','')[:50]} | ts: {msg.get('timestamp',0)} | from_me: {msg.get('from_me',False)}")
             if msg.get("from_me", False):
                 # Detectar si el asesor escribe ** para pausar el bot
                 body_asesor = msg.get("text", {}).get("body", "").strip()
