@@ -17,7 +17,7 @@ from pagos_extractor import procesar_imagen_pago, inicializar_db, borrar_pago_po
 from repertorio import CORRECCIONES_MARCAS, MODELOS_ABREVIADOS, PALABRAS_IGNORAR
 
 # ── Módulo catálogo celulares ──────────────────────────────────────────────────
-from sheets_celulares import obtener_catalogo_celulares
+from sheets_celulares import obtener_catalogo_celulares, buscar_foto_celular
 
 from productos_no_encontrados import inicializar_hoja_no_encontrados, registrar_producto_no_encontrado
 
@@ -588,6 +588,18 @@ def send_whapi_message(to: str, text: str):
         print(f"Error enviando mensaje Whapi: {e}")
 
 
+def send_whapi_image(to: str, url_imagen: str, caption: str = ""):
+    url = f"{WHAPI_API_URL}/messages/image"
+    headers = {"Authorization": f"Bearer {WHAPI_TOKEN}", "Content-Type": "application/json"}
+    payload = {"to": to, "media": url_imagen}
+    if caption:
+        payload["caption"] = caption
+    try:
+        requests.post(url, json=payload, headers=headers, timeout=15).raise_for_status()
+    except Exception as e:
+        print(f"Error enviando imagen Whapi: {e}")
+
+
 def notificar_asesor(asesor: str, tema: str, numero_cliente: str):
     numero_formateado = "+" + numero_cliente.replace("@s.whatsapp.net", "")
     send_whapi_message(asesor, f"🔔 *Mensaje pendiente*\nUn cliente está esperando respuesta sobre *{tema}*.\nNúmero: {numero_formateado}")
@@ -719,6 +731,14 @@ REGLAS IMPORTANTES:
   lo contactará para coordinar el pago y la entrega
 - NUNCA uses la palabra "paralelo"
 
+FOTOS:
+- Si el cliente pide ver una foto, imagen o cómo se ve un equipo, incluye en tu
+  respuesta el marcador [FOTO:Marca Modelo] con el nombre EXACTO del catálogo.
+- SIEMPRE acompaña el marcador con una frase de venta, nunca lo envíes solo.
+- Solo usa el marcador para equipos del catálogo. Si no está, ofrece alternativa
+  y no uses el marcador.
+- Ejemplo: "El Redmi 13C está volando 🔥 Míralo aquí 👇 [FOTO:Redmi 13C]"
+
 DERIVACIONES:
 - Servicio técnico o reparación → responde exactamente: DERIVAR_ASESOR
 - Accesorios → responde exactamente: DERIVAR_ASESOR
@@ -846,9 +866,28 @@ def webhook():
                     notificar_asesor(ASESOR_CELULARES, "celular o accesorio", from_number)
                     reply = "Un momento, un asesor te atenderá enseguida 👋"
 
-                historial.append({"role": "assistant", "content": reply})
+                if "DERIVAR_ASESOR" in reply:
+                    notificar_asesor(ASESOR_CELULARES, "celular o accesorio", from_number)
+                    reply = "Un momento, un asesor te atenderá enseguida 👋"
+
+                # ── Detectar solicitudes de foto ───────────────────────────
+                modelos_foto = re.findall(r'\[FOTO:\s*([^\]]+)\]', reply)
+                if modelos_foto:
+                    reply = re.sub(r'\[FOTO:\s*[^\]]+\]', '', reply).strip()
+
+                historial.append({"role": "assistant", "content": reply or "[foto enviada]"})
                 guardar_historial(numero_limpio, historial)
-                send_whapi_message(from_number, reply)
+
+                if reply:
+                    send_whapi_message(from_number, reply)
+
+                for modelo in modelos_foto:
+                    url_foto = buscar_foto_celular(modelo)
+                    if url_foto:
+                        send_whapi_image(from_number, url_foto, modelo.strip())
+                    else:
+                        print(f"Sin foto disponible para: {modelo.strip()}")
+                continue  # ← no cae al flujo de repuestos
                 continue  # ← no cae al flujo de repuestos
 
             # ── Flujo original para clientes de repuestos (sin tocar) ──────────
