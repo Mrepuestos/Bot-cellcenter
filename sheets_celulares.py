@@ -10,7 +10,7 @@ GOOGLE_PROJECT_ID   = os.environ.get("GOOGLE_PROJECT_ID", "")
 GOOGLE_SHEET_ID_CELULARES = os.environ.get("GOOGLE_SHEET_ID_CELULARES", "")
 
 # ── Cache: evita llamar a Sheets en cada mensaje ──────────────────────────────
-_cache = {"data": None, "timestamp": None}
+_cache = {"data": None, "fotos": {}, "timestamp": None}
 _sheets_client = None
 CACHE_MINUTOS = 5
 
@@ -70,6 +70,7 @@ def obtener_catalogo_celulares() -> str:
         # R=KreceTotal(17), S=KreceIni(18), T=KreceCuota(19)
 
         productos = []
+        fotos = {}
         for fila in filas[8:]:
             if len(fila) < 20:
                 continue
@@ -82,6 +83,7 @@ def obtener_catalogo_celulares() -> str:
             ram          = fila[5].strip()
             camara       = fila[6].strip()
             bateria      = fila[7].strip()
+            foto         = fila[8].strip()
             precio_par   = fila[9].strip()
             precio_bcv   = fila[10].strip()
             precio_bs    = fila[11].strip()
@@ -94,6 +96,10 @@ def obtener_catalogo_celulares() -> str:
 
             if not marca or not modelo:
                 continue
+
+            if foto:
+                 clave = " ".join(f"{marca} {modelo}".lower().split())
+                 fotos[clave] = foto
 
             productos.append(
                 f"• {marca} {modelo}\n"
@@ -121,9 +127,27 @@ def obtener_catalogo_celulares() -> str:
             )
 
         _cache["data"] = resultado
+        _cache["fotos"] = fotos
         _cache["timestamp"] = ahora
         return resultado
 
     except Exception as e:
         print(f"Error leyendo Sheets celulares: {e}")
         return "Catálogo no disponible temporalmente."
+
+def buscar_foto_celular(modelo_texto):
+    """Devuelve la URL de la foto de un modelo, o None si no hay.
+     Refresca el cache si está vencido (no recarga si está fresco)."""
+     obtener_catalogo_celulares()
+     fotos = _cache.get("fotos") or {}
+     clave = " ".join(modelo_texto.lower().split())
+
+     if clave in fotos:
+         return fotos[clave]
+
+     # Coincidencia parcial por si el modelo trae texto extra
+     for nombre, url in fotos.items():
+         if clave in nombre or nombre in clave:
+             return url
+
+     return None
