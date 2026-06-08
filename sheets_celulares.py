@@ -137,17 +137,17 @@ def obtener_catalogo_celulares() -> str:
 
 def buscar_foto_celular(modelo_texto):
     """Devuelve la URL de la foto de un modelo, o None si no hay.
-     Refresca el cache si está vencido (no recarga si está fresco)."""
-     obtener_catalogo_celulares()
-     fotos = _cache.get("fotos") or {}
-     clave = " ".join(modelo_texto.lower().split())
+    Refresca el cache si está vencido (no recarga si está fresco)."""
+    obtener_catalogo_celulares()
+    fotos = _cache.get("fotos") or {}
+    clave = " ".join(modelo_texto.lower().split())
 
-     if clave in fotos:
-         return fotos[clave]
+    if clave in fotos:
+        return fotos[clave]
 
-     # Coincidencia parcial por si el modelo trae texto extra
-     for nombre, url in fotos.items():
-         if clave in nombre or nombre in clave:
-             return url
+    # Coincidencia parcial por si el modelo trae texto extra
+    for nombre, url in fotos.items():
+        if clave in nombre or nombre in clave:
+            return url
 
-     return None
+    return None
