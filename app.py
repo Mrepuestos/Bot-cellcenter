@@ -90,7 +90,7 @@ TABLA_PRECIOS = {
     15: 19, 16: 21, 21: 27, 26: 31
 }
 
-tasa_bcv_cache = {"tasa": 515.0, "fecha": ""}
+tasa_bcv_cache = {"tasa": None, "fecha": ""}
 stock_bajo_pendiente = {}
 pausas_activas = {}
 
@@ -127,7 +127,7 @@ def limpiar_html(texto):
 def obtener_tasa_bcv():
     try:
         fecha_hoy = time.strftime("%Y-%m-%d")
-        if tasa_bcv_cache["fecha"] == fecha_hoy:
+        if tasa_bcv_cache["fecha"] == fecha_hoy and tasa_bcv_cache["tasa"]:
             return tasa_bcv_cache["tasa"]
         r = requests.get("https://ve.dolarapi.com/v1/dolares/oficial", timeout=5)
         tasa = float(r.json()["promedio"])
@@ -143,7 +143,8 @@ def obtener_tasa_bcv():
 def calcular_precio_bs(precio_usd_odoo):
     precio_int = int(precio_usd_odoo)
     precio_tabla = TABLA_PRECIOS.get(precio_int, round(precio_usd_odoo * 1.35))
-    precio_bs = round(precio_tabla * obtener_tasa_bcv())
+    tasa = obtener_tasa_bcv()
+    precio_bs = round(precio_tabla * tasa) if tasa else None
     return precio_usd_odoo, precio_tabla, precio_bs
 
 
@@ -917,7 +918,8 @@ def webhook():
                         precio_usd, precio_tabla, precio_bs = calcular_precio_bs(p['list_price'])
                         stock = int(p['qty_available'])
                         nombre = p['name']
-                        contexto_odoo += f"- {nombre}: ${precio_usd} USD / (${precio_tabla}) Bs. {precio_bs:,} | Stock: {stock} unidades\n"
+                        bs_str = f" Bs. {precio_bs:,}" if precio_bs is not None else ""
+                        contexto_odoo += f"- {nombre}: ${precio_usd} USD / (${precio_tabla}){bs_str} | Stock: {stock} unidades\n"
                         if stock_bajo_info is None and 1 <= stock <= 2:
                             stock_bajo_info = {"producto": nombre, "stock": stock}
 
@@ -930,7 +932,8 @@ def webhook():
                             nombre = comp['name']
                             modelo_pedido = comp.get('_compatible_con', '')
                             ref = comp.get('_referencia', '')
-                            contexto_odoo += f"- {nombre} (compatible con {ref or modelo_pedido}): ${precio_usd} USD / (${precio_tabla}) Bs. {precio_bs:,} | Stock: {stock} unidades\n"
+                            bs_str = f" Bs. {precio_bs:,}" if precio_bs is not None else ""
+                            contexto_odoo += f"- {nombre} (compatible con {ref or modelo_pedido}): ${precio_usd} USD / (${precio_tabla}){bs_str} | Stock: {stock} unidades\n"
                             if stock_bajo_info is None and 1 <= stock <= 2:
                                 stock_bajo_info = {"producto": nombre, "stock": stock}
                     else:
@@ -938,7 +941,8 @@ def webhook():
                         stock = int(compatibles['qty_available'])
                         nombre = compatibles['name']
                         modelo_pedido = compatibles.get('_compatible_con', '')
-                        contexto_odoo += f"- {nombre} (compatible con {modelo_pedido}): ${precio_usd} USD / (${precio_tabla}) Bs. {precio_bs:,} | Stock: {stock} unidades\n"
+                        bs_str = f" Bs. {precio_bs:,}" if precio_bs is not None else ""
+                        contexto_odoo += f"- {nombre} (compatible con {modelo_pedido}): ${precio_usd} USD / (${precio_tabla}){bs_str} | Stock: {stock} unidades\n"
                         if stock_bajo_info is None and 1 <= stock <= 2:
                             stock_bajo_info = {"producto": nombre, "stock": stock}
 
@@ -946,6 +950,9 @@ def webhook():
                     contexto_odoo += "\n\nMODELOS NO ENCONTRADOS:\n"
                     for ref, lista_sim in similares:
                         contexto_odoo += f"- {ref}: no encontrado exacto\n"
+
+                if not obtener_tasa_bcv():
+                    contexto_odoo += "\nNOTA: La tasa BCV no está disponible. Muestra los precios SOLO en USD, no inventes ni muestres bolívares.\n"
 
                 historial = cargar_historial(from_number)
                 historial.append({"role": "user", "content": body + contexto_odoo})
