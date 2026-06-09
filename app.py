@@ -542,21 +542,21 @@ def buscar_referencia(todos, ref):
         return None, compatible, None
 
     # Paso 5: similares
-    similares = buscar_similares(todos, palabras_clave)
+        similares = buscar_similares(todos, palabras_clave)
 
-    # ── Paso 6: rescate con IA (solo si todo lo anterior falló) ──
-    modelo_ia = interpretar_modelo(mensaje, todos)
-    if modelo_ia:
-        print(f"🤖 Rescate IA: '{mensaje}' → '{modelo_ia}'")
-        prods_ia, comp_ia, _ = buscar_referencia(todos, modelo_ia)
-        if prods_ia or comp_ia:
-            return prods_ia, comp_ia, None
+        # ── Paso 6: rescate con IA (solo si todo lo anterior falló) ──
+        modelo_ia = interpretar_modelo(mensaje, todos)
+        if modelo_ia:
+            print(f"🤖 Rescate IA: '{mensaje}' → '{modelo_ia}'")
+            prods_ia, comp_ia, _ = buscar_referencia(todos, modelo_ia)
+            if prods_ia or comp_ia:
+                return prods_ia, comp_ia, None
 
-    return None, None, similares
+        return None, None, similares
 
-except Exception as e:
-    print(f"Error consultando Odoo: {e}")
-    return None, None, None
+    except Exception as e:
+        print(f"Error consultando Odoo: {e}")
+        return None, None, None
 
 
 def consultar_odoo(mensaje):
