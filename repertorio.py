@@ -112,7 +112,7 @@ PALABRAS_IGNORAR = {
     "pantalla","3/4","precio","cuanto","cuánto","stock","disponibles",
     "disponible","cuales",
     # Saludos y cortesías
-    "hola","buenas","buen","buenos","dias","día","dia","tardes","noches",
+    "hola","buenas","buen","buenos","dias","día","días","dia","tardes","noches",
     "saludos","favor","porfavor","porfa","gracias","please","xfa","salu",
     # Tratamientos
     "mano","hermano","brother","bro","amigo","amiga","chamo","chama","pana",
