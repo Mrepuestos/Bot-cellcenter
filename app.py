@@ -780,6 +780,12 @@ def webhook():
                     numero_cliente = chat_id_pausa.replace("@s.whatsapp.net", "").replace("+", "")
                     pausas_activas[numero_cliente] = time.time() + 900  # 15 minutos
                     print(f"Bot pausado para {numero_cliente} por 15 minutos")
+                elif body_asesor == "++":
+                    chat_id_pausa = msg.get("chat_id", "") or msg.get("chatId", "") or ""
+                    numero_cliente = chat_id_pausa.replace("@s.whatsapp.net", "").replace("+", "")
+                    if numero_cliente in pausas_activas:
+                        del pausas_activas[numero_cliente]
+                        print(f"Bot reanudado para {numero_cliente}")
                 continue
 
             chat_id = msg.get("chat_id", "") or msg.get("chatId", "") or ""
@@ -831,6 +837,15 @@ def webhook():
                 continue
 
             numero_limpio = from_number.replace("@s.whatsapp.net", "").replace("+", "")
+
+            # ── Verificar si el bot está en pausa manual para este número ──────
+            if numero_limpio in pausas_activas:
+                if time.time() < pausas_activas[numero_limpio]:
+                    print(f"⏸️ Bot en pausa para {numero_limpio}, mensaje ignorado")
+                    continue
+                else:
+                    del pausas_activas[numero_limpio]
+                    print(f"▶️ Pausa expirada para {numero_limpio}, reanudando")
 
             # ── Obtener body aquí para que esté disponible en ambos flujos ──────
             body = msg.get("text", {}).get("body", "").strip()
@@ -890,7 +905,6 @@ def webhook():
                         send_whapi_image(from_number, url_foto, modelo.strip())
                     else:
                         print(f"Sin foto disponible para: {modelo.strip()}")
-                continue  # ← no cae al flujo de repuestos
                 continue  # ← no cae al flujo de repuestos
 
             # ── Flujo original para clientes de repuestos (sin tocar) ──────────
