@@ -67,12 +67,12 @@ NUMEROS_AUTORIZADOS = [
     "584241255279"
 ]
 
-ASESOR_TECNICO = "584241564298"
-ASESOR_ACCESORIOS = "584126093756"
-ASESOR_STOCK = "584126093756"
+ASESOR_TECNICO = "584149202844"
+ASESOR_ACCESORIOS = "584149202844"
+ASESOR_STOCK = "584149202844"
 
 # ── Asesor para clientes de celulares ─────────────────────────────────────────
-ASESOR_CELULARES = "584241346346"
+ASESOR_CELULARES = "584149202844"
 
 WHAPI_TOKEN = os.environ.get("WHAPI_TOKEN", "")
 WHAPI_API_URL = os.environ.get("WHAPI_API_URL", "https://gate.whapi.cloud")
@@ -744,6 +744,8 @@ FOTOS:
 DERIVACIONES:
 - Servicio técnico o reparación → responde exactamente: DERIVAR_ASESOR
 - Accesorios → responde exactamente: DERIVAR_ASESOR
+- Cliente confirma que quiere comprar → responde exactamente: CONFIRMAR_COMPRA
+
 
 HORARIO — La tienda está: {estado_tienda}
 - Lunes a sábado 8:30am-5:30pm
@@ -864,11 +866,10 @@ def webhook():
                 )
                 reply = response.content[0].text
 
-                if "DERIVAR_ASESOR" in reply:
-                    notificar_asesor(ASESOR_CELULARES, "celular o accesorio", from_number)
-                    reply = "Un momento, un asesor te atenderá enseguida 👋"
-
-                if "DERIVAR_ASESOR" in reply:
+                if "CONFIRMAR_COMPRA" in reply:
+                    notificar_asesor(ASESOR_CELULARES, "compra confirmada de celular", from_number)
+                    reply = "¡Perfecto! Un asesor te contactará enseguida para coordinar el pago y la entrega 👋"
+                elif "DERIVAR_ASESOR" in reply:
                     notificar_asesor(ASESOR_CELULARES, "celular o accesorio", from_number)
                     reply = "Un momento, un asesor te atenderá enseguida 👋"
 
