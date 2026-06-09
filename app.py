@@ -64,6 +64,7 @@ NUMEROS_AUTORIZADOS = [
     "584141242469",
     "584126093756",
     "584241614444",
+    "584124146374",
     "584241255279"
 ]
 
@@ -423,6 +424,74 @@ def buscar_similares(todos, palabras_clave, max_resultados=5):
     return similares[:max_resultados]
 
 
+# ── Rescate con IA: interpreta el modelo cuando la búsqueda normal falla ──────
+INTERPRETAR_MODELO_ACTIVO = True  # poner en False para apagar el rescate IA
+
+def _lista_repuestos(todos):
+    """Nombres de productos de la categoría REPUESTOS, para anclar la IA."""
+    nombres = []
+    for p in todos:
+        categ = p.get('categ_id')
+        categ_nombre = categ[1] if isinstance(categ, (list, tuple)) and len(categ) > 1 else ""
+        if "REPUESTOS" in str(categ_nombre).upper():
+            nombre = p.get('name', '').strip()
+            if nombre and nombre not in nombres:
+                nombres.append(nombre)
+    return nombres
+
+
+def interpretar_modelo(mensaje, todos):
+    """
+    Se llama SOLO cuando la búsqueda normal ya falló.
+    Le pasa a la IA la lista real de repuestos y le pide elegir UNO o NINGUNO.
+    Devuelve el nombre exacto de un repuesto real, o None. Nunca inventa.
+    """
+    if not INTERPRETAR_MODELO_ACTIVO:
+        return None
+
+    repuestos = _lista_repuestos(todos)
+    if not repuestos:
+        return None
+
+    lista_texto = "\n".join(repuestos)
+    prompt = f"""Un cliente escribió este mensaje buscando un repuesto de celular:
+"{mensaje}"
+
+El mensaje puede tener errores de escritura, letras omitidas, espacios mal puestos
+o palabras de relleno (saludos, "disponibilidad", "precio", etc.).
+
+Esta es la lista EXACTA de repuestos disponibles:
+{lista_texto}
+
+Tu tarea: decir a cuál repuesto de la lista se refiere el cliente.
+REGLAS ESTRICTAS:
+- Responde ÚNICAMENTE con el nombre EXACTO de un repuesto, copiado tal cual de la lista.
+- Si no estás razonablemente seguro, o el cliente no busca ningún repuesto
+  (por ejemplo solo saluda), responde exactamente: NINGUNO
+- Ante la duda entre dos modelos parecidos, responde: NINGUNO
+- NUNCA inventes un modelo que no esté en la lista.
+- NO expliques. Solo el nombre exacto o NINGUNO."""
+
+    try:
+        response = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=50,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        resultado = response.content[0].text.strip()
+        if not resultado or resultado.upper() == "NINGUNO":
+            return None
+        # Validación dura: solo aceptar si coincide con un repuesto real
+        for nombre in repuestos:
+            if resultado.lower() == nombre.lower():
+                return nombre
+        print(f"⚠️ IA devolvió algo fuera de la lista, descartado: '{resultado}'")
+        return None
+    except Exception as e:
+        print(f"Error en interpretar_modelo: {e}")
+        return None
+
+
 def buscar_referencia(todos, ref):
     ref = expandir_abreviacion(ref)
     palabras_clave, _ = extraer_palabras_clave(ref)
@@ -474,7 +543,20 @@ def buscar_referencia(todos, ref):
 
     # Paso 5: similares
     similares = buscar_similares(todos, palabras_clave)
+
+    # ── Paso 6: rescate con IA (solo si todo lo anterior falló) ──
+    modelo_ia = interpretar_modelo(mensaje, todos)
+    if modelo_ia:
+        print(f"🤖 Rescate IA: '{mensaje}' → '{modelo_ia}'")
+        prods_ia, comp_ia, _ = buscar_referencia(todos, modelo_ia)
+        if prods_ia or comp_ia:
+            return prods_ia, comp_ia, None
+
     return None, None, similares
+
+except Exception as e:
+    print(f"Error consultando Odoo: {e}")
+    return None, None, None
 
 
 def consultar_odoo(mensaje):
@@ -492,7 +574,7 @@ def consultar_odoo(mensaje):
             ODOO_DB, uid, ODOO_API_KEY,
             'product.product', 'search_read',
             [[]],
-            {'fields': ['name', 'list_price', 'qty_available', 'description'], 'limit': 500}
+            {'fields': ['name', 'list_price', 'qty_available', 'description', 'categ_id'], 'limit': 500}
         )
         print(f"Total productos en Odoo: {len(todos)}")
 
