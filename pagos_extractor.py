@@ -9,6 +9,7 @@ import base64
 import logging
 import threading
 from datetime import datetime
+import pytz
 
 import requests
 from anthropic import Anthropic
@@ -26,6 +27,7 @@ GOOGLE_PROJECT_ID   = os.environ.get("GOOGLE_PROJECT_ID", "controlpagos-497014")
 
 ALERTA_NUMERO = "584149202844"
 CLAUDE_MODEL  = "claude-opus-4-8"
+TZ_VE = pytz.timezone("America/Caracas")  # Render corre en UTC
 
 logger = logging.getLogger("pagos_extractor")
 _anthropic_client = None
@@ -36,7 +38,7 @@ _ultimo_dia_registrado = None
 # ─── ALERTA POR WHATSAPP ──────────────────────────────────────────────
 def _enviar_alerta(error, remitente="Desconocido"):
     try:
-        hora = datetime.now().strftime("%d/%m/%Y %H:%M")
+        hora = datetime.now(TZ_VE).strftime("%d/%m/%Y %H:%M")
         mensaje = (
             f"⚠️ *ERROR en Extractor de Pagos*\n"
             f"Tipo: {error}\n"
@@ -99,7 +101,7 @@ def inicializar_db():
 # ─── SEPARADOR DE DÍA NUEVO ───────────────────────────────────────────
 def _insertar_separador_si_es_dia_nuevo():
     global _ultimo_dia_registrado
-    hoy = datetime.now().strftime("%d/%m/%Y")
+    hoy = datetime.now(TZ_VE).strftime("%d/%m/%Y")
     if _ultimo_dia_registrado == hoy:
         return
     try:
@@ -282,8 +284,8 @@ def _procesar_sync(mensaje):
     remitente_nombre = mensaje.get("from_name", "Desconocido")
     ts               = mensaje.get("timestamp")
     fecha_msg        = (
-        datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S")
-        if ts else datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        datetime.fromtimestamp(ts, TZ_VE).strftime("%Y-%m-%d %H:%M:%S")
+        if ts else datetime.now(TZ_VE).strftime("%Y-%m-%d %H:%M:%S")
     )
     image_data = mensaje.get("image", {})
     monto = (
