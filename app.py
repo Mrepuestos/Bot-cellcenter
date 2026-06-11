@@ -463,14 +463,24 @@ o palabras de relleno (saludos, "disponibilidad", "precio", etc.).
 Esta es la lista EXACTA de repuestos disponibles:
 {lista_texto}
 
-Tu tarea: decir a cuál repuesto de la lista se refiere el cliente.
+Tu tarea: corregir SOLO errores de escritura y encontrar el MISMO modelo en la lista.
+NO busques el modelo "más parecido". Busca el MISMO modelo bien escrito.
+
 REGLAS ESTRICTAS:
-- Responde ÚNICAMENTE con el nombre EXACTO de un repuesto, copiado tal cual de la lista.
-- Si no estás razonablemente seguro, o el cliente no busca ningún repuesto
-  (por ejemplo solo saluda), responde exactamente: NINGUNO
-- Ante la duda entre dos modelos parecidos, responde: NINGUNO
-- NUNCA inventes un modelo que no esté en la lista.
-- NO expliques. Solo el nombre exacto o NINGUNO."""
+- Solo corrige errores de tipeo: letras cambiadas, letras omitidas, espacios mal
+  puestos, marca mal escrita. El modelo debe ser EL MISMO, solo bien escrito.
+- Los numeros y sufijos del modelo son SAGRADOS. NO los cambies nunca.
+  * "A04E" NO es "A04S" (sufijo distinto) -> NINGUNO
+  * "G31" NO es "G30" (numero distinto) -> NINGUNO
+  * "Spark Go 1" NO es "Spark 6 Go" (modelo distinto) -> NINGUNO
+  * "Note 12" NO es "Note 13" -> NINGUNO
+- Si el modelo que pide el cliente NO esta en la lista con ese MISMO numero y
+  sufijo, responde: NINGUNO. Aunque haya uno parecido, responde NINGUNO.
+- Si el cliente solo saluda o no busca repuesto, responde: NINGUNO.
+- Ante CUALQUIER duda, responde: NINGUNO. Es mejor decir NINGUNO que dar un
+  modelo equivocado.
+- NUNCA inventes un modelo que no este en la lista.
+- NO expliques. Solo el nombre exacto de la lista, o NINGUNO."""
 
     try:
         response = client.messages.create(
