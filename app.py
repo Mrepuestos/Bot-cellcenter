@@ -336,7 +336,7 @@ def buscar_sin_espacios(todos, palabras_clave):
     return (encontrados_con_stock + encontrados_sin_stock)[:5]
 
 
-def buscar_compatible_exacto(todos, palabras_clave):
+def buscar_compatible_exacto(todos, palabras_clave, excluir_nombre=None):
     if not palabras_clave:
         return None
 
@@ -344,6 +344,9 @@ def buscar_compatible_exacto(todos, palabras_clave):
     compatibles_sin_stock = []
 
     for producto in todos:
+        # No ofrecer el mismo modelo que el cliente pidió como su propio compatible
+        if excluir_nombre and producto['name'].strip().lower() == excluir_nombre.strip().lower():
+            continue
         notas = limpiar_html(producto.get('description') or "")
         if 'COMPATIBLE:' not in notas.upper():
             continue
