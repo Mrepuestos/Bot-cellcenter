@@ -495,12 +495,23 @@ REGLAS ESTRICTAS:
         resultado = response.content[0].text.strip()
         if not resultado or resultado.upper() == "NINGUNO":
             return None
-        # Validación dura: solo aceptar si coincide con un repuesto real
+        # Validación dura 1: solo aceptar si coincide con un repuesto real
+        nombre_valido = None
         for nombre in repuestos:
             if resultado.lower() == nombre.lower():
-                return nombre
-        print(f"⚠️ IA devolvió algo fuera de la lista, descartado: '{resultado}'")
-        return None
+                nombre_valido = nombre
+                break
+        if not nombre_valido:
+            print(f"IA devolvio algo fuera de la lista, descartado: '{resultado}'")
+            return None
+        # Validacion dura 2: los tokens con numero del cliente deben estar en el modelo elegido
+        tokens_cliente = set(re.findall(r'[a-z]*\d[a-z0-9]*', normalizar_texto(mensaje)))
+        tokens_modelo = set(re.findall(r'[a-z]*\d[a-z0-9]*', normalizar_texto(nombre_valido)))
+        faltantes = tokens_cliente - tokens_modelo
+        if faltantes:
+            print(f"Freno IA: '{mensaje}' pidio {tokens_cliente}, IA dio '{nombre_valido}' con {tokens_modelo}. Faltan {faltantes}. Descartado.")
+            return None
+        return nombre_valido
     except Exception as e:
         print(f"Error en interpretar_modelo: {e}")
         return None
