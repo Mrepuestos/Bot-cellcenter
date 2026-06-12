@@ -111,6 +111,7 @@ def normalizar_texto(texto):
     texto = texto.lower().strip()
     texto = re.sub(r'\b3/4\b', '', texto)
     texto = re.sub(r'[^\w\s]', ' ', texto)
+    texto = re.sub(r'\b([acx])\s+(\d)', r'\1\2', texto)
     texto = re.sub(r'([a-zA-Z]{3,})(\d)', r'\1 \2', texto)
     texto = re.sub(r'(\d)([a-zA-Z]{3,})', r'\1 \2', texto)
     for error, correcto in CORRECCIONES_MARCAS.items():
