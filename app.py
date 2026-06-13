@@ -121,7 +121,9 @@ def normalizar_texto(texto):
     texto = re.sub(r'\b([acgx])\s+(\d)', r'\1\2', texto)
     texto = re.sub(r'([a-zA-Z]{3,})(\d)', r'\1 \2', texto)
     texto = re.sub(r'(\d)([a-zA-Z]{3,})', r'\1 \2', texto)
-    
+    for error, correcto in CORRECCIONES_MARCAS.items():
+        texto = re.sub(r'\b' + re.escape(error) + r'\b', correcto, texto)
+    texto = re.sub(r'\b([acgx])\s+(\d)', r'\1\2', texto)
     return texto
 
 
