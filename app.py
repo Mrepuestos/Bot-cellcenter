@@ -104,6 +104,9 @@ MARCAS_CONOCIDAS = {
     "tecno", "motorola", "alcatel", "honor", "realme"
 }
 
+# ── Palabras que distinguen variantes de modelo (Pro ≠ normal) ────────────────
+PALABRAS_VARIANTE = {"pro", "plus", "max", "ultra", "lite", "play", "prime", "go"}
+
 
 # ── Utilidades generales ──────────────────────────────────────────────────────
 
@@ -506,11 +509,19 @@ REGLAS ESTRICTAS:
             print(f"IA devolvio algo fuera de la lista, descartado: '{resultado}'")
             return None
         # Validacion dura 2: los tokens con numero del cliente deben estar en el modelo elegido
-        tokens_cliente = set(re.findall(r'[a-z]*\d[a-z0-9]*', normalizar_texto(mensaje)))
-        tokens_modelo = set(re.findall(r'[a-z]*\d[a-z0-9]*', normalizar_texto(nombre_valido)))
+        norm_cliente = normalizar_texto(mensaje)
+        norm_modelo = normalizar_texto(nombre_valido)
+        tokens_cliente = set(re.findall(r'[a-z]*\d[a-z0-9]*', norm_cliente))
+        tokens_modelo = set(re.findall(r'[a-z]*\d[a-z0-9]*', norm_modelo))
         faltantes = tokens_cliente - tokens_modelo
         if faltantes:
-            print(f"Freno IA: '{mensaje}' pidio {tokens_cliente}, IA dio '{nombre_valido}' con {tokens_modelo}. Faltan {faltantes}. Descartado.")
+            print(f"Freno IA (numero): '{mensaje}' pidio {tokens_cliente}, IA dio '{nombre_valido}' con {tokens_modelo}. Descartado.")
+            return None
+        # Validacion dura 3: las palabras-variante (pro, plus, max...) deben coincidir exacto
+        var_cliente = {p for p in norm_cliente.split() if p in PALABRAS_VARIANTE}
+        var_modelo = {p for p in norm_modelo.split() if p in PALABRAS_VARIANTE}
+        if var_cliente != var_modelo:
+            print(f"Freno IA (variante): '{mensaje}' tiene {var_cliente or 'ninguna'}, IA dio '{nombre_valido}' con {var_modelo or 'ninguna'}. Descartado.")
             return None
         return nombre_valido
     except Exception as e:
