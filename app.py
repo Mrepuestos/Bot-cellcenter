@@ -641,7 +641,7 @@ def consultar_odoo(mensaje):
                 return encontrados, None, None
             else:
                 print("Sin stock, buscando compatible...")
-                compatible = buscar_compatible_exacto(todos, palabras_clave)
+                compatible = buscar_compatible_exacto(todos, palabras_clave, excluir_nombre=encontrados[0]['name'])
                 if compatible:
                     return None, compatible, None
                 return encontrados, None, None
