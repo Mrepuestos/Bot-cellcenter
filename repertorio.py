@@ -62,6 +62,7 @@ CORRECCIONES_MARCAS = {
     "motorla": "motorola",
     "motolora": "motorola",
     "motoriola": "motorola",
+    "motorolag": "motorola g",
 
     # Alcatel
     "alkatel": "alcatel",
