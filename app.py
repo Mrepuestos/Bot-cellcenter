@@ -736,8 +736,14 @@ def notificar_stock_bajo(numero_cliente: str, producto: str, stock: int):
 
 def get_system_prompt():
     estado_tienda = "ABIERTA" if esta_abierto() else "CERRADA"
+    tz = pytz.timezone("America/Caracas")
+    ahora = datetime.now(tz)
+    es_domingo = ahora.weekday() == 6
+    horario_hoy = "9:00am a 2:00pm" if es_domingo else "8:30am a 5:30pm"
+    dia_hoy = "domingo" if es_domingo else "lunes a sábado"
     return f"""Eres un vendedor directo de Cell Center 4620, tienda de celulares en Venezuela. Solo vendemos PANTALLAS y repuestos de celulares.
 La tienda está actualmente: {estado_tienda}
+Hoy es {dia_hoy}. El horario de HOY es {horario_hoy}. Usa SOLO este horario cuando te pregunten a qué hora cierran hoy.
 
 REGLA PRINCIPAL: Cuando el inventario muestre productos con stock mayor a 0, SIEMPRE da el precio. NUNCA digas que no está disponible si hay stock. NUNCA preguntes si es para pantalla o celular, asume que siempre es para pantalla.
 
