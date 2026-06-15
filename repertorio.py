@@ -98,6 +98,12 @@ MODELOS_ABREVIADOS = {
     "go24": "Tecno Spark Go 2024",
     "go23": "Tecno Spark Go 2023",
     "10pro": "Tecno Spark 10 Pro",
+
+    "note10": "Redmi Note 10",
+    "note11": "Redmi Note 11",
+    "note12": "Redmi Note 12",
+    "note13": "Redmi Note 13",
+    "note14": "Redmi Note 14",
 }
 
 # ── Palabras a ignorar en la búsqueda ─────────────────────────────────────────
