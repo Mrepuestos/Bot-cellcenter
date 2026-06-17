@@ -100,10 +100,15 @@ MODELOS_ABREVIADOS = {
     "10pro": "Tecno Spark 10 Pro",
 
     "note10": "Redmi Note 10",
+    "note10pro": "Redmi Note 10 Pro",
     "note11": "Redmi Note 11",
+    "note11pro": "Redmi Note 11 Pro",
     "note12": "Redmi Note 12",
+    "note12pro": "Redmi Note 12 Pro",
     "note13": "Redmi Note 13",
+    "note13pro": "Redmi Note 13 Pro",
     "note14": "Redmi Note 14",
+    "note14pro": "Redmi Note 14 Pro",
 }
 
 # ── Palabras a ignorar en la búsqueda ─────────────────────────────────────────
