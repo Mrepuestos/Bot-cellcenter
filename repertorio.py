@@ -109,6 +109,31 @@ MODELOS_ABREVIADOS = {
     "note13pro": "Redmi Note 13 Pro",
     "note14": "Redmi Note 14",
     "note14pro": "Redmi Note 14 Pro",
+
+    # Huawei P (la P se pierde por ser letra sola)
+    "psmart": "Huawei P SMART 2019",
+    "psmart2019": "Huawei P SMART 2019",
+    "p20lite": "Huawei P20 lite",
+    "p30lite": "Huawei P30 lite",
+
+    # Redmi Note variantes (complementan los que ya tienes)
+    "note10pro": "Redmi Note 10 Pro",
+    "note8pro": "Redmi Note 8pro",
+    "note9s": "Redmi NOTE 9S",
+    "note11oled": "Redmi NOTE 11 OLED",
+    "note8t": "Redmi NOTE 8T",
+
+    # Motorola abreviados
+    "g8play": "Motorola G8 Play",
+    "g9power": "Motorola G9 POWER",
+
+    # Tecno abreviados
+    "camon17pro": "Tecno camon 17 pro",
+    "pop5lite": "Tecno POP 5 LITE",
+    "pop6pro": "Tecno POP 6 PRO",
+    "pova3": "Tecno pova 3",
+    "povaneo2": "Tecno Pova neo 2",
+    "spark6go": "Tecno SPARK 6 GO",
 }
 
 # ── Palabras a ignorar en la búsqueda ─────────────────────────────────────────
