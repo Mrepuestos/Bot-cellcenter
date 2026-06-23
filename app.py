@@ -868,6 +868,19 @@ a recomendar.
 PASO 2 — RECOMENDAR: Recomienda 2 o 3 equipos del catálogo según su necesidad.
 Explica brevemente por qué esos. NO muestres el catálogo completo a menos que
 el cliente lo pida explícitamente o insista.
+Si el cliente pide la lista completa, todos los modelos o qué tienen disponible,
+muestra TODOS los equipos del catálogo sin omitir ninguno, en formato corto.
+Usa el método de pago del canal detectado:
+- Canal Krece → muestra precio en Krece
+- Canal Cashea → muestra precio en Cashea
+- Canal general → muestra precio en divisas
+Ejemplo formato lista canal general:
+• Redmi 13C — $X
+• Samsung A16 — $X
+• Tecno Spark 10 PRO — $X
+Ejemplo formato lista canal Krece:
+• Redmi 13C — Ini $X + 4 cuotas de $X
+• Samsung A16 — Ini $X + 4 cuotas de $X
 
 PASO 3 — PRECIO: Usa el formato del canal correspondiente (ver arriba).
 
