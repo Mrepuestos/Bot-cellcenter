@@ -246,9 +246,9 @@ def expandir_abreviacion(mensaje):
     if not tiene_marca:
         for palabra in palabras_temp:
             if palabra in MODELOS_ABREVIADOS:
-            expandido = MODELOS_ABREVIADOS[palabra]
-            print(f"Abreviación expandida: '{mensaje}' → '{expandido}'")
-            return expandido
+                expandido = MODELOS_ABREVIADOS[palabra]
+                print(f"Abreviación expandida: '{mensaje}' → '{expandido}'")
+                return expandido
 
     return mensaje
 
