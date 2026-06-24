@@ -232,16 +232,20 @@ def expandir_abreviacion(mensaje):
             return expandido
 
     # Buscar combinacion de 2 palabras unidas sin espacio
-    for i in range(len(palabras_temp) - 1):
-        combinacion = palabras_temp[i] + palabras_temp[i+1]
-        if combinacion in MODELOS_ABREVIADOS:
-            expandido = MODELOS_ABREVIADOS[combinacion]
-            print(f"Abreviación expandida: '{mensaje}' → '{expandido}'")
-            return expandido
+    # Solo si el mensaje NO tiene marca conocida (evita reemplazar "Infinix note 12" por "Redmi Note 12")
+    tiene_marca = any(p in MARCAS_CONOCIDAS for p in palabras_temp)
+    if not tiene_marca:
+        for i in range(len(palabras_temp) - 1):
+            combinacion = palabras_temp[i] + palabras_temp[i+1]
+            if combinacion in MODELOS_ABREVIADOS:
+                expandido = MODELOS_ABREVIADOS[combinacion]
+                print(f"Abreviación expandida: '{mensaje}' → '{expandido}'")
+                return expandido
 
-    # Buscar palabra sola
-    for palabra in palabras_temp:
-        if palabra in MODELOS_ABREVIADOS:
+    # Buscar palabra sola (solo si no hay marca conocida)
+    if not tiene_marca:
+        for palabra in palabras_temp:
+            if palabra in MODELOS_ABREVIADOS:
             expandido = MODELOS_ABREVIADOS[palabra]
             print(f"Abreviación expandida: '{mensaje}' → '{expandido}'")
             return expandido
