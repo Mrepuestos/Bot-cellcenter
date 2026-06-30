@@ -143,6 +143,7 @@ def limpiar_html(texto):
 
 def obtener_tasa_bcv():
     try:
+        tz = pytz.timezone("America/Caracas")
         fecha_hoy = time.strftime("%Y-%m-%d")
         if tasa_bcv_cache["fecha"] == fecha_hoy and tasa_bcv_cache["tasa"]:
             return tasa_bcv_cache["tasa"]
