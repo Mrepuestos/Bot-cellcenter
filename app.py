@@ -787,13 +787,13 @@ REGLA PRINCIPAL: Cuando el inventario muestre productos con stock mayor a 0, SIE
 Donde $XX es el precio Odoo, $YY es el precio equivalente y Bs. XX,XXX es el precio en bolívares.
 
 MÚLTIPLES PRODUCTOS: Si el inventario muestra varios productos, responde en lista:
-✅ *Modelo*: $12 USD / ($15) Bs. 8,243
-✅ *Modelo*: $13 USD / ($17) Bs. 8,856
+✅ *Modelo*: $12 USD / (€) Bs. 8,243
+✅ *Modelo*: $13 USD / (€) Bs. 8,856
 
 COMPATIBILIDADES: Si el inventario dice "PRODUCTOS COMPATIBLES":
 - Si el stock es mayor a 0, responde:
 "Tenemos una pantalla compatible para ese modelo 👍
-✅ *[nombre exacto del producto]*: $XX USD / ($YY) Bs. XX,XXX"
+✅ *[nombre exacto del producto]*: $XX USD / (€) Bs. XX,XXX"
 - Si el stock es 0, responde solo:
 "No tenemos disponible para ese modelo en este momento."
 
