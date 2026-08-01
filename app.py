@@ -172,7 +172,7 @@ def obtener_tasa_euro():
         fecha_hoy = datetime.now(tz).strftime("%Y-%m-%d")
         if tasa_euro_cache["fecha"] == fecha_hoy and tasa_euro_cache["tasa"]:
             return tasa_euro_cache["tasa"]
-        r = requests.get("https://ve.dolarapi.com/v1/euros/paralelo", timeout=5)
+        r = requests.get("https://ve.dolarapi.com/v1/euros/oficial", timeout=5)
         tasa = float(r.json()["promedio"])
         tasa_euro_cache["tasa"] = tasa
         tasa_euro_cache["fecha"] = fecha_hoy
