@@ -108,6 +108,7 @@ TABLA_PRECIOS = {
 }
 
 tasa_bcv_cache = {"tasa": None, "fecha": ""}
+tasa_euro_cache = {"tasa": None, "fecha": ""}
 stock_bajo_pendiente = {}
 pausas_activas = {}
 
@@ -165,12 +166,27 @@ def obtener_tasa_bcv():
         return tasa_bcv_cache["tasa"]
 
 
+def obtener_tasa_euro():
+    try:
+        tz = pytz.timezone("America/Caracas")
+        fecha_hoy = datetime.now(tz).strftime("%Y-%m-%d")
+        if tasa_euro_cache["fecha"] == fecha_hoy and tasa_euro_cache["tasa"]:
+            return tasa_euro_cache["tasa"]
+        r = requests.get("https://ve.dolarapi.com/v1/euros/paralelo", timeout=5)
+        tasa = float(r.json()["promedio"])
+        tasa_euro_cache["tasa"] = tasa
+        tasa_euro_cache["fecha"] = fecha_hoy
+        print(f"Tasa Euro actualizada: {tasa}")
+        return tasa
+    except Exception as e:
+        print(f"Error obteniendo tasa Euro: {e}")
+        return tasa_euro_cache["tasa"]
+
+
 def calcular_precio_bs(precio_usd_odoo):
-    precio_int = int(precio_usd_odoo)
-    precio_tabla = TABLA_PRECIOS.get(precio_int, round(precio_usd_odoo * 1.35))
-    tasa = obtener_tasa_bcv()
-    precio_bs = round(precio_tabla * tasa) if tasa else None
-    return precio_usd_odoo, precio_tabla, precio_bs
+    tasa_euro = obtener_tasa_euro()
+    precio_bs = round(precio_usd_odoo * tasa_euro) if tasa_euro else None
+    return precio_usd_odoo, precio_bs
 
 
 def esta_abierto():
