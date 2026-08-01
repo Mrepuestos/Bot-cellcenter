@@ -1134,7 +1134,7 @@ def webhook():
                 if productos:
                     contexto_odoo += "\n\nINFORMACIÓN DEL INVENTARIO:\n"
                     for p in productos:
-                        precio_usd, precio_tabla, precio_bs = calcular_precio_bs(p['list_price'])
+                        precio_usd, precio_bs = calcular_precio_bs(p['list_price'])
                         stock = int(p['qty_available'])
                         nombre = p['name']
                         bs_str = f" Bs. {precio_bs:,}" if precio_bs is not None else ""
@@ -1146,7 +1146,7 @@ def webhook():
                     contexto_odoo += "\n\nPRODUCTOS COMPATIBLES:\n"
                     if isinstance(compatibles, list):
                         for comp in compatibles:
-                            precio_usd, precio_tabla, precio_bs = calcular_precio_bs(comp['list_price'])
+                            precio_usd, precio_bs = calcular_precio_bs(p['list_price'])
                             stock = int(comp['qty_available'])
                             nombre = comp['name']
                             modelo_pedido = comp.get('_compatible_con', '')
@@ -1156,7 +1156,7 @@ def webhook():
                             if stock_bajo_info is None and 1 <= stock <= 2:
                                 stock_bajo_info = {"producto": nombre, "stock": stock}
                     else:
-                        precio_usd, precio_tabla, precio_bs = calcular_precio_bs(compatibles['list_price'])
+                        precio_usd, precio_bs = calcular_precio_bs(p['list_price'])
                         stock = int(compatibles['qty_available'])
                         nombre = compatibles['name']
                         modelo_pedido = compatibles.get('_compatible_con', '')
