@@ -1146,24 +1146,25 @@ def webhook():
                     contexto_odoo += "\n\nPRODUCTOS COMPATIBLES:\n"
                     if isinstance(compatibles, list):
                         for comp in compatibles:
-                            precio_usd, precio_bs = calcular_precio_bs(p['list_price'])
+                            precio_usd, precio_bs = calcular_precio_bs(comp['list_price'])
                             stock = int(comp['qty_available'])
                             nombre = comp['name']
                             modelo_pedido = comp.get('_compatible_con', '')
                             ref = comp.get('_referencia', '')
-                            bs_str = f" Bs. {precio_bs:,}" if precio_bs is not None else ""
-                            contexto_odoo += f"- {nombre} (compatible con {ref or modelo_pedido}): ${precio_usd} USD / (${precio_tabla}){bs_str} | Stock: {stock} unidades\n"
+                            bs_str = f" (€) Bs. {precio_bs:,}" if precio_bs is not None else ""
+                            contexto_odoo += f"- {nombre} (compatible con {ref or modelo_pedido}): ${precio_usd}{bs_str} | Stock: {stock} unidades\n"
                             if stock_bajo_info is None and 1 <= stock <= 2:
                                 stock_bajo_info = {"producto": nombre, "stock": stock}
                     else:
-                        precio_usd, precio_bs = calcular_precio_bs(p['list_price'])
+                        precio_usd, precio_bs = calcular_precio_bs(compatibles['list_price'])
                         stock = int(compatibles['qty_available'])
                         nombre = compatibles['name']
                         modelo_pedido = compatibles.get('_compatible_con', '')
-                        bs_str = f" Bs. {precio_bs:,}" if precio_bs is not None else ""
-                        contexto_odoo += f"- {nombre} (compatible con {modelo_pedido}): ${precio_usd} USD / (${precio_tabla}){bs_str} | Stock: {stock} unidades\n"
+                        bs_str = f" (€) Bs. {precio_bs:,}" if precio_bs is not None else ""
+                        contexto_odoo += f"- {nombre} (compatible con {modelo_pedido}): ${precio_usd}{bs_str} | Stock: {stock} unidades\n"
                         if stock_bajo_info is None and 1 <= stock <= 2:
                             stock_bajo_info = {"producto": nombre, "stock": stock}
+               
 
                 if similares:
                     contexto_odoo += "\n\nMODELOS NO ENCONTRADOS:\n"
