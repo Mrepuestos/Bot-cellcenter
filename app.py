@@ -784,7 +784,7 @@ REGLA PRINCIPAL: Cuando el inventario muestre productos con stock mayor a 0, SIE
 1. PANTALLAS: Si el inventario muestra productos disponibles, responde con precio en USD y bolívares. Formato EXACTO:
 ✅ *Nombre producto*: $XX USD / (€) Bs. XX,XXX
 
-Donde $XX es el precio Odoo, $YY es el precio equivalente y Bs. XX,XXX es el precio en bolívares.
+Donde $XX es el precio en USD y Bs. XX,XXX es el precio en bolívares calculado con tasa euro. NO hay precio intermedio.
 
 MÚLTIPLES PRODUCTOS: Si el inventario muestra varios productos, responde en lista:
 ✅ *Modelo*: $12 USD / (€) Bs. 8,243
