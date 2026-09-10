@@ -981,7 +981,6 @@ def webhook():
 
         for msg in messages_list:
             print(f"📨 MSG RECIBIDO | from: {msg.get('from','')} | type: {msg.get('type','')} | body: {msg.get('text',{}).get('body','')[:50]} | ts: {msg.get('timestamp',0)} | from_me: {msg.get('from_me',False)}")
-            print(f"🔍 PAYLOAD COMPLETO: {json.dumps(msg, ensure_ascii=False)}")
             if msg.get("from_me", False):
                 # Detectar si el asesor escribe ** para pausar el bot
                 body_asesor = msg.get("text", {}).get("body", "").strip()
@@ -1264,7 +1263,9 @@ def webhook():
         return jsonify({"status": "ok"}), 200
 
     except Exception as e:
+        import traceback
         print(f"Error en webhook: {e}")
+        print(traceback.format_exc())
         return jsonify({"status": "error", "detail": str(e)}), 200
 
 
