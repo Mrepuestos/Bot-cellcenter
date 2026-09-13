@@ -90,7 +90,6 @@ NUMEROS_AUTORIZADOS = [
     "584126229524",
     "584241369824",
     "584126093756",
-    "584149202844",
     "584241464083",
     "584241255279"
 ]
@@ -103,6 +102,10 @@ ASESOR_STOCK = "584149202844"
 ASESOR_CELULARES   = "584149202844"   # intención de compra y precios sin verificar
 ASESOR_CEL_TECNICO = "584220392375"   # servicio técnico y reparaciones
 ASESOR_CEL_OTROS   = "584126093756"   # accesorios y todo lo demás
+
+# ── Números que van al flujo de celulares aunque estén autorizados ────────────
+# Vaciar la lista ( = [] ) cuando termines de probar.
+NUMEROS_PRUEBA_CELULARES = ["584149202844"]
 
 # ── Ubicación de la tienda ────────────────────────────────────────────────────
 TIENDA_LAT = 10.2325
@@ -1497,7 +1500,8 @@ def webhook():
                 continue
 
             # ── Determinar comportamiento según el número ──────────────────────
-            es_cliente_celulares = numero_limpio not in NUMEROS_AUTORIZADOS
+            es_cliente_celulares = (numero_limpio in NUMEROS_PRUEBA_CELULARES
+                                    or numero_limpio not in NUMEROS_AUTORIZADOS)
 
             # ── Flujo de celulares ────────────────────────────────────────────
             if es_cliente_celulares:
