@@ -16,8 +16,14 @@ from pagos_extractor import procesar_imagen_pago, inicializar_db, borrar_pago_po
 # ── Repertorio de correcciones ─────────────────────────────────────────────────
 from repertorio import CORRECCIONES_MARCAS, MODELOS_ABREVIADOS, PALABRAS_IGNORAR
 
-# ── Módulo catálogo celulares ──────────────────────────────────────────────────
-from sheets_celulares import obtener_catalogo_celulares, buscar_foto_celular
+# ── Catálogo de celulares (hojas Catalogo + Disponibilidad) ───────────────────
+from sheets_celulares import (
+    catalogo_para_ia, obtener_por_clave, existe_clave,
+    ordenar_equipos, listar_por_rango, buscar_foto, nombre_completo,
+)
+
+# ── Motor de precios de celulares ─────────────────────────────────────────────
+import precios
 
 from productos_no_encontrados import inicializar_hoja_no_encontrados, registrar_producto_no_encontrado
 
@@ -93,8 +99,23 @@ ASESOR_TECNICO = "584149202844"
 ASESOR_ACCESORIOS = "584149202844"
 ASESOR_STOCK = "584149202844"
 
-# ── Asesor para clientes de celulares ─────────────────────────────────────────
-ASESOR_CELULARES = "584149202844"
+# ── Asesores del flujo de celulares ───────────────────────────────────────────
+ASESOR_CELULARES   = "584149202844"   # intención de compra y precios sin verificar
+ASESOR_CEL_TECNICO = "584220392375"   # servicio técnico y reparaciones
+ASESOR_CEL_OTROS   = "584126093756"   # accesorios y todo lo demás
+
+# ── Ubicación de la tienda ────────────────────────────────────────────────────
+TIENDA_LAT = 10.2325
+TIENDA_LNG = -66.664972
+TIENDA_NOMBRE = "Cell Center 4620"
+TIENDA_DIRECCION = ("Centro, Av San Rafael entre calle El Carmen y Sucre, "
+                    "frente a La Asunción, a 30 mtrs")
+
+# ── Modelo que atiende el flujo de celulares ──────────────────────────────────
+MODELO_CELULARES = "claude-sonnet-5"
+
+# ── Mensaje predefinido con el que llegan los clientes de Krece ───────────────
+MENSAJE_KRECE = "quiero comprar con krece"
 
 WHAPI_TOKEN = os.environ.get("WHAPI_TOKEN", "")
 WHAPI_API_URL = os.environ.get("WHAPI_API_URL", "https://gate.whapi.cloud")
@@ -229,6 +250,170 @@ def guardar_historial(numero, historial):
             }).execute()
     except Exception as e:
         print(f"Error guardando historial: {e}")
+
+
+# ── Perfil del cliente de celulares (Supabase) ────────────────────────────────
+
+def cargar_perfil(numero):
+    """canal_pago, nivel_cliente, linea_krece y modelo_interes."""
+    vacio = {"canal_pago": None, "nivel_cliente": None,
+             "linea_krece": None, "modelo_interes": None}
+    try:
+        r = supabase.table("Clientes").select(
+            "canal_pago,nivel_cliente,linea_krece,modelo_interes"
+        ).eq("numero", numero).execute()
+        if r.data:
+            return {k: r.data[0].get(k) for k in vacio}
+        return vacio
+    except Exception as e:
+        print(f"Error cargando perfil: {e}")
+        return vacio
+
+
+def guardar_perfil(numero, **campos):
+    """Guarda solo los campos que vengan con valor."""
+    datos = {k: v for k, v in campos.items() if v is not None}
+    if not datos:
+        return
+    try:
+        r = supabase.table("Clientes").select("numero").eq("numero", numero).execute()
+        if r.data:
+            supabase.table("Clientes").update(datos).eq("numero", numero).execute()
+        else:
+            datos["numero"] = numero
+            supabase.table("Clientes").insert(datos).execute()
+    except Exception as e:
+        print(f"Error guardando perfil: {e}")
+
+
+# ── Detección de canal, nivel y línea en lo que escribe el cliente ────────────
+
+def detectar_canal(texto):
+    t = texto.lower()
+    if MENSAJE_KRECE in t or "krece" in t or "krese" in t or "crece" in t:
+        return "krece"
+    if "cashea" in t or "cashe" in t or "cachea" in t:
+        return "cashea"
+    if "creditienda" in t or "credi tienda" in t:
+        return "creditienda"
+    if any(p in t for p in ("contado", "efectivo", "divisa", "dolar", "d\u00f3lar",
+                            "zelle", "usdt", "cash")):
+        return "contado"
+    return None
+
+
+def detectar_nivel_krece(texto):
+    t = texto.lower()
+    for nivel in ("platino", "oro", "plata", "azul"):
+        if nivel in t:
+            return nivel
+    if re.search(r"\b(nivel\s*)?1\b", t) or "primero" in t or "nuevo" in t:
+        return "azul"
+    return None
+
+
+def detectar_nivel_cashea(texto):
+    t = texto.lower()
+    mapa = {"semilla": "1", "raiz": "2", "ra\u00edz": "2", "hoja": "3",
+            "tronco": "4", "arbol": "5", "\u00e1rbol": "5", "araguaney": "6"}
+    for palabra, num in mapa.items():
+        if palabra in t:
+            return num
+    m = re.search(r"\bnivel\s*([1-6])\b", t) or re.search(r"\b([1-6])\b", t)
+    return m.group(1) if m else None
+
+
+def detectar_linea(texto):
+    """Busca un monto que parezca la línea aprobada de Krece."""
+    m = re.search(r"(?:linea|l\u00ednea|aprobad[oa]|credito|cr\u00e9dito|limite|l\u00edmite)"
+                  r"[^\d]{0,15}(\d{2,5})", texto.lower())
+    if m:
+        return float(m.group(1))
+    m = re.search(r"\$\s*(\d{2,5})", texto)
+    return float(m.group(1)) if m else None
+
+
+# ── Armado de precios para el prompt de celulares ────────────────────────────
+
+def bloque_equipo(equipos, canal, perfil):
+    """
+    Texto con los precios SOLO del canal que corresponde.
+    Es lo único que ve el modelo: nunca el catálogo completo.
+    """
+    if not equipos:
+        return "No se encontró ningún equipo con lo que escribió el cliente."
+
+    lineas = []
+    for eq in equipos[:4]:
+        p = eq["precio_paralelo"]
+        entrega = "disponible ya" if eq["inmediato"] else "llega en 24 a 48 horas"
+        lineas.append(f"\n▸ {nombre_completo(eq)} — {entrega}")
+
+        if canal == "krece":
+            nivel = perfil.get("nivel_cliente")
+            linea = perfil.get("linea_krece")
+            if not nivel or not linea:
+                lineas.append("  Faltan datos para cotizar Krece: nivel y línea aprobada.")
+                continue
+            hubo = False
+            for plazo in precios.plazos_krece(nivel):
+                k = precios.krece(p, nivel, plazo, linea=linea)
+                if not k.get("aplica"):
+                    continue
+                hubo = True
+                extra = " (inicial ajustada a su línea)" if k["topado_por_linea"] else ""
+                lineas.append(f"  Krece {plazo} cuotas: inicial ${k['inicial']} "
+                              f"+ {plazo} x ${k['monto_cuota']}{extra}")
+            if not hubo:
+                lineas.append("  Este equipo supera la línea aprobada del cliente. "
+                              "No aplica para Krece.")
+
+        elif canal == "cashea":
+            nivel = perfil.get("nivel_cliente")
+            if not nivel:
+                lineas.append("  Falta el nivel de Cashea del cliente.")
+                continue
+            c = precios.cashea(p, nivel)
+            lineas.append(f"  Cashea: inicial ${c['inicial']} + 3 x ${c['monto_cuota']}")
+
+        elif canal == "creditienda":
+            d = precios.creditienda(p, "divisas")
+            b = precios.creditienda(p, "bs")
+            lineas.append(f"  CrediTienda en divisas: inicial ${d['inicial']} "
+                          f"+ 4 x ${d['monto_cuota']}")
+            lineas.append(f"  CrediTienda en bolívares: inicial ${b['inicial']} "
+                          f"+ 4 x ${b['monto_cuota']}")
+
+        else:  # contado o canal sin definir
+            tasa = obtener_tasa_bcv()
+            bcv = precios.precio_bcv(p)
+            lineas.append(f"  En divisas (Zelle, USDT, efectivo): ${int(p)}")
+            if tasa:
+                bs = precios.precio_bolivares(p, tasa)
+                lineas.append(f"  En bolívares: ${bcv} (Bs {bs:,})")
+            else:
+                lineas.append(f"  En bolívares: ${bcv} "
+                              f"(no menciones el monto en Bs, la tasa no está disponible)")
+
+        if eq.get("camara") or eq.get("bateria"):
+            lineas.append(f"  [solo si las pide] Cámara {eq.get('camara','-')} · "
+                          f"Batería {eq.get('bateria','-')} · RAM {eq.get('ram','-')}GB")
+
+    return "\n".join(lineas)
+
+
+def bloque_rangos():
+    """Tres equipos por rango de precio, para cuando no dice modelo."""
+    equipos = listar_por_rango()
+    if not equipos:
+        return "  No hay equipos disponibles en este momento."
+    etiquetas = ["Económico", "Intermedio", "Gama alta"]
+    salida = []
+    for i, eq in enumerate(equipos):
+        etiqueta = etiquetas[i] if i < len(etiquetas) else ""
+        salida.append(f"  {etiqueta}: {nombre_completo(eq)} — "
+                      f"desde ${int(eq['precio_paralelo'])} en divisas")
+    return "\n".join(salida)
 
 
 # ── Extracción de palabras clave ──────────────────────────────────────────────
@@ -771,6 +956,47 @@ def notificar_stock_bajo(numero_cliente: str, producto: str, stock: int):
     send_whapi_message(ASESOR_STOCK, f"⚠️ *Stock bajo - Cliente interesado*\nProducto: *{producto}*\nStock: {stock} unidad(es)\nCliente: {numero_formateado}\n\nEl cliente confirmó que quiere apartar esta pantalla.")
 
 
+def send_whapi_ubicacion(to: str):
+    url = f"{WHAPI_API_URL}/messages/location"
+    headers = {"Authorization": f"Bearer {WHAPI_TOKEN}", "Content-Type": "application/json"}
+    payload = {
+        "to": to,
+        "latitude": TIENDA_LAT,
+        "longitude": TIENDA_LNG,
+        "name": TIENDA_NOMBRE,
+        "address": TIENDA_DIRECCION,
+    }
+    try:
+        requests.post(url, json=payload, headers=headers, timeout=10).raise_for_status()
+    except Exception as e:
+        print(f"Error enviando ubicación Whapi: {e}")
+        send_whapi_message(to, f"📍 *{TIENDA_NOMBRE}*\n{TIENDA_DIRECCION}")
+
+
+def notificar_intencion_compra(numero_cliente, perfil, equipos):
+    numero = "+" + numero_cliente.replace("@s.whatsapp.net", "")
+    modelo = perfil.get("modelo_interes") or (
+        nombre_completo(equipos[0]) if equipos else "sin especificar")
+    partes = ["🟢 *INTENCIÓN DE COMPRA*", f"Cliente: {numero}", f"Equipo: {modelo}"]
+    if perfil.get("canal_pago"):
+        partes.append(f"Paga con: {perfil['canal_pago']}")
+    if perfil.get("nivel_cliente"):
+        partes.append(f"Nivel: {perfil['nivel_cliente']}")
+    if perfil.get("linea_krece"):
+        partes.append(f"Línea aprobada: ${float(perfil['linea_krece']):.0f}")
+    send_whapi_message(ASESOR_CELULARES, "\n".join(partes))
+
+
+def notificar_precio_sin_verificar(numero_cliente, texto_cliente):
+    numero = "+" + numero_cliente.replace("@s.whatsapp.net", "")
+    send_whapi_message(
+        ASESOR_CELULARES,
+        f"🟡 *Equipo sin precio verificado*\nCliente: {numero}\n"
+        f"Preguntó: {texto_cliente[:120]}\n\n"
+        f"El bot no cotizó. Responde tú o actualiza el precio en el catálogo."
+    )
+
+
 # ── System prompt ─────────────────────────────────────────────────────────────
 
 def get_system_prompt():
@@ -829,147 +1055,331 @@ Responde siempre corto y directo. Muestra el nombre exacto del producto como apa
 
 8. PAGO o datos bancarios: Si el cliente pregunta cómo pagar, pide datos de pago, menciona pago móvil, transferencia o cualquier intención de pagar, responde exactamente: "DATOS_PAGO"""
 
-def get_system_prompt_celulares():
-    """System prompt vendedor de celulares - multi canal."""
+def get_system_prompt_celulares(info_equipo, perfil, rangos):
+    """Prompt del vendedor de celulares. Recibe solo el equipo consultado,
+    nunca el catálogo completo."""
     tz = pytz.timezone("America/Caracas")
     ahora = datetime.now(tz)
     es_domingo = ahora.weekday() == 6
     horario_hoy = "9:00am a 2:00pm" if es_domingo else "8:30am a 5:30pm"
     dia_hoy = "domingo" if es_domingo else "lunes a sábado"
     estado_tienda = "ABIERTA" if esta_abierto() else "CERRADA"
-    catalogo = obtener_catalogo_celulares()
 
-    return f"""Eres un asesor de ventas de Cell Center 4620, tienda de celulares en Venezuela.
-La tienda está: {estado_tienda}
+    canal = perfil.get("canal_pago")
+    if canal:
+        recordatorio = (f"El cliente viene por *{canal.upper()}*. "
+                        f"Háblale SOLO de ese medio, salvo que él pida otro.")
+    else:
+        recordatorio = "Todavía no sabes por qué medio quiere pagar."
+
+    datos = []
+    if perfil.get("nivel_cliente"):
+        datos.append(f"nivel {perfil['nivel_cliente']}")
+    if perfil.get("linea_krece"):
+        datos.append(f"línea aprobada ${float(perfil['linea_krece']):.0f}")
+    if perfil.get("modelo_interes"):
+        datos.append(f"le interesa el {perfil['modelo_interes']}")
+    conocidos = ("Ya sabes de él: " + ", ".join(datos) +
+                 ". No se lo vuelvas a preguntar.") if datos else ""
+
+    return f"""Eres el asistente de ventas de Cell Center 4620, tienda de celulares en Santa Teresa del Tuy. Atiendes por WhatsApp.
+
+La tienda está ahora: {estado_tienda}
 Hoy es {dia_hoy}. El horario de HOY es {horario_hoy}.
+Horario general: lunes a sábado 8:30am-5:30pm · domingos y feriados 9:00am-2:00pm
 
-PERSONALIDAD:
-- Cálido, natural y servicial — como un asesor venezolano de confianza
-- Usas emojis con moderación
-- NUNCA uses "hermano", "hermana", "amigo", "pana" ni ningún tratamiento directo
-- No eres agresivo. Empujas suavemente hacia el cierre, no en cada mensaje
-- Máximo 4-5 líneas por respuesta para no abrumar
+CÓMO HABLAS
+Eres venezolano, cálido y directo. Hablas como un vendedor de confianza, no como un robot.
+Emojis con moderación, uno o dos por mensaje.
+Máximo 4 o 5 líneas por respuesta. La gente lee WhatsApp con el pulgar.
+UNA sola pregunta por mensaje. Nunca dos seguidas.
+NUNCA uses "hermano", "hermana", "amigo", "pana" ni tratamientos parecidos.
+No repitas lo que ya dijiste en el mensaje anterior.
 
-DETECCIÓN DE CANAL — MUY IMPORTANTE:
+LO PRIMERO: ENTENDER QUÉ QUIERE
+- Compra de celular -> lo atiendes tú
+- Servicio técnico o reparación -> responde exactamente: DERIVAR_TECNICO
+- Accesorios, repuestos o cualquier otra cosa -> responde exactamente: DERIVAR_OTROS
+Si ya dijo lo que quiere en su primer mensaje, no se lo preguntes de nuevo.
 
-CANAL KRECE: Si el mensaje menciona "Krece" o "cómo funciona" o "quiero comprar con Krece":
-- Responde PRIMERO con esta explicación exacta:
-  "¡Hola! 👋 Bienvenido a la tienda, qué gusto verte por aquí.
-  Con *Krece* es bien fácil, funciona así:
-  💙 Haces un *pago inicial* (que depende del equipo) y luego *4 cuotas cada 15 días*.
-  La primera cuota a los 15 días de la compra, la segunda a los 30, y así.
-  Es súper cómodo porque repartes el dinero en el tiempo y te llevas el celular hoy mismo ✅
-  ¿Qué tipo de celular estás buscando o para qué lo vas a usar?"
-- En este canal muestra SOLO el precio en Krece. NO menciones Cashea ni CrediTienda
-  a menos que el cliente lo pregunte explícitamente.
-- Formato de precio para cliente Krece:
-  ✅ *Marca Modelo*
-  📦 Almac · RAM · Cámara · Batería
-  💵 En divisas: $X
-  💰 BCV: $X (Bs X)
-  💙 Krece: $X inicial + 4 cuotas de $X
+RESPETA EL CANAL QUE ELIGIÓ — regla más importante
+{recordatorio}
+Si viene por Krece, le hablas SOLO de Krece: no menciones Cashea, CrediTienda ni contado.
+Lo mismo al revés. Solo cambias de canal si él lo pide.
+{conocidos}
 
-CANAL CASHEA: Si el mensaje menciona "Cashea" o "quiero comprar con Cashea":
-- Explica que Cashea es una opción de financiamiento cómoda y pregunta qué busca
-- En este canal muestra SOLO el precio en Cashea. NO menciones Krece ni CrediTienda
-  a menos que el cliente lo pregunte explícitamente.
-- Formato de precio para cliente Cashea:
-  ✅ *Marca Modelo*
-  📦 Almac · RAM · Cámara · Batería
-  💵 En divisas: $X
-  💰 BCV: $X (Bs X)
-  💛 Cashea: $X inicial + 3 cuotas de $X
+PRECIOS
+NUNCA inventes un precio. Solo usas los montos que aparecen abajo en EQUIPO CONSULTADO.
+Si no hay precio ahí, no lo estimes ni lo deduzcas de otro modelo: responde exactamente DERIVAR_PRECIO.
+Nunca uses la palabra "paralelo". Di "en divisas", "en efectivo" o "en dólares".
 
-CANAL GENERAL (grupos WhatsApp, Meta ads, sin canal específico):
-- El cliente ya vio precios o publicaciones — va directo al grano
-- Muestra TODOS los métodos de pago disponibles
-- Formato de precio completo:
-  ✅ *Marca Modelo*
-  📦 Almac · RAM · Cámara · Batería
-  💵 En divisas: $X
-  💰 BCV: $X (Bs X)
-  💛 Cashea: $X inicial + 3 cuotas de $X
-  💙 Krece: $X inicial + 4 cuotas de $X
-  💜 CrediTienda: $X inicial + 4 cuotas de $X
+KRECE
+No cotizas sin dos datos: su NIVEL (Azul, Plata, Oro o Platino) y su LÍNEA APROBADA.
+Pídeselos juntos en una sola frase, y ofrécele que te los escriba o te mande captura de la app.
+Sin esos datos no das ningún número, ni aproximado.
+NUNCA digas cuántas cuotas son antes de tener el cálculo: varía entre 3 y 10.
 
-FLUJO DE VENTA:
+CASHEA
+Pregunta primero el NIVEL del cliente (1 Semilla al 6 Araguaney). Sin nivel no hay precio. Son 3 cuotas.
 
-PASO 1 — ENTENDER: Pregunta para qué usará el celular (redes, fotos, trabajo,
-juegos, regalo) SOLO si el cliente no lo indicó ya. Si ya lo dijo, ve directo
-a recomendar.
+CREDITIENDA
+No necesita nivel. Pregunta si paga en divisas o en bolívares, porque el precio cambia.
 
-PASO 2 — RECOMENDAR: Recomienda 2 o 3 equipos del catálogo según su necesidad.
-Explica brevemente por qué esos. NO muestres el catálogo completo a menos que
-el cliente lo pida explícitamente o insista.
-Si el cliente pide la lista completa, todos los modelos o qué tienen disponible,
-muestra TODOS los equipos del catálogo sin omitir ninguno, en formato corto.
-Usa el método de pago del canal detectado:
-- Canal Krece → muestra precio en Krece
-- Canal Cashea → muestra precio en Cashea
-- Canal general → muestra precio en divisas
-Ejemplo formato lista canal general:
-• Redmi 13C — $X
-• Samsung A16 — $X
-• Tecno Spark 10 PRO — $X
-Ejemplo formato lista canal Krece:
-• Redmi 13C — Ini $X + 4 cuotas de $X
-• Samsung A16 — Ini $X + 4 cuotas de $X
+CONTADO
+En divisas (Zelle, USDT, efectivo) es el precio más bajo. Menciónalo como ventaja cuando muestre interés.
 
-PASO 3 — PRECIO: Usa el formato del canal correspondiente (ver arriba).
+CUÁNDO ENTREGAS
+Si el equipo dice "disponible ya", dilo. Si dice "llega en 24 a 48 horas", dilo también con naturalidad.
+Nunca prometas entrega inmediata de algo que no la tiene.
 
-PASO 4 — CIERRE SUAVE: Termina con una pregunta natural. Varía las frases
-y no repitas la misma en mensajes consecutivos:
-"¿Con cuál forma de pago lo vemos?"
-"¿Te interesa alguno de estos?"
-"¿Lo apartamos?"
-"¿Cuál se adapta más a tu presupuesto?"
+ESPECIFICACIONES Y FOTOS
+Solo hablas de cámara, batería o RAM si el cliente pregunta. No las enumeres de entrada.
+Si pide ver el equipo, incluye el marcador [FOTO] acompañado de una frase. Nunca lo mandes solo.
 
-TÉCNICAS DE VENTA (con moderación, no en cada mensaje):
-- ESCASEZ:
-  "Este modelo tiene bastante salida 🔥"
-  "Es de los más pedidos"
-  "Los equipos buenos no duran mucho"
-- DIVISAS (cuando muestre interés en cerrar):
-  "Si pagas en Zelle o USDT te sale mejor 💵"
-  "Con divisas te hacemos un precio especial"
-- OBJECIONES (si dice que está caro o va a pensarlo):
-  "Entiendo, con Krece o CrediTienda te lo llevas hoy con solo $X de inicial"
-  "Mientras más esperas más sube el dólar"
-- COMPARACIÓN:
-  "Aquí tienes garantía y soporte directo"
+SI NO SABE QUÉ QUIERE
+No mandes el catálogo completo. Muéstrale estas tres opciones y deja que se ubique:
+{rangos}
+Después pregúntale para qué lo va a usar.
 
-FOTOS:
-- Si el cliente pide ver un equipo, incluye [FOTO:Marca Modelo] con el nombre
-  EXACTO del catálogo, acompañado de una frase. Nunca lo envíes solo.
-- Ejemplo: "Míralo aquí 👇 [FOTO:Redmi 13C]"
-- Solo para equipos del catálogo. Si no está, ofrece alternativa sin el marcador.
+CERRAR
+El objetivo NO es cerrar la venta por chat: es que venga a la tienda.
+Cuando muestre interés real, invítalo: "¿Te esperamos hoy por la tienda? Pregunta por Omar"
+Si pregunta dónde quedan, responde exactamente: ENVIAR_UBICACION
+Cuando detectes intención de compra (dice que lo quiere, pregunta cómo apartarlo,
+o confirma que va a ir), responde exactamente: INTENCION_COMPRA
 
-REGLAS IMPORTANTES:
-- NUNCA uses la palabra "paralelo"
-- Solo ofreces equipos del catálogo disponible
-- Si preguntan por un modelo que no está, dilo y ofrece alternativa similar
-- Si el cliente ya eligió, enfócate en cerrar el método de pago
-- Recibimos Zelle y USDT como pago en divisas
+OBJECIONES
+"Está caro" -> recuérdale que con el financiamiento se lo lleva hoy con la inicial.
+"Lo voy a pensar" -> sin presionar, menciona que los equipos rotan rápido.
+"En otra tienda está más barato" -> garantía, soporte directo y financiamiento.
+Nunca hables mal de la competencia.
 
-DERIVACIONES — responde EXACTAMENTE con estas palabras:
-- Servicio técnico o reparación → DERIVAR_ASESOR
-- Accesorios → DERIVAR_ASESOR
-- Cliente confirma que quiere comprar → CONFIRMAR_COMPRA
+LO QUE NUNCA HACES
+- Inventar precios, modelos o disponibilidad
+- Dar montos de Krece sin nivel y línea
+- Dar montos de Cashea sin nivel
+- Prometer entrega inmediata de algo que viene de proveedor
+- Mandar la lista completa de equipos
+- Usar la palabra "paralelo"
 
-HORARIO:
-- Lunes a sábado 8:30am-5:30pm
-- Domingos y feriados 9:00am-2:00pm
-- Si está CERRADA: avisa pero sigue atendiendo y tomando pedidos
-
-CATÁLOGO ACTUALIZADO:
-{catalogo}
+EQUIPO CONSULTADO
+{info_equipo}
 """
+
 
 client = anthropic.Anthropic()
 
 # ── Inicializar Google Sheets al arrancar ─────────────────────────────────────
 inicializar_db()
 inicializar_hoja_no_encontrados()
+
+# ── Interpretación del pedido con IA ──────────────────────────────────────────
+
+def interpretar_pedido(mensaje, historial_texto=""):
+    """
+    Única regla de búsqueda de celulares: Sonnet lee lo que escribió el
+    cliente y elige del catálogo real. Nunca inventa un modelo.
+
+    Devuelve (lista_de_equipos, tipo) donde tipo es:
+      "exacto"        — es lo que pidió
+      "recomendacion" — no tenemos lo que pidió, esto se parece
+      "sin_precio"    — lo tenemos pero sin precio verificado
+      "ninguno"       — no pide un equipo, o no hay nada que ofrecer
+    """
+    catalogo = catalogo_para_ia()
+    if not catalogo:
+        return [], "ninguno"
+
+    prompt = f"""Un cliente de una tienda de celulares en Venezuela escribió esto por WhatsApp:
+"{mensaje}"
+{historial_texto}
+Este es el catálogo real de la tienda. Cada línea es:
+clave | nombre | precio | cámara | entrega
+
+{catalogo}
+
+Tu tarea: entender QUÉ QUIERE y elegir hasta 3 equipos del catálogo.
+
+Interpreta libremente. El cliente escribe rápido, con errores, abreviado o
+sin saber el nombre exacto. Ejemplos de lo que debes entender:
+- "el redmi 17 de 256" -> el Redmi 17 256GB
+- "sansung a 07" -> el Samsung A07
+- "algo bueno para fotos" -> equipos de gama media con buena cámara
+- "el mas barato que tengas" -> el de menor precio
+- "uno que no pase de 200" -> los que cuesten hasta $200
+- "quiero un iphone" -> los iPhone que haya
+
+REGLAS:
+- Solo puedes devolver claves que estén EXACTAMENTE en la lista de arriba.
+- Si pide un modelo conocido que NO está en el catálogo (por ejemplo un
+  iPhone 13, un Samsung S24), elige 2 o 3 parecidos en precio y gama, y
+  marca tipo "recomendacion".
+- Si el modelo que pide no es conocido ni está en el catálogo, devuelve
+  lista vacía y tipo "ninguno".
+- Si lo que pide está en el catálogo pero dice SIN PRECIO, devuélvelo igual
+  con tipo "sin_precio".
+- Si solo saluda, pregunta por horario, ubicación, servicio técnico o
+  cualquier cosa que no sea elegir un celular, devuelve lista vacía y
+  tipo "ninguno".
+- Si pide un criterio en vez de un modelo (fotos, juegos, batería,
+  presupuesto), elige hasta 3 que cumplan y marca tipo "exacto".
+
+Responde SOLO con JSON, sin explicaciones ni markdown:
+{{"claves": ["clave1", "clave2"], "tipo": "exacto"}}"""
+
+    try:
+        r = client.messages.create(
+            model=MODELO_CELULARES,
+            max_tokens=200,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        texto = r.content[0].text.strip()
+        texto = re.sub(r"^```(?:json)?|```$", "", texto, flags=re.MULTILINE).strip()
+        datos = json.loads(texto)
+        claves = datos.get("claves") or []
+        tipo = datos.get("tipo") or "ninguno"
+    except Exception as e:
+        print(f"Error interpretando pedido: {e}")
+        return [], "ninguno"
+
+    if not claves:
+        return [], "ninguno"
+
+    # Validación dura: solo claves que existan de verdad
+    equipos, hay_sin_precio = [], False
+    for clave in claves[:3]:
+        eq = obtener_por_clave(clave)
+        if eq:
+            equipos.append(eq)
+        elif existe_clave(clave):
+            hay_sin_precio = True
+        else:
+            print(f"IA devolvió una clave inexistente, descartada: '{clave}'")
+
+    if not equipos:
+        return [], ("sin_precio" if hay_sin_precio else "ninguno")
+
+    return ordenar_equipos(equipos), tipo
+
+
+# ── Flujo de celulares ────────────────────────────────────────────────────────
+
+def atender_celulares(from_number, numero_limpio, body):
+    """Atiende a un cliente de celulares de punta a punta."""
+    perfil = cargar_perfil(numero_limpio)
+    cambios = {}
+
+    # Canal de pago
+    canal = detectar_canal(body) or perfil.get("canal_pago")
+    if canal and canal != perfil.get("canal_pago"):
+        cambios["canal_pago"] = canal
+        perfil["canal_pago"] = canal
+
+    # Nivel y línea, según el canal
+    if canal == "krece":
+        nivel = detectar_nivel_krece(body)
+        if nivel:
+            cambios["nivel_cliente"] = nivel
+            perfil["nivel_cliente"] = nivel
+        linea = detectar_linea(body)
+        if linea:
+            cambios["linea_krece"] = linea
+            perfil["linea_krece"] = linea
+    elif canal == "cashea":
+        nivel = detectar_nivel_cashea(body)
+        if nivel:
+            cambios["nivel_cliente"] = nivel
+            perfil["nivel_cliente"] = nivel
+
+    # Equipo: la IA interpreta lo que pidió
+    contexto = ""
+    if perfil.get("modelo_interes"):
+        contexto = (f"\nEn mensajes anteriores le interesaba el "
+                    f"{perfil['modelo_interes']}. Si ahora no menciona otro "
+                    f"modelo, se refiere a ese.\n")
+    equipos, tipo_resultado = interpretar_pedido(body, contexto)
+
+    if equipos:
+        modelo = nombre_completo(equipos[0])
+        if modelo != perfil.get("modelo_interes"):
+            cambios["modelo_interes"] = modelo
+            perfil["modelo_interes"] = modelo
+
+    if cambios:
+        guardar_perfil(numero_limpio, **cambios)
+
+    # Lo único que ve el modelo
+    if tipo_resultado == "sin_precio":
+        info = ("El equipo existe pero NO tiene precio verificado. "
+                "No lo cotices: responde DERIVAR_PRECIO.")
+    elif tipo_resultado == "recomendacion":
+        info = ("El cliente pidió un modelo que NO tenemos. Dile con claridad "
+                "que ese no lo manejas, y ofrécele estas alternativas "
+                "parecidas:\n" + bloque_equipo(equipos, canal, perfil))
+    elif tipo_resultado == "ninguno":
+        info = ("El cliente no está preguntando por un equipo concreto, o pidió "
+                "algo que no tenemos ni se parece a nada del catálogo. "
+                "No inventes modelos ni precios.")
+    else:
+        info = bloque_equipo(equipos, canal, perfil)
+
+    historial = cargar_historial(numero_limpio)
+    historial.append({"role": "user", "content": body})
+    if len(historial) > 4:
+        historial = historial[-4:]
+
+    respuesta = client.messages.create(
+        model=MODELO_CELULARES,
+        max_tokens=400,
+        system=get_system_prompt_celulares(info, perfil, bloque_rangos()),
+        messages=historial,
+    )
+    reply = respuesta.content[0].text
+
+    # ── Marcadores ────────────────────────────────────────────────────────────
+    if "DERIVAR_TECNICO" in reply:
+        notificar_asesor(ASESOR_CEL_TECNICO, "servicio técnico", from_number)
+        reply = "Un momento, te comunico con el asesor de servicio técnico"
+
+    elif "DERIVAR_OTROS" in reply:
+        notificar_asesor(ASESOR_CEL_OTROS, "accesorios u otra consulta", from_number)
+        reply = "Un momento, un asesor te atiende enseguida"
+
+    elif "DERIVAR_PRECIO" in reply:
+        notificar_precio_sin_verificar(from_number, body)
+        reply = "Déjame confirmarte el precio de ese modelo y te escribo en un momento"
+
+    elif "INTENCION_COMPRA" in reply:
+        notificar_intencion_compra(from_number, perfil, equipos)
+        reply = "¡Perfecto! Te esperamos en la tienda para cerrar. Pregunta por Omar"
+
+    enviar_ubicacion = "ENVIAR_UBICACION" in reply
+    if enviar_ubicacion:
+        reply = reply.replace("ENVIAR_UBICACION", "").strip()
+        if not reply:
+            reply = "Aquí te dejo la ubicación. Te esperamos, pregunta por Omar"
+
+    quiere_foto = "[FOTO]" in reply
+    if quiere_foto:
+        reply = reply.replace("[FOTO]", "").strip()
+
+    historial.append({"role": "assistant", "content": reply or "[enviado]"})
+    guardar_historial(numero_limpio, historial)
+
+    if reply:
+        send_whapi_message(from_number, reply)
+
+    if quiere_foto and equipos:
+        url_foto = buscar_foto(equipos[0]["marca"], equipos[0]["modelo"],
+                               equipos[0]["almacenamiento"])
+        if url_foto:
+            send_whapi_image(from_number, url_foto, nombre_completo(equipos[0]))
+        else:
+            print(f"Sin foto para {nombre_completo(equipos[0])}")
+
+    if enviar_ubicacion:
+        send_whapi_ubicacion(from_number)
+
 
 # ── Webhook ───────────────────────────────────────────────────────────────────
 
@@ -1073,48 +1483,17 @@ def webhook():
             # ── Determinar comportamiento según el número ──────────────────────
             es_cliente_celulares = numero_limpio not in NUMEROS_AUTORIZADOS
 
+            # ── Flujo de celulares ────────────────────────────────────────────
             if es_cliente_celulares:
-                # ── Flujo para clientes de celulares (Google Sheets) ───────────
                 print(f"Cliente celulares: {numero_limpio}")
-
-                historial = cargar_historial(numero_limpio)
-                historial.append({"role": "user", "content": body})
-                if len(historial) > 4:
-                    historial = historial[-4:]
-
-                response = client.messages.create(
-                    model="claude-haiku-4-5-20251001",
-                    max_tokens=400,
-                    system=get_system_prompt_celulares(),
-                    messages=historial
-                )
-                reply = response.content[0].text
-
-                if "CONFIRMAR_COMPRA" in reply:
-                    notificar_asesor(ASESOR_CELULARES, "compra confirmada de celular", from_number)
-                    reply = "¡Perfecto! Un asesor te contactará enseguida para coordinar el pago y la entrega 👋"
-                elif "DERIVAR_ASESOR" in reply:
-                    notificar_asesor(ASESOR_CELULARES, "celular o accesorio", from_number)
-                    reply = "Un momento, un asesor te atenderá enseguida 👋"
-
-                # ── Detectar solicitudes de foto ───────────────────────────
-                modelos_foto = re.findall(r'\[FOTO:\s*([^\]]+)\]', reply)
-                if modelos_foto:
-                    reply = re.sub(r'\[FOTO:\s*[^\]]+\]', '', reply).strip()
-
-                historial.append({"role": "assistant", "content": reply or "[foto enviada]"})
-                guardar_historial(numero_limpio, historial)
-
-                if reply:
-                    send_whapi_message(from_number, reply)
-
-                for modelo in modelos_foto:
-                    url_foto = buscar_foto_celular(modelo)
-                    if url_foto:
-                        send_whapi_image(from_number, url_foto, modelo.strip())
-                    else:
-                        print(f"Sin foto disponible para: {modelo.strip()}")
-                continue  # ← no cae al flujo de repuestos
+                try:
+                    atender_celulares(from_number, numero_limpio, body)
+                except Exception as e:
+                    print(f"Error en flujo de celulares: {e}")
+                    notificar_asesor(ASESOR_CELULARES, "error del bot", from_number)
+                    send_whapi_message(from_number,
+                        "Dame un momento, un asesor te atiende enseguida")
+                continue
 
             # ── Flujo original para clientes de repuestos (sin tocar) ──────────
             if numero_limpio not in NUMEROS_AUTORIZADOS:

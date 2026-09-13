@@ -1,21 +1,41 @@
-import gspread
-from google.oauth2.service_account import Credentials
+"""
+SHEETS CELULARES — capa de datos del catálogo
+Cell Center 4620
+
+Lee dos hojas del Google Sheet:
+  Catalogo       — un modelo por fila: specs, foto y precio paralelo
+  Disponibilidad — una fila por modelo y origen
+
+No arma texto de venta ni decide qué mostrar: solo devuelve datos.
+Los precios los calcula precios.py; el texto lo arma app.py.
+"""
+
 import os
+import re
 from datetime import datetime, timedelta
 
-# ── Credenciales (mismo patrón que pagos_extractor.py) ───────────────────────
+import gspread
+from google.oauth2.service_account import Credentials
+
+from repertorio import CORRECCIONES_MARCAS, PALABRAS_IGNORAR
+
+# ─── Credenciales ─────────────────────────────────────────────────────────────
 GOOGLE_CLIENT_EMAIL = os.environ.get("GOOGLE_CLIENT_EMAIL", "")
 GOOGLE_PRIVATE_KEY  = os.environ.get("GOOGLE_PRIVATE_KEY", "").replace("\\n", "\n")
 GOOGLE_PROJECT_ID   = os.environ.get("GOOGLE_PROJECT_ID", "")
 GOOGLE_SHEET_ID_CELULARES = os.environ.get("GOOGLE_SHEET_ID_CELULARES", "")
 
-# ── Cache: evita llamar a Sheets en cada mensaje ──────────────────────────────
-_cache = {"data": None, "fotos": {}, "timestamp": None}
-_sheets_client = None
 CACHE_MINUTOS = 5
 
+# Orden de preferencia: menor número gana
+PRIORIDAD_ORIGEN = {"tienda": 0, "aliada": 1, "proveedor": 2}
+ENTREGA = {"tienda": "inmediata", "aliada": "inmediata", "proveedor": "24-48h"}
+
+_cache = {"equipos": None, "timestamp": None}
+_sheets_client = None
+
+
 def _get_sheet():
-    """Reutiliza el cliente de Sheets o crea uno nuevo."""
     global _sheets_client
     if _sheets_client is None:
         creds_dict = {
@@ -36,118 +56,210 @@ def _get_sheet():
         _sheets_client = gspread.authorize(creds)
     return _sheets_client
 
-def obtener_catalogo_celulares() -> str:
-    """
-    Lee el Panel del Google Sheet y devuelve texto con
-    productos disponibles y sus precios para inyectar
-    en el system prompt del bot de celulares.
-    """
+
+# ─── Normalización ────────────────────────────────────────────────────────────
+
+def normalizar(texto):
+    """Minúsculas, sin puntuación, con las marcas corregidas."""
+    t = str(texto or "").lower().strip()
+    for a, b in (("á","a"),("é","e"),("í","i"),("ó","o"),("ú","u"),("ñ","n")):
+        t = t.replace(a, b)
+    t = re.sub(r"[^\w\s]", " ", t)
+    # Une letra suelta con número: "A 07" -> "a07" (Samsung A07, Moto G17, Poco X8)
+    t = re.sub(r"\b([acgpx])\s+(\d)", r"\1\2", t)
+    t = re.sub(r"([a-z]{3,})(\d)", r"\1 \2", t)
+    t = re.sub(r"(\d)([a-z]{3,})", r"\1 \2", t)
+    for error, correcto in CORRECCIONES_MARCAS.items():
+        t = re.sub(r"\b" + re.escape(error) + r"\b", correcto, t)
+    t = re.sub(r"\b([acgpx])\s+(\d)", r"\1\2", t)
+    return re.sub(r"\s+", " ", t).strip()
+
+
+def _clave(marca, modelo, almacen, ram):
+    """Clave única de un equipo. Enlaza Catalogo con Disponibilidad."""
+    return "|".join(str(x or "").strip().lower() for x in (marca, modelo, almacen, ram))
+
+
+def _num(valor):
+    """'$1,250' -> 1250.0 ; '' -> None"""
+    if valor is None:
+        return None
+    limpio = re.sub(r"[^\d.]", "", str(valor))
+    if not limpio:
+        return None
+    try:
+        return float(limpio)
+    except ValueError:
+        return None
+
+
+# ─── Carga desde el Sheet ─────────────────────────────────────────────────────
+
+def _cargar():
+    """Lee las dos hojas y arma la lista de equipos. Usa caché."""
     global _cache
     ahora = datetime.now()
-
-    # Devolver cache si es reciente
-    if (_cache["data"] is not None
+    if (_cache["equipos"] is not None
             and _cache["timestamp"] is not None
             and ahora - _cache["timestamp"] < timedelta(minutes=CACHE_MINUTOS)):
-        return _cache["data"]
+        return _cache["equipos"]
 
     try:
-        gc = _get_sheet()
-        sh = gc.open_by_key(GOOGLE_SHEET_ID_CELULARES)
-        panel = sh.worksheet("Panel")
-        filas = panel.get_all_values()
+        sh = _get_sheet().open_by_key(GOOGLE_SHEET_ID_CELULARES)
 
-        # Tasa BCV está en celda B3 (índice fila 2, columna 1)
-        tasa_bcv = filas[2][1] if len(filas) > 2 else "N/D"
-
-        # Productos desde fila 9 (índice 8)
-        # Columnas Panel:
-        # B=disponible(1), C=marca(2), D=modelo(3),
-        # E=almac(4), F=ram(5), G=camara(6), H=bateria(7),
-        # J=paralelo$(9), K=BCV$(10), L=BCVBs(11),
-        # M=CrediIni(12), N=CrediCuota(13),
-        # O=CasheaTotal(14), P=CasheaIni(15), Q=CasheaCuota(16),
-        # R=KreceTotal(17), S=KreceIni(18), T=KreceCuota(19)
-
-        productos = []
-        fotos = {}
-        for fila in filas[8:]:
-            if len(fila) < 20:
-                continue
-            if fila[1].strip().upper() != "SÍ":
-                continue
-
-            marca        = fila[2].strip()
-            modelo       = fila[3].strip()
-            almac        = fila[4].strip()
-            ram          = fila[5].strip()
-            camara       = fila[6].strip()
-            bateria      = fila[7].strip()
-            foto         = fila[8].strip()
-            precio_par   = fila[9].strip()
-            precio_bcv   = fila[10].strip()
-            precio_bs    = fila[11].strip()
-            credi_ini    = fila[12].strip()
-            credi_cuota  = fila[13].strip()
-            cashea_ini   = fila[15].strip()
-            cashea_cuota = fila[16].strip()
-            krece_ini    = fila[18].strip()
-            krece_cuota  = fila[19].strip()
-
+        # ── Catalogo: encabezados en la fila 4, datos desde la 5 ──
+        filas_cat = sh.worksheet("Catalogo").get_all_values()
+        equipos = {}
+        for fila in filas_cat[4:]:
+            if len(fila) < 9:
+                fila = fila + [""] * (9 - len(fila))
+            marca, modelo, almacen, ram = (x.strip() for x in fila[0:4])
             if not marca or not modelo:
                 continue
+            camara, bateria, foto = (x.strip() for x in fila[4:7])
+            precio = _num(fila[7])
+            verificado = fila[8].strip().upper() in ("SI", "SÍ")
 
-            if foto:
-                 clave = " ".join(f"{marca} {modelo}".lower().split())
-                 fotos[clave] = foto
+            equipos[_clave(marca, modelo, almacen, ram)] = {
+                "marca": marca, "modelo": modelo,
+                "almacenamiento": almacen, "ram": ram,
+                "camara": camara, "bateria": bateria, "foto": foto,
+                "precio_paralelo": precio,
+                "precio_verificado": verificado,
+                "origenes": [],
+            }
 
-            productos.append(
-                f"• {marca} {modelo}\n"
-                f"  Specs: {almac} | {ram} RAM | {camara} | {bateria}\n"
-                f"  En divisas: ${precio_par} | "
-                f"Contado BCV: ${precio_bcv} (Bs {precio_bs})\n"
-                f"  CASHEA (60% ini + 3 cuotas): "
-                f"Ini ${cashea_ini} + cuotas de ${cashea_cuota}\n"
-                f"  KRECE (ini sobre BCV + 4 cuotas): "
-                f"Ini ${krece_ini} + cuotas de ${krece_cuota}\n"
-                f"  CREDITIENDA (40% ini + 4 cuotas): "
-                f"Ini ${credi_ini} + cuotas de ${credi_cuota}\n"
-            )
+        # ── Disponibilidad: encabezados en la fila 5, datos desde la 6 ──
+        filas_disp = sh.worksheet("Disponibilidad").get_all_values()
+        for fila in filas_disp[5:]:
+            if len(fila) < 7:
+                continue
+            marca, modelo, almacen, ram, origen, proveedor, disponible = (
+                x.strip() for x in fila[0:7])
+            if not marca or not modelo:
+                continue
+            if disponible.upper() not in ("SI", "SÍ"):
+                continue
+            origen = origen.lower()
+            if origen not in PRIORIDAD_ORIGEN:
+                continue
+            eq = equipos.get(_clave(marca, modelo, almacen, ram))
+            if eq is None:
+                continue  # está en Disponibilidad pero no en Catalogo
+            eq["origenes"].append({"origen": origen, "proveedor": proveedor})
 
-        if not productos:
-            resultado = "No hay celulares disponibles en este momento."
-        else:
-            resultado = (
-                f"CATÁLOGO DE CELULARES DISPONIBLES\n"
-                f"Tasa BCV: Bs {tasa_bcv} por $1\n"
-                f"Cuotas cada 15 días desde la fecha de compra.\n"
-                f"Recibimos Zelle y USDT "
-                f"(pago en divisas tiene descuento especial).\n\n"
-                + "\n".join(productos)
-            )
+        # Solo equipos que estén disponibles en algún lado
+        lista = []
+        for eq in equipos.values():
+            if not eq["origenes"]:
+                continue
+            mejor = min(eq["origenes"], key=lambda o: PRIORIDAD_ORIGEN[o["origen"]])
+            eq["origen"] = mejor["origen"]
+            eq["proveedor"] = mejor["proveedor"]
+            eq["entrega"] = ENTREGA[mejor["origen"]]
+            eq["inmediato"] = mejor["origen"] in ("tienda", "aliada")
+            eq["_busqueda"] = normalizar(
+                f"{eq['marca']} {eq['modelo']} {eq['almacenamiento']}")
+            lista.append(eq)
 
-        _cache["data"] = resultado
-        _cache["fotos"] = fotos
+        _cache["equipos"] = lista
         _cache["timestamp"] = ahora
-        return resultado
+        print(f"✅ Catálogo cargado: {len(lista)} equipos disponibles")
+        return lista
 
     except Exception as e:
-        print(f"Error leyendo Sheets celulares: {e}")
-        return "Catálogo no disponible temporalmente."
+        print(f"❌ Error leyendo catálogo de celulares: {e}")
+        return _cache["equipos"] or []
 
-def buscar_foto_celular(modelo_texto):
-    """Devuelve la URL de la foto de un modelo, o None si no hay.
-    Refresca el cache si está vencido (no recarga si está fresco)."""
-    obtener_catalogo_celulares()
-    fotos = _cache.get("fotos") or {}
-    clave = " ".join(modelo_texto.lower().split())
 
-    if clave in fotos:
-        return fotos[clave]
+# ─── Catálogo para que la IA interprete ──────────────────────────────────────
 
-    # Coincidencia parcial por si el modelo trae texto extra
-    for nombre, url in fotos.items():
-        if clave in nombre or nombre in clave:
-            return url
+def catalogo_para_ia():
+    """
+    Lista compacta de todos los equipos disponibles, para que Sonnet
+    interprete qué pide el cliente. Incluye los que no tienen precio
+    verificado, marcados, para poder decir que existen pero no cotizarlos.
+    """
+    lineas = []
+    for eq in _cargar():
+        clave = _clave(eq["marca"], eq["modelo"], eq["almacenamiento"], eq["ram"])
+        nombre = nombre_completo(eq)
+        partes = [f"{clave} | {nombre}"]
+        if eq["precio_verificado"] and eq["precio_paralelo"]:
+            partes.append(f"${int(eq['precio_paralelo'])}")
+        else:
+            partes.append("SIN PRECIO")
+        if eq.get("camara"):
+            partes.append(f"cam {eq['camara']}")
+        partes.append("ya" if eq["inmediato"] else "24-48h")
+        lineas.append(" | ".join(partes))
+    return "\n".join(lineas)
 
+
+def obtener_por_clave(clave, solo_con_precio=True):
+    """Devuelve el equipo exacto que la IA eligió, o None."""
+    clave = str(clave).strip().lower()
+    for eq in _cargar():
+        if _clave(eq["marca"], eq["modelo"], eq["almacenamiento"], eq["ram"]) == clave:
+            if solo_con_precio and not (eq["precio_verificado"] and eq["precio_paralelo"]):
+                return None
+            return eq
     return None
+
+
+def existe_clave(clave):
+    """True si la clave corresponde a un equipo real, tenga precio o no."""
+    return obtener_por_clave(clave, solo_con_precio=False) is not None
+
+
+def ordenar_equipos(equipos):
+    """Primero tienda, luego aliada, luego proveedor. Si hay entrega
+    inmediata, oculta lo que tarda 24-48h."""
+    inmediatos = [e for e in equipos if e["inmediato"]]
+    if inmediatos:
+        equipos = inmediatos
+    return sorted(equipos, key=lambda e: (PRIORIDAD_ORIGEN[e["origen"]],
+                                          e["precio_paralelo"] or 0))
+
+
+def listar_por_rango():
+    """
+    Tres equipos de entrega inmediata: económico, intermedio y gama alta.
+    Para cuando el cliente pregunta qué hay sin decir modelo.
+    """
+    equipos = [e for e in _cargar()
+               if e["inmediato"] and e["precio_verificado"] and e["precio_paralelo"]]
+    if not equipos:
+        return []
+    equipos.sort(key=lambda e: e["precio_paralelo"])
+    n = len(equipos)
+    if n <= 3:
+        return equipos
+    return [equipos[n // 6], equipos[n // 2], equipos[-(n // 6) - 1]]
+
+
+def buscar_foto(marca, modelo, almacenamiento=""):
+    """URL de la foto, o None. Se usa solo si el cliente la pide."""
+    for eq in _cargar():
+        if (eq["marca"].lower() == str(marca).lower()
+                and eq["modelo"].lower() == str(modelo).lower()):
+            if almacenamiento and eq["almacenamiento"].lower() != str(almacenamiento).lower():
+                continue
+            return eq["foto"] or None
+    return None
+
+
+def nombre_completo(eq):
+    """'Redmi 17 256GB · 6GB RAM'"""
+    partes = [eq["marca"], eq["modelo"]]
+    if eq["almacenamiento"]:
+        partes.append(eq["almacenamiento"])
+    texto = " ".join(partes)
+    if eq["ram"]:
+        texto += f" · {eq['ram']}GB RAM"
+    return texto
+
+
+def refrescar():
+    """Fuerza recarga en la próxima consulta."""
+    _cache["timestamp"] = None
