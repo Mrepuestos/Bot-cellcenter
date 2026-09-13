@@ -90,6 +90,7 @@ NUMEROS_AUTORIZADOS = [
     "584126229524",
     "584241369824",
     "584126093756",
+    "584149202844",
     "584241464083",
     "584241255279"
 ]
@@ -724,7 +725,7 @@ REGLAS ESTRICTAS:
             max_tokens=50,
             messages=[{"role": "user", "content": prompt}],
         )
-        resultado = response.content[0].text.strip()
+        resultado = texto_respuesta(response).strip()
         if not resultado or resultado.upper() == "NINGUNO":
             return None
         # Validación dura 1: solo aceptar si coincide con un repuesto real
@@ -1172,6 +1173,22 @@ client = anthropic.Anthropic()
 inicializar_db()
 inicializar_hoja_no_encontrados()
 
+# ── Texto de la respuesta del modelo ──────────────────────────────────────────
+
+def texto_respuesta(respuesta):
+    """
+    Devuelve el texto de la respuesta. Los modelos pueden anteponer bloques
+    de razonamiento, así que no sirve tomar content[0] a ciegas.
+    """
+    partes = []
+    for bloque in respuesta.content:
+        if getattr(bloque, "type", None) == "text":
+            partes.append(bloque.text)
+        elif hasattr(bloque, "text") and not hasattr(bloque, "thinking"):
+            partes.append(bloque.text)
+    return "\n".join(partes).strip()
+
+
 # ── Interpretación del pedido con IA ──────────────────────────────────────────
 
 def interpretar_pedido(mensaje, historial_texto=""):
@@ -1232,7 +1249,7 @@ Responde SOLO con JSON, sin explicaciones ni markdown:
             max_tokens=200,
             messages=[{"role": "user", "content": prompt}],
         )
-        texto = r.content[0].text.strip()
+        texto = texto_respuesta(r)
         texto = re.sub(r"^```(?:json)?|```$", "", texto, flags=re.MULTILINE).strip()
         datos = json.loads(texto)
         claves = datos.get("claves") or []
@@ -1333,7 +1350,7 @@ def atender_celulares(from_number, numero_limpio, body):
         system=get_system_prompt_celulares(info, perfil, bloque_rangos()),
         messages=historial,
     )
-    reply = respuesta.content[0].text
+    reply = texto_respuesta(respuesta)
 
     # ── Marcadores ────────────────────────────────────────────────────────────
     if "DERIVAR_TECNICO" in reply:
@@ -1568,7 +1585,7 @@ def webhook():
                     system=get_system_prompt(),
                     messages=historial
                 )
-                reply = response.content[0].text
+                reply = texto_respuesta(response)
 
                 if "DERIVAR_TECNICO" in reply:
                     notificar_asesor(ASESOR_TECNICO, "celulares o servicio técnico", from_number)
@@ -1625,7 +1642,7 @@ def webhook():
                     system=get_system_prompt(),
                     messages=[{"role": "user", "content": body + "\n\nINFORMACIÓN DEL INVENTARIO:\nEste producto NO existe en el inventario. Stock: 0. No inventes productos ni precios."}]
                 )
-                reply = response.content[0].text
+                reply = texto_respuesta(response)
 
                 if "DERIVAR_TECNICO" in reply:
                     notificar_asesor(ASESOR_TECNICO, "celulares o servicio técnico", from_number)
