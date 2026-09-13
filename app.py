@@ -1249,10 +1249,13 @@ Responde SOLO con JSON, sin explicaciones ni markdown:
     try:
         r = client.messages.create(
             model=MODELO_CELULARES,
-            max_tokens=200,
+            max_tokens=1500,
             messages=[{"role": "user", "content": prompt}],
         )
         texto = texto_respuesta(r)
+        if not texto:
+            print("La interpretación llegó vacía (se agotaron los tokens)")
+            return [], "ninguno"
         texto = re.sub(r"^```(?:json)?|```$", "", texto, flags=re.MULTILINE).strip()
         datos = json.loads(texto)
         claves = datos.get("claves") or []
@@ -1349,11 +1352,14 @@ def atender_celulares(from_number, numero_limpio, body):
 
     respuesta = client.messages.create(
         model=MODELO_CELULARES,
-        max_tokens=400,
+        max_tokens=1500,
         system=get_system_prompt_celulares(info, perfil, bloque_rangos()),
         messages=historial,
     )
     reply = texto_respuesta(respuesta)
+    if not reply:
+        print("La respuesta al cliente llegó vacía")
+        reply = "Dame un momento y te confirmo"
 
     # ── Marcadores ────────────────────────────────────────────────────────────
     if "DERIVAR_TECNICO" in reply:
