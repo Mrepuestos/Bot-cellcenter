@@ -1294,6 +1294,8 @@ Responde SOLO con JSON, sin explicaciones ni markdown:
     if not equipos:
         return [], ("sin_precio" if hay_sin_precio else "ninguno")
 
+    if tipo not in ("exacto", "recomendacion"):
+        tipo = "exacto"
     return ordenar_equipos(equipos), tipo
 
 
