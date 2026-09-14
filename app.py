@@ -360,7 +360,13 @@ def bloque_equipo(equipos, canal, perfil):
                 lineas.append("  Faltan datos para cotizar Krece: nivel y línea aprobada.")
                 continue
             hubo = False
-            for plazo in precios.plazos_krece(nivel):
+            try:
+                plazos = precios.plazos_krece(nivel)
+            except (ValueError, KeyError):
+                lineas.append(f"  El nivel '{nivel}' de Krece no es válido. "
+                              f"Pídele que confirme: Azul, Plata, Oro o Platino.")
+                continue
+            for plazo in plazos:
                 k = precios.krece(p, nivel, plazo, linea=linea)
                 if not k.get("aplica"):
                     continue
@@ -377,8 +383,13 @@ def bloque_equipo(equipos, canal, perfil):
             if not nivel:
                 lineas.append("  Falta el nivel de Cashea del cliente.")
                 continue
-            c = precios.cashea(p, nivel)
-            lineas.append(f"  Cashea: inicial ${c['inicial']} + 3 x ${c['monto_cuota']}")
+            try:
+                c = precios.cashea(p, nivel)
+                lineas.append(f"  Cashea: inicial ${c['inicial']} + 3 x ${c['monto_cuota']}")
+            except ValueError:
+                lineas.append(f"  El nivel '{nivel}' no es válido para Cashea. "
+                              f"Pídele que confirme: 1 Semilla, 2 Raíz, 3 Hoja, "
+                              f"4 Tronco, 5 Árbol o 6 Araguaney.")
 
         elif canal == "creditienda":
             d = precios.creditienda(p, "divisas")
