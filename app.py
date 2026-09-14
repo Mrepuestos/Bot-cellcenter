@@ -1,4 +1,5 @@
 from flask import Flask, request, jsonify
+import base64
 import requests
 import anthropic
 import os
@@ -998,7 +999,44 @@ def notificar_precio_sin_verificar(numero_cliente, texto_cliente):
         f"Preguntó: {texto_cliente[:120]}\n\n"
         f"El bot no cotizó. Responde tú o actualiza el precio en el catálogo."
     )
+def leer_captura_krece(image_data):
+    """Descarga la imagen y le pide a Claude que extraiga nivel y línea aprobada."""
+    url = (image_data.get("link") or image_data.get("url")
+          or image_data.get("body") or image_data.get("mediaUrl"))
+    if not url:
+        file_id = image_data.get("id")
+        if file_id:
+            headers = {"Authorization": f"Bearer {WHAPI_TOKEN}"}
+            r = requests.get(f"{WHAPI_API_URL}/media/{file_id}", headers=headers, timeout=30)
+            if r.ok:
+                url = r.json().get("url") or r.json().get("link")
+    if not url:
+        return None, None
 
+    headers = {"Authorization": f"Bearer {WHAPI_TOKEN}"}
+    resp = requests.get(url, headers=headers, timeout=30)
+    resp.raise_for_status()
+    mime = resp.headers.get("Content-Type", "image/jpeg").split(";")[0]
+    b64 = base64.standard_b64encode(resp.content).decode("utf-8")
+
+    prompt = """Esta es una captura de la app de Krece. Extrae el NIVEL del
+cliente (Azul, Plata, Oro o Platino) y la LÍNEA APROBADA o límite de crédito
+en dólares. Responde SOLO con JSON: {"nivel": "plata", "linea": 220}
+Si no puedes leer alguno de los dos con certeza, pon null en ese campo."""
+
+    r = client.messages.create(
+        model=MODELO_CELULARES, max_tokens=200,
+        messages=[{"role": "user", "content": [
+            {"type": "image", "source": {"type": "base64", "media_type": mime, "data": b64}},
+            {"type": "text", "text": prompt},
+        ]}],
+    )
+    try:
+        datos = json.loads(texto_respuesta(r))
+        return datos.get("nivel"), datos.get("linea")
+    except Exception as e:
+        print(f"Error leyendo captura Krece: {e}")
+        return None, None
 
 # ── System prompt ─────────────────────────────────────────────────────────────
 
@@ -1483,7 +1521,25 @@ def webhook():
 
             msg_type = msg.get("type", "")
             if msg_type != "text":
-                if msg_type in ["image", "audio", "voice", "video", "document", "location", "sticker", "contact"]:
+                numero_temp = from_number.replace("@s.whatsapp.net", "").replace("+", "")
+                es_cel_temp = (numero_temp in NUMEROS_PRUEBA_CELULARES
+                              or numero_temp not in NUMEROS_AUTORIZADOS)
+                if msg_type == "image" and es_cel_temp:
+                    try:
+                        nivel, linea = leer_captura_krece(msg.get("image", {}))
+                        if nivel or linea:
+                            guardar_perfil(numero_temp, canal_pago="krece",
+                                          nivel_cliente=nivel, linea_krece=linea)
+                            atender_celulares(from_number, numero_temp,
+                                             "Aquí está mi captura de Krece")
+                        else:
+                            send_whapi_message(from_number,
+                                "No pude leer bien la captura. ¿Me confirmas tu nivel y línea aprobada por escrito?")
+                    except Exception as e:
+                        print(f"Error procesando captura Krece: {e}")
+                        send_whapi_message(from_number,
+                            "No pude leer la imagen. ¿Me dices tu nivel y línea aprobada?")
+                elif msg_type in ["image", "audio", "voice", "video", "document", "location", "sticker", "contact"]:
                     send_whapi_message(from_number, "Por los momentos solo puedo leer mensajes de texto. Por favor escribe el modelo que buscas. 📝")
                 continue
 
