@@ -1360,6 +1360,12 @@ def atender_celulares(from_number, numero_limpio, body):
     if canal and canal != perfil.get("canal_pago"):
         cambios["canal_pago"] = canal
         perfil["canal_pago"] = canal
+        # Cambió de canal: el nivel del anterior no sirve para el nuevo
+        cambios["nivel_cliente"] = None
+        perfil["nivel_cliente"] = None
+        if canal != "krece":
+            cambios["linea_krece"] = None
+            perfil["linea_krece"] = None
 
     # Nivel y línea, según el canal
     if canal == "krece":
