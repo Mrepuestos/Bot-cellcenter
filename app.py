@@ -1172,6 +1172,8 @@ No cotizas sin dos datos: su NIVEL (Azul, Plata, Oro o Platino) y su LÍNEA APRO
 Pídeselos juntos en una sola frase, y ofrécele que te los escriba o te mande captura de la app.
 Sin esos datos no das ningún número, ni aproximado.
 NUNCA digas cuántas cuotas son antes de tener el cálculo: varía entre 3 y 10.
+Si el cliente te da nivel y línea pero todavía no dijo qué equipo quiere,
+pregúntaselo: "¿Qué modelo tienes en mente?"
 
 CASHEA
 Pregunta primero el NIVEL del cliente (1 Semilla al 6 Araguaney). Sin nivel no hay precio. Son 3 cuotas.
@@ -1260,6 +1262,10 @@ def interpretar_pedido(mensaje, historial_texto=""):
     """
     Única regla de búsqueda de celulares: Sonnet lee lo que escribió el
     cliente y elige del catálogo real. Nunca inventa un modelo.
+
+    Si el mensaje solo da nivel, línea aprobada o datos de pago, sin mencionar
+    ningún equipo ni criterio (cámara, presupuesto, uso), devuelve lista vacía
+    y tipo "ninguno". No elijas un equipo por tu cuenta basado en la línea.
 
     Devuelve (lista_de_equipos, tipo) donde tipo es:
       "exacto"        — es lo que pidió
