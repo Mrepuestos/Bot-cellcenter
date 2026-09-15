@@ -1263,10 +1263,6 @@ def interpretar_pedido(mensaje, historial_texto=""):
     Única regla de búsqueda de celulares: Sonnet lee lo que escribió el
     cliente y elige del catálogo real. Nunca inventa un modelo.
 
-    Si el mensaje solo da nivel, línea aprobada o datos de pago, sin mencionar
-    ningún equipo ni criterio (cámara, presupuesto, uso), devuelve lista vacía
-    y tipo "ninguno". No elijas un equipo por tu cuenta basado en la línea.
-
     Devuelve (lista_de_equipos, tipo) donde tipo es:
       "exacto"        — es lo que pidió
       "recomendacion" — no tenemos lo que pidió, esto se parece
@@ -1308,6 +1304,9 @@ REGLAS:
 - Si solo saluda, pregunta por horario, ubicación, servicio técnico o
   cualquier cosa que no sea elegir un celular, devuelve lista vacía y
   tipo "ninguno".
+- Si el mensaje solo da nivel, línea aprobada o datos de pago, sin mencionar
+  ningún equipo ni criterio (cámara, presupuesto, uso), devuelve lista vacía
+  y tipo "ninguno". No elijas un equipo por tu cuenta basado en la línea.
 - Si pide un criterio en vez de un modelo (fotos, juegos, batería,
   presupuesto), elige hasta 3 que cumplan y marca tipo "exacto".
 
