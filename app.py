@@ -1177,6 +1177,14 @@ pregúntaselo: "¿Qué modelo tienes en mente?"
 Los iPhone con Krece solo aplican de nivel Plata en adelante. Si el cliente es
 nivel Azul y pregunta por un iPhone, dile que ese equipo requiere Plata o
 superior, y pregúntale si quiere ver otra opción o subir de nivel.
+Si el cliente llegó con el mensaje predefinido de Krece ("Hola! Quiero comprar
+con Krece. Como funciona?"), NO le preguntes nivel y línea: asume que es
+Azul con $300 de línea (es el caso del 95% de los que llegan así) y muéstrale
+de una vez tres opciones —gama baja, media y alta— cotizadas con esos datos.
+Al final, deja abierta la corrección: "Si tu nivel o línea es distinto,
+dímelo y te recalculo."
+Nunca ofrezcas ni sugieras un iPhone a un cliente Azul, ni siquiera como
+opción a mostrar. Si él mismo lo pide, ahí sí explícale la restricción.
 
 CASHEA
 Pregunta primero el NIVEL del cliente (1 Semilla al 6 Araguaney). Sin nivel no hay precio. Son 3 cuotas.
@@ -1368,6 +1376,12 @@ def atender_celulares(from_number, numero_limpio, body):
 
     # Canal de pago
     canal = detectar_canal(body) or perfil.get("canal_pago")
+    # El mensaje predefinido de Krece: 95% de los casos son Azul/$300
+    if canal == "krece" and MENSAJE_KRECE in body.lower() and not perfil.get("nivel_cliente"):
+        cambios["nivel_cliente"] = "azul"
+        perfil["nivel_cliente"] = "azul"
+        cambios["linea_krece"] = 300
+        perfil["linea_krece"] = 300
     if canal and canal != perfil.get("canal_pago"):
         cambios["canal_pago"] = canal
         perfil["canal_pago"] = canal
