@@ -1378,21 +1378,25 @@ def atender_celulares(from_number, numero_limpio, body):
 
     # Canal de pago
     canal = detectar_canal(body) or perfil.get("canal_pago")
+    canal_anterior = perfil.get("canal_pago")
+
+    if canal and canal != canal_anterior:
+        cambios["canal_pago"] = canal
+        perfil["canal_pago"] = canal
+        # Solo si venía de OTRO canal: el nivel anterior no sirve para el nuevo
+        if canal_anterior:
+            cambios["nivel_cliente"] = None
+            perfil["nivel_cliente"] = None
+            if canal != "krece":
+                cambios["linea_krece"] = None
+                perfil["linea_krece"] = None
+
     # El mensaje predefinido de Krece: 95% de los casos son Azul/$300
     if canal == "krece" and MENSAJE_KRECE in body.lower() and not perfil.get("nivel_cliente"):
         cambios["nivel_cliente"] = "azul"
         perfil["nivel_cliente"] = "azul"
         cambios["linea_krece"] = 300
         perfil["linea_krece"] = 300
-    if canal and canal != perfil.get("canal_pago"):
-        cambios["canal_pago"] = canal
-        perfil["canal_pago"] = canal
-        # Cambió de canal: el nivel del anterior no sirve para el nuevo
-        cambios["nivel_cliente"] = None
-        perfil["nivel_cliente"] = None
-        if canal != "krece":
-            cambios["linea_krece"] = None
-            perfil["linea_krece"] = None
 
     # Nivel y línea, según el canal
     if canal == "krece":
