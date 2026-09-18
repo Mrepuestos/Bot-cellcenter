@@ -1442,6 +1442,8 @@ def atender_celulares(from_number, numero_limpio, body):
     else:
         info = bloque_equipo(equipos, canal, perfil)
 
+    print(f"INFO AL MODELO -> {info[:300]}")
+
     historial = cargar_historial(numero_limpio)
     historial.append({"role": "user", "content": body})
     if len(historial) > 4:
