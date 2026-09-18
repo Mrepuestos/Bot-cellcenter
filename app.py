@@ -1341,6 +1341,7 @@ Responde SOLO con JSON, sin explicaciones ni markdown:
         datos = json.loads(texto)
         claves = datos.get("claves") or []
         tipo = datos.get("tipo") or "ninguno"
+        print(f"IA CRUDO -> claves={claves} tipo={tipo}")
     except Exception as e:
         print(f"Error interpretando pedido: {e}")
         return [], "ninguno"
