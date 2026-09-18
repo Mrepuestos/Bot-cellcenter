@@ -1356,6 +1356,7 @@ Responde SOLO con JSON, sin explicaciones ni markdown:
             equipos.append(eq)
         elif existe_clave(clave):
             hay_sin_precio = True
+            print(f"Clave marcada sin_precio pero el equipo debería tener precio: '{clave}'")
         else:
             print(f"IA devolvió una clave inexistente, descartada: '{clave}'")
 
