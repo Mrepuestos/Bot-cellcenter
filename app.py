@@ -1318,9 +1318,12 @@ REGLAS:
 - Si solo saluda, pregunta por horario, ubicación, servicio técnico o
   cualquier cosa que no sea elegir un celular, devuelve lista vacía y
   tipo "ninguno".
-- Si el mensaje solo da nivel, línea aprobada o datos de pago, sin mencionar
-  ningún equipo ni criterio (cámara, presupuesto, uso), devuelve lista vacía
-  y tipo "ninguno". No elijas un equipo por tu cuenta basado en la línea.
+- Si el mensaje solo da nivel, línea aprobada o datos de pago, SIN que antes
+  se estuviera hablando de un equipo concreto, devuelve lista vacía y tipo
+  "ninguno". No elijas un equipo por tu cuenta basado en la línea.
+- PERO si arriba dice que en mensajes anteriores le interesaba un modelo, y
+  ahora el cliente solo está dando su nivel o línea, devuelve ESE modelo con
+  tipo "exacto". Está completando los datos para cotizar lo que ya pidió.
 - Si pide un criterio en vez de un modelo (fotos, juegos, batería,
   presupuesto), elige hasta 3 que cumplan y marca tipo "exacto".
 
