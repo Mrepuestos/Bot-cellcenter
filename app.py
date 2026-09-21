@@ -1,4 +1,5 @@
 from flask import Flask, request, jsonify
+import unicodedata
 import base64
 import requests
 import anthropic
@@ -293,7 +294,8 @@ def guardar_perfil(numero, **campos):
 # ── Detección de canal, nivel y línea en lo que escribe el cliente ────────────
 
 def detectar_canal(texto):
-    t = texto.lower()
+    t = "".join(c for c in unicodedata.normalize("NFD", texto.lower())
+                if unicodedata.category(c) != "Mn")
     if MENSAJE_KRECE in t or "krece" in t or "krese" in t or "crece" in t:
         return "krece"
     if "cashea" in t or "cashe" in t or "cachea" in t:
@@ -392,12 +394,20 @@ def bloque_equipo(equipos, canal, perfil):
                               f"4 Tronco, 5 Árbol o 6 Araguaney.")
 
         elif canal == "creditienda":
-            d = precios.creditienda(p, "divisas")
-            b = precios.creditienda(p, "bs")
-            lineas.append(f"  CrediTienda en divisas: inicial ${d['inicial']} "
-                          f"+ 4 x ${d['monto_cuota']}")
-            lineas.append(f"  CrediTienda en bolívares: inicial ${b['inicial']} "
-                          f"+ 4 x ${b['monto_cuota']}")
+            moneda = perfil.get("nivel_cliente")
+            variantes = [moneda] if moneda in ("divisas", "bs") else ["divisas", "bs"]
+            for m in variantes:
+                c = precios.creditienda(p, m)
+                etiqueta = "en divisas" if m == "divisas" else "en bolívares"
+                lineas.append(f"  CrediTienda {etiqueta}: inicial ${c['inicial']} "
+                              f"+ 4 x ${c['monto_cuota']}")
+                if m == "bs":
+                    tasa = obtener_tasa_bcv()
+                    if tasa:
+                        ini_bs = round(c['inicial'] * tasa)
+                        cuota_bs = round(c['monto_cuota'] * tasa)
+                        lineas.append(f"  [solo si pide el monto en Bs] inicial Bs {ini_bs:,} "
+                                      f"+ 4 x Bs {cuota_bs:,}, a la tasa BCV de hoy")
 
         else:  # contado o canal sin definir
             tasa = obtener_tasa_bcv()
@@ -1126,7 +1136,11 @@ def get_system_prompt_celulares(info_equipo, perfil, rangos):
 
     datos = []
     if perfil.get("nivel_cliente"):
-        datos.append(f"nivel {perfil['nivel_cliente']}")
+        if canal == "creditienda":
+            datos.append("paga en bolívares" if perfil["nivel_cliente"] == "bs"
+                         else "paga en divisas")
+        else:
+            datos.append(f"nivel {perfil['nivel_cliente']}")
     if perfil.get("linea_krece"):
         datos.append(f"línea aprobada ${float(perfil['linea_krece']):.0f}")
     if perfil.get("modelo_interes"):
@@ -1191,6 +1205,8 @@ Pregunta primero el NIVEL del cliente (1 Semilla al 6 Araguaney). Sin nivel no h
 
 CREDITIENDA
 No necesita nivel. Pregunta si paga en divisas o en bolívares, porque el precio cambia.
+Da la inicial y las cuotas en dólares. Los montos en bolívares solo si el cliente
+los pide, aclarando que son a la tasa BCV de hoy.
 
 CUANDO NO SABES CÓMO VA A PAGAR
 Si el cliente pregunta por un equipo y no ha dicho su medio de pago, confirma
@@ -1242,6 +1258,9 @@ LO QUE NUNCA HACES
 - Prometer entrega inmediata de algo que viene de proveedor
 - Mandar la lista completa de equipos
 - Usar la palabra "paralelo"
+
+Si dice "la aplicación" o "la app" sin nombrarla, sigue con el canal que ya
+tiene. Si todavía no tiene canal, pregúntale cuál aplicación usa.
 
 EQUIPO CONSULTADO
 {info_equipo}
@@ -1380,7 +1399,12 @@ def atender_celulares(from_number, numero_limpio, body):
     cambios = {}
 
     # Canal de pago
-    canal = detectar_canal(body) or perfil.get("canal_pago")
+    detectado = detectar_canal(body)
+    # "en divisas" dentro de CrediTienda responde a la moneda, no cambia de canal
+    if (detectado == "contado" and perfil.get("canal_pago") == "creditienda"
+            and "contado" not in body.lower()):
+        detectado = None
+    canal = detectado or perfil.get("canal_pago")
     canal_anterior = perfil.get("canal_pago")
 
     if canal and canal != canal_anterior:
@@ -1416,6 +1440,14 @@ def atender_celulares(from_number, numero_limpio, body):
         if nivel:
             cambios["nivel_cliente"] = nivel
             perfil["nivel_cliente"] = nivel
+    elif canal == "creditienda":
+        t = body.lower()
+        if re.search(r"\b(bs|bolivares|bolívares)\b", t):
+            cambios["nivel_cliente"] = "bs"
+            perfil["nivel_cliente"] = "bs"
+        elif re.search(r"\b(divisas?|dolares|dólares|efectivo)\b", t):
+            cambios["nivel_cliente"] = "divisas"
+            perfil["nivel_cliente"] = "divisas"
 
     # Equipo: la IA interpreta lo que pidió
     contexto = ""
