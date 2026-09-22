@@ -1459,6 +1459,20 @@ def atender_celulares(from_number, numero_limpio, body):
         contexto = (f"\nEn mensajes anteriores le interesaba el "
                     f"{perfil['modelo_interes']}. Si ahora no menciona otro "
                     f"modelo, se refiere a ese.\n")
+    else:
+        rango_ctx = listar_por_rango()
+        if rango_ctx:
+            etiquetas = ["económico", "intermedio", "gama alta"]
+            desc = ", ".join(
+                f"{etiquetas[i]}: {nombre_completo(eq)} (${int(eq['precio_paralelo'])})"
+                for i, eq in enumerate(rango_ctx)
+            )
+            contexto = (f"\nSi el cliente no dio un modelo, puede referirse a "
+                       f"alguna de estas 3 opciones que ya se le mostraron "
+                       f"por rango de precio: {desc}. Si menciona un precio, "
+                       f"una categoría (económico, intermedio, gama alta) o "
+                       f"parte del nombre de una de ellas, elige ese equipo "
+                       f"y marca tipo exacto.\n")
     equipos, tipo_resultado = interpretar_pedido(body, contexto)
 
     if equipos:
