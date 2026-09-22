@@ -1185,6 +1185,10 @@ KRECE
 No cotizas sin dos datos: su NIVEL (Azul, Plata, Oro o Platino) y su LÍNEA APROBADA.
 Pídeselos juntos en una sola frase, y ofrécele que te los escriba o te mande captura de la app.
 Sin esos datos no das ningún número, ni aproximado.
+SIEMPRE hay cuota inicial, sin excepción. La línea aprobada es solo un techo:
+si el equipo la supera, la inicial sube — nunca la elimina. Usa EXACTAMENTE
+los montos de inicial y cuota que aparecen en EQUIPO CONSULTADO. NUNCA digas
+que "no hace falta inicial" ni que el cliente "no necesita poner inicial".
 NUNCA digas cuántas cuotas son antes de tener el cálculo: varía entre 3 y 10.
 Si el cliente te da nivel y línea pero todavía no dijo qué equipo quiere,
 pregúntaselo: "¿Qué modelo tienes en mente?"
