@@ -1404,9 +1404,14 @@ def atender_celulares(from_number, numero_limpio, body):
 
     # Canal de pago
     detectado = detectar_canal(body)
-    # "en divisas" dentro de CrediTienda responde a la moneda, no cambia de canal
-    if (detectado == "contado" and perfil.get("canal_pago") == "creditienda"
-            and "contado" not in body.lower()):
+    # Si ya hay un canal activo (Krece, Cashea, CrediTienda), una mención
+    # suelta de "dólares" o "divisas" como simple unidad de precio no debe
+    # hacer saltar el canal a "contado". Solo se cambia si el cliente usa
+    # una palabra explícita de pago de contado.
+    PALABRAS_CONTADO_EXPLICITO = ("contado", "efectivo", "zelle", "usdt", "cash")
+    canal_previo = perfil.get("canal_pago")
+    if (detectado == "contado" and canal_previo and canal_previo != "contado"
+            and not any(p in body.lower() for p in PALABRAS_CONTADO_EXPLICITO)):
         detectado = None
     canal = detectado or perfil.get("canal_pago")
     canal_anterior = perfil.get("canal_pago")
