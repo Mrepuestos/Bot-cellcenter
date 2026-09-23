@@ -1705,28 +1705,6 @@ def webhook():
                 continue
 
             msg_type = msg.get("type", "")
-            if msg_type != "text":
-                numero_temp = from_number.replace("@s.whatsapp.net", "").replace("+", "")
-                es_cel_temp = (numero_temp in NUMEROS_PRUEBA_CELULARES
-                              or numero_temp not in NUMEROS_AUTORIZADOS)
-                if msg_type == "image" and es_cel_temp:
-                    try:
-                        nivel, linea = leer_captura_krece(msg.get("image", {}))
-                        if nivel or linea:
-                            guardar_perfil(numero_temp, canal_pago="krece",
-                                          nivel_cliente=nivel, linea_krece=linea)
-                            atender_celulares(from_number, numero_temp,
-                                             "Aquí está mi captura de Krece")
-                        else:
-                            send_whapi_message(from_number,
-                                "No pude leer bien la captura. ¿Me confirmas tu nivel y línea aprobada por escrito?")
-                    except Exception as e:
-                        print(f"Error procesando captura Krece: {e}")
-                        send_whapi_message(from_number,
-                            "No pude leer la imagen. ¿Me dices tu nivel y línea aprobada?")
-                elif msg_type in ["image", "audio", "voice", "video", "document", "location", "sticker", "contact"]:
-                    send_whapi_message(from_number, "Por los momentos solo puedo leer mensajes de texto. Por favor escribe el modelo que buscas. 📝")
-                continue
 
             msg_timestamp = msg.get("timestamp", 0)
             ahora = time.time()
@@ -1746,6 +1724,55 @@ def webhook():
                 else:
                     del pausas_activas[numero_limpio]
                     print(f"▶️ Pausa expirada para {numero_limpio}, reanudando")
+
+            
+            # ── Mensajes que no son texto (fotos, audios, stickers...) ─────────
+            if msg_type != "text":
+                es_cel_temp = (numero_limpio in NUMEROS_PRUEBA_CELULARES
+                               or numero_limpio not in NUMEROS_AUTORIZADOS)
+
+                # Se ignoran sin responder
+                if msg_type in ("sticker", "contact", "contacts", "location", "reaction"):
+                    continue
+
+                # Técnicos autorizados: igual que antes
+                if not es_cel_temp:
+                    if msg_type in ("image", "audio", "voice", "video", "document"):
+                        send_whapi_message(from_number, "Por los momentos solo puedo leer mensajes de texto. Por favor escribe el modelo que buscas. 📝")
+                    continue
+
+                # Foto cuando el cliente está hablando de Krece: leer la captura
+                if msg_type == "image" and cargar_perfil(numero_limpio).get("canal_pago") == "krece":
+                    try:
+                        nivel, linea = leer_captura_krece(msg.get("image", {}))
+                    except Exception as e:
+                        print(f"Error procesando captura Krece: {e}")
+                        nivel, linea = None, None
+                    if nivel or linea:
+                        guardar_perfil(numero_limpio, canal_pago="krece",
+                                       nivel_cliente=nivel, linea_krece=linea)
+                        atender_celulares(from_number, numero_limpio,
+                                          "Aquí está mi captura de Krece")
+                    else:
+                        send_whapi_message(from_number,
+                            "No pude leer bien la captura. ¿Me confirmas tu nivel y línea aprobada por escrito?")
+                    continue
+
+                # Cualquier otra foto, video, documento o nota de voz
+                if msg_type in ("image", "video", "document", "audio", "voice"):
+                    notificar_asesor(ASESOR_CELULARES,
+                        "un archivo que el bot no puede ver (foto, video, documento o audio)",
+                        from_number)
+                    send_whapi_message(from_number, msg_asesor(
+                        "Soy un asistente con inteligencia artificial y no puedo ver fotos, "
+                        "videos ni documentos, ni escuchar notas de voz 🙏 Ya le avisé a un "
+                        "asesor para que lo revise. Si tu consulta se puede escribir, "
+                        "cuéntamela por aquí y te ayudo.",
+                        "Soy un asistente con inteligencia artificial y no puedo ver fotos, "
+                        "videos ni documentos, ni escuchar notas de voz 🙏 Un asesor lo "
+                        "revisará mañana a partir de las 6:00 am. Si tu consulta se puede "
+                        "escribir, cuéntamela por aquí y te ayudo."))
+                continue        
 
             # ── Obtener body aquí para que esté disponible en ambos flujos ──────
             body = msg.get("text", {}).get("body", "").strip()
