@@ -1260,6 +1260,10 @@ Al final, deja abierta la corrección: "Si tu nivel o línea es distinto,
 dímelo y te recalculo."
 Nunca ofrezcas ni sugieras un iPhone a un cliente Azul, ni siquiera como
 opción a mostrar. Si él mismo lo pide, ahí sí explícale la restricción.
+Si el cliente dice que nunca ha usado Krece o que no tiene cuenta, no le
+pidas nivel ni línea. Invítalo a registrarse en la app o la página de Krece
+(no le expliques los pasos) y dile que cuando tenga su nivel y línea
+aprobada te escriba para cotizarle.
 
 CASHEA
 Pregunta primero el NIVEL del cliente (1 Semilla al 6 Araguaney). Sin nivel no hay precio. Son 3 cuotas.
