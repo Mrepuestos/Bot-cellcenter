@@ -1027,14 +1027,49 @@ def send_whapi_message(to: str, text: str):
         print(f"Error enviando mensaje Whapi: {e}")
 
 
+# ── Fotos de celulares: se descargan una vez y se guardan en memoria ──────────
+FOTOS_MAX_EN_MEMORIA = 30
+_fotos_cache = {}   # url -> foto lista para Whapi
+
+
+def _descargar_foto(url_imagen):
+    """Trae la foto desde Postimages y la deja lista para Whapi."""
+    if url_imagen in _fotos_cache:
+        return _fotos_cache[url_imagen]
+    resp = requests.get(url_imagen, timeout=20)
+    resp.raise_for_status()
+    mime = resp.headers.get("Content-Type", "image/png").split(";")[0]
+    if not mime.startswith("image/"):
+        raise ValueError(f"El enlace no es una imagen directa ({mime})")
+    b64 = base64.standard_b64encode(resp.content).decode("utf-8")
+    media = f"data:{mime};base64,{b64}"
+    if len(_fotos_cache) >= FOTOS_MAX_EN_MEMORIA:
+        _fotos_cache.pop(next(iter(_fotos_cache)))   # borra la más vieja
+    _fotos_cache[url_imagen] = media
+    print(f"📷 Foto descargada ({len(resp.content) // 1024} KB): {url_imagen}")
+    return media
+
+
 def send_whapi_image(to: str, url_imagen: str, caption: str = ""):
+    # 1) Descargar la foto. Si esto falla, sabemos que no va a llegar.
+    try:
+        media = _descargar_foto(url_imagen)
+    except Exception as e:
+        print(f"Error descargando foto {url_imagen}: {e}")
+        send_whapi_message(to, "No pude enviarte la foto en este momento, pero "
+                               "puedes pasar por la tienda a verlo en persona 😊")
+        return
+
+    # 2) Enviarla ya lista. Sin reintento: si Whapi tarda, igual la entrega.
     url = f"{WHAPI_API_URL}/messages/image"
     headers = {"Authorization": f"Bearer {WHAPI_TOKEN}", "Content-Type": "application/json"}
-    payload = {"to": to, "media": url_imagen}
+    payload = {"to": to, "media": media}
     if caption:
         payload["caption"] = caption
     try:
-        requests.post(url, json=payload, headers=headers, timeout=15).raise_for_status()
+        requests.post(url, json=payload, headers=headers, timeout=60).raise_for_status()
+    except requests.exceptions.Timeout:
+        print(f"⏳ Whapi tardó más de 60 s con la foto (puede llegar tarde): {url_imagen}")
     except Exception as e:
         print(f"Error enviando imagen Whapi: {e}")
 
