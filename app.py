@@ -466,6 +466,10 @@ def bloque_equipo(equipos, canal, perfil):
         if eq.get("camara") or eq.get("bateria"):
             lineas.append(f"  [solo si las pide] Cámara {eq.get('camara','-')} · "
                           f"Batería {eq.get('bateria','-')} · RAM {eq.get('ram','-')}GB")
+        if eq.get("foto"):
+            lineas.append("  Foto: disponible")
+        else:
+            lineas.append("  Foto: SIN FOTO por ahora")
 
     return "\n".join(lineas)
 
@@ -1293,7 +1297,12 @@ Nunca prometas entrega inmediata de algo que no la tiene.
 
 ESPECIFICACIONES Y FOTOS
 Solo hablas de cámara, batería o RAM si el cliente pregunta. No las enumeres de entrada.
-Si pide ver el equipo, incluye el marcador [FOTO] acompañado de una frase. Nunca lo mandes solo.
+Si pide ver el equipo, mira el campo "Foto" en EQUIPO CONSULTADO:
+- Si dice "disponible", incluye el marcador [FOTO] acompañado de una frase. Nunca lo mandes solo.
+- Si dice "SIN FOTO", NO pongas [FOTO]. Dile con naturalidad que por ahora no
+  tienes la foto de ese modelo y que puede pasar por la tienda a verlo en persona.
+  Ejemplo: "Por ahora no tengo la foto de ese modelo, pero puedes pasar por la
+  tienda a verlo en persona 😊"
 Si preguntan por la batería de un iPhone, aclara que te refieres al NIVEL DE
 SALUD de la batería (no a la capacidad en mAh), que varía entre 80% y 98%
 según el equipo. Para saber el porcentaje exacto de un equipo en particular,
@@ -1639,6 +1648,9 @@ def atender_celulares(from_number, numero_limpio, body):
             send_whapi_image(from_number, url_foto, nombre_completo(equipos[0]))
         else:
             print(f"Sin foto para {nombre_completo(equipos[0])}")
+            send_whapi_message(from_number,
+                "Por ahora no tengo la foto de ese modelo, pero puedes pasar "
+                "por la tienda a verlo en persona 😊")
 
     if enviar_ubicacion:
         send_whapi_ubicacion(from_number)
