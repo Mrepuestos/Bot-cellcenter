@@ -163,7 +163,9 @@ def procesar_buffer(numero_limpio):
     except Exception as e:
         print(f"Error en flujo de celulares: {e}")
         notificar_asesor(ASESOR_CELULARES, "error del bot", from_number)
-        send_whapi_message(from_number, "Dame un momento, un asesor te atiende enseguida")
+        send_whapi_message(from_number, msg_asesor(
+            "Dame un momento, un asesor te atiende enseguida",
+            "Un asesor te atenderá mañana a partir de las 6:00 am"))
 
 def agregar_al_buffer(from_number, numero_limpio, body):
     with buffer_lock:
@@ -1039,6 +1041,15 @@ def send_whapi_ubicacion(to: str):
         send_whapi_message(to, f"📍 *{TIENDA_NOMBRE}*\n{TIENDA_DIRECCION}")
 
 
+def asesor_disponible():
+    hora = datetime.now(pytz.timezone("America/Caracas")).hour
+    return 6 <= hora < 22
+
+
+def msg_asesor(de_dia, de_noche):
+    return de_dia if asesor_disponible() else de_noche
+
+
 def notificar_intencion_compra(numero_cliente, perfil, equipos):
     numero = "+" + numero_cliente.replace("@s.whatsapp.net", "")
     modelo = perfil.get("modelo_interes") or (
@@ -1575,25 +1586,37 @@ def atender_celulares(from_number, numero_limpio, body):
     # ── Marcadores ────────────────────────────────────────────────────────────
     if "DERIVAR_TECNICO" in reply:
         notificar_asesor(ASESOR_CEL_TECNICO, "servicio técnico", from_number)
-        reply = "Un momento, te comunico con el asesor de servicio técnico"
+        reply = msg_asesor(
+            "Un momento, te comunico con el asesor de servicio técnico",
+            "Ya le pasé tu consulta al asesor de servicio técnico, te escribe mañana a partir de las 6:00 am")
 
     elif "DERIVAR_OTROS" in reply:
         notificar_asesor(ASESOR_CEL_OTROS, "accesorios u otra consulta", from_number)
-        reply = "Un momento, un asesor te atiende enseguida"
+        reply = msg_asesor(
+            "Un momento, un asesor te atiende enseguida",
+            "Ya le pasé tu consulta a un asesor, te escribe mañana a partir de las 6:00 am")
 
     elif "DERIVAR_PRECIO" in reply:
         notificar_precio_sin_verificar(from_number, body)
-        reply = "Déjame confirmarte el precio de ese modelo y te escribo en un momento"
+        reply = msg_asesor(
+            "Déjame confirmarte el precio de ese modelo y te escribo en un momento",
+            "Déjame confirmarte el precio de ese modelo, te escribo mañana a partir de las 6:00 am")
 
     elif "INTENCION_COMPRA" in reply:
         notificar_intencion_compra(from_number, perfil, equipos)
-        reply = "¡Perfecto! Te esperamos en la tienda para cerrar. Pregunta por Omar"
+        hora_vzla = datetime.now(pytz.timezone("America/Caracas")).hour
+        if 6 <= hora_vzla < 22:
+            reply = ("¡Perfecto! Ya le pasé tu solicitud a un asesor de la tienda, "
+                     "en breve te contacta para coordinar 🙌")
+        else:
+            reply = ("¡Perfecto! Ya le pasé tu solicitud a un asesor de la tienda. "
+                     "Te contactará mañana a partir de las 6:00 am para coordinar 🙌")
 
     enviar_ubicacion = "ENVIAR_UBICACION" in reply
     if enviar_ubicacion:
         reply = reply.replace("ENVIAR_UBICACION", "").strip()
         if not reply:
-            reply = "Aquí te dejo la ubicación. Te esperamos, pregunta por Omar"
+            reply = "Aquí te dejo la ubicación. Te esperamos, un vendedor te atenderá en la tienda"
 
     quiere_foto = "[FOTO]" in reply
     if quiere_foto:
