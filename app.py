@@ -91,7 +91,6 @@ NUMEROS_AUTORIZADOS = [
     "584142767523",
     "584120129903",
     "584126229524",
-    "584241369824",
     "584126093756",
     "584241464083",
     "584241255279"
@@ -321,9 +320,11 @@ def cargar_perfil(numero):
         return vacio
 
 
-def guardar_perfil(numero, **campos):
-    """Guarda solo los campos que vengan con valor."""
+def guardar_perfil(numero, borrar=(), **campos):
+    """Guarda los campos que vengan con valor y vacía los que estén en borrar."""
     datos = {k: v for k, v in campos.items() if v is not None}
+    for campo in borrar:
+        datos[campo] = None
     if not datos:
         return
     try:
@@ -1617,7 +1618,9 @@ def atender_celulares(from_number, numero_limpio, body):
             perfil["modelo_interes"] = modelo
 
     if cambios:
-        guardar_perfil(numero_limpio, **cambios)
+        guardar_perfil(numero_limpio,
+                       borrar=[k for k, v in cambios.items() if v is None],
+                       **cambios)
 
     # Lo único que ve el modelo
     if tipo_resultado == "sin_precio":
@@ -1710,6 +1713,194 @@ def atender_celulares(from_number, numero_limpio, body):
 
     if enviar_ubicacion:
         send_whapi_ubicacion(from_number)
+
+
+# ── Modo administrador: cotizaciones rápidas con cálculo exacto ───────────────
+ADMIN_MEMORIA_SEG = 600          # recuerda la última consulta 10 minutos
+consultas_admin = {}             # numero -> consulta pendiente
+
+NOMBRES_CASHEA = {"1": "Semilla", "2": "Raíz", "3": "Hoja",
+                  "4": "Tronco", "5": "Árbol", "6": "Araguaney"}
+ORIGEN_TEXTO = {"tienda": "en tienda", "aliada": "aliada", "proveedor": "proveedor"}
+
+
+def _admin_nivel_cashea(texto):
+    """Nivel de Cashea sin confundirlo con números del modelo (Spark Go 3)."""
+    t = texto.lower().strip()
+    mapa = {"semilla": "1", "raiz": "2", "raíz": "2", "hoja": "3",
+            "tronco": "4", "arbol": "5", "árbol": "5", "araguaney": "6"}
+    for palabra, num in mapa.items():
+        if palabra in t:
+            return num
+    m = (re.search(r"\bnivel\s*([1-6])\b", t)
+         or re.fullmatch(r"(?:cashea\s*)?([1-6])", t))
+    return m.group(1) if m else None
+
+
+def _admin_nivel_krece(texto):
+    t = texto.lower()
+    for nivel in ("platino", "oro", "plata", "azul"):
+        if nivel in t:
+            return nivel
+    return None
+
+
+def _admin_linea(texto):
+    """Línea de Krece: 'plata 220', 'linea 220', '$220' o solo '220'."""
+    t = texto.lower().strip()
+    m = re.search(r"(?:azul|plata|oro|platino)\s*(?:con\s*)?\$?\s*(\d{2,5})\b", t)
+    if m:
+        return float(m.group(1))
+    linea = detectar_linea(texto)
+    if linea:
+        return linea
+    m = re.fullmatch(r"(?:krece\s*)?\$?\s*(\d{2,5})", t)
+    return float(m.group(1)) if m else None
+
+
+def _admin_solo_datos(texto):
+    """True si el mensaje solo trae canal, nivel o línea, sin modelo."""
+    t = texto.lower()
+    t = re.sub(r"krece|cashea|creditienda|contado|divisas?|nivel|linea|línea|"
+               r"aprobad[oa]|azul|plata|oro|platino|semilla|ra[ií]z|hoja|tronco|"
+               r"[aá]rbol|araguaney|con|de|el|la|en|y|\$|\d+", " ", t)
+    return not t.strip(" .,:;!?\n")
+
+
+def _admin_cotizar(eq, c):
+    """Texto de precios de un equipo según el canal de la consulta."""
+    p = eq["precio_paralelo"]
+    origen = ORIGEN_TEXTO.get(eq["origen"], eq["origen"])
+    entrega = "entrega inmediata" if eq["inmediato"] else "24-48h"
+    lineas = [f"📱 *{nombre_completo(eq)}*",
+              f"   {origen} ({eq.get('proveedor') or '-'}) · {entrega}"]
+    canal = c.get("canal")
+
+    if canal in (None, "contado"):
+        lineas.append(f"   De contado: ${int(p)}")
+        tasa = obtener_tasa_bcv()
+        bcv = precios.precio_bcv(p)
+        if tasa:
+            bs = f"{precios.precio_bolivares(p, tasa):,}".replace(",", ".")
+            lineas.append(f"   Tasa BCV: ${bcv} (Bs {bs})")
+        else:
+            lineas.append(f"   Tasa BCV: ${bcv} (tasa no disponible)")
+
+    if canal in (None, "creditienda"):
+        for moneda, etiqueta in (("divisas", "divisas"), ("bs", "Bs")):
+            ct = precios.creditienda(p, moneda)
+            lineas.append(f"   CrediTienda {etiqueta}: inicial ${ct['inicial']} "
+                          f"+ 4 x ${ct['monto_cuota']} (total ${ct['total']})")
+
+    if canal == "cashea":
+        n = c["nivel"]
+        ch = precios.cashea(p, n)
+        lineas.append(f"   Cashea nivel {n} {NOMBRES_CASHEA.get(n, '')}: "
+                      f"inicial ${ch['inicial']} + 3 x ${ch['monto_cuota']} "
+                      f"(total ${ch['total']})")
+
+    if canal == "krece":
+        nivel, linea = c["nivel"], c["linea"]
+        if eq["marca"].lower() == "iphone" and nivel == "azul":
+            lineas.append("   Krece: los iPhone requieren nivel Plata o superior")
+            return "\n".join(lineas)
+        lineas.append(f"   Krece {nivel.capitalize()}, línea ${int(linea)}:")
+        hubo = False
+        for plazo in precios.plazos_krece(nivel):
+            k = precios.krece(p, nivel, plazo, linea=linea)
+            if not k.get("aplica"):
+                continue
+            hubo = True
+            extra = " ⚠️ inicial subida por la línea" if k["topado_por_linea"] else ""
+            lineas.append(f"   {plazo} cuotas: inicial ${k['inicial']} "
+                          f"+ {plazo} x ${k['monto_cuota']}{extra}")
+        if not hubo:
+            lineas.append("   No aplica: el equipo supera la línea aprobada")
+
+    return "\n".join(lineas)
+
+
+def atender_admin(from_number, numero_limpio, body):
+    """
+    Cotización rápida para los administradores. Devuelve True si la atendió;
+    False si el mensaje no es una consulta de precios (sigue el flujo normal).
+    """
+    ahora = time.time()
+    previa = consultas_admin.get(numero_limpio)
+    if previa and ahora - previa["hora"] > ADMIN_MEMORIA_SEG:
+        previa = None
+
+    canal = detectar_canal(body)
+
+    # ¿Trae un modelo nuevo o solo completa la consulta anterior?
+    equipos, tipo = [], "ninguno"
+    if not (previa and _admin_solo_datos(body)):
+        equipos, tipo = interpretar_pedido(body)
+
+    aporta = (canal or _admin_nivel_cashea(body) or _admin_nivel_krece(body)
+              or _admin_linea(body))
+
+    if equipos:
+        c = {"equipos": equipos, "tipo": tipo, "canal": canal,
+             "nivel": None, "linea": None}
+        # Venía de "¿De qué modelo?": conserva el canal y los datos ya dados
+        if previa and not previa["equipos"] and not canal:
+            c.update(canal=previa["canal"], nivel=previa["nivel"],
+                     linea=previa["linea"])
+    elif tipo == "sin_precio":
+        send_whapi_message(from_number, "Ese equipo está en el catálogo pero "
+                           "*sin precio verificado*. Actualízalo en la hoja.")
+        return True
+    elif previa and aporta:
+        c = previa
+        if canal and canal != c["canal"]:
+            c["canal"], c["nivel"], c["linea"] = canal, None, None
+    elif canal:
+        send_whapi_message(from_number, "¿De qué modelo?")
+        nivel = (_admin_nivel_cashea(body) if canal == "cashea"
+                 else _admin_nivel_krece(body) if canal == "krece" else None)
+        linea = _admin_linea(body) if canal == "krece" else None
+        consultas_admin[numero_limpio] = {"equipos": [], "tipo": "exacto",
+                                          "canal": canal, "nivel": nivel,
+                                          "linea": linea, "hora": ahora}
+        return True
+    else:
+        return False   # no es consulta de precios: sigue el flujo normal
+
+    # Nivel y línea que trae este mensaje
+    if c["canal"] == "cashea":
+        c["nivel"] = _admin_nivel_cashea(body) or c["nivel"]
+    elif c["canal"] == "krece":
+        c["nivel"] = _admin_nivel_krece(body) or c["nivel"]
+        c["linea"] = _admin_linea(body) or c["linea"]
+    c["hora"] = ahora
+    consultas_admin[numero_limpio] = c
+
+    # Falta el modelo (solo ha dado canal, nivel o línea)
+    if not c["equipos"]:
+        send_whapi_message(from_number, "¿De qué modelo?")
+        return True
+
+    # Faltan datos del canal
+    if c["canal"] == "cashea" and not c["nivel"]:
+        send_whapi_message(from_number, "¿Qué nivel de Cashea tiene el cliente? "
+                           "(1 Semilla a 6 Araguaney)")
+        return True
+    if c["canal"] == "krece" and not (c["nivel"] and c["linea"]):
+        falta = ("nivel y línea aprobada" if not c["nivel"] and not c["linea"]
+                 else "nivel" if not c["nivel"] else "línea aprobada")
+        send_whapi_message(from_number, f"¿Qué {falta} tiene el cliente en Krece?")
+        return True
+
+    # Respuesta con los números
+    partes = []
+    if c["tipo"] == "recomendacion":
+        partes.append("⚠️ Ese modelo no está en el catálogo. Los más parecidos:")
+    partes += [_admin_cotizar(eq, c) for eq in c["equipos"]]
+    if not c["canal"]:
+        partes.append("Para Cashea o Krece escríbeme el canal y el nivel.")
+    send_whapi_message(from_number, "\n\n".join(partes))
+    return True
 
 
 # ── Webhook ───────────────────────────────────────────────────────────────────
@@ -1860,6 +2051,16 @@ def webhook():
             # ── Aviso de IA la primera vez que escribe ─────────────────────────
             if numero_limpio not in ADMINISTRADORES:
                 enviar_aviso_ia(from_number, numero_limpio)
+
+            # ── Administradores: cotización rápida ────────────────────────────
+            if numero_limpio in ADMINISTRADORES:
+                try:
+                    if atender_admin(from_number, numero_limpio, body):
+                        continue
+                except Exception as e:
+                    print(f"Error en modo administrador: {e}")
+                    send_whapi_message(from_number, f"❌ Error en la consulta: {e}")
+                    continue
 
             # ── Determinar comportamiento según el número ──────────────────────
             es_cliente_celulares = (numero_limpio in NUMEROS_PRUEBA_CELULARES
