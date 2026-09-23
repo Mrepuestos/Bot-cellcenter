@@ -5,6 +5,7 @@ import requests
 import anthropic
 import os
 import time
+import threading
 import xmlrpc.client
 import json
 import re
@@ -142,6 +143,41 @@ tasa_bcv_cache = {"tasa": None, "fecha": ""}
 tasa_euro_cache = {"tasa": None, "fecha": ""}
 stock_bajo_pendiente = {}
 pausas_activas = {}
+
+
+# ── Agrupador de mensajes seguidos (flujo celulares) ──────────────────────────
+ESPERA_AGRUPAR = 6  # segundos que espera a que el cliente termine de escribir
+buffer_mensajes = {}
+buffer_lock = threading.Lock()
+
+def procesar_buffer(numero_limpio):
+    with buffer_lock:
+        datos = buffer_mensajes.pop(numero_limpio, None)
+    if not datos:
+        return
+    body_junto = "\n".join(datos["textos"])
+    from_number = datos["from"]
+    print(f"📦 Procesando {len(datos['textos'])} mensaje(s) agrupados de {numero_limpio}")
+    try:
+        atender_celulares(from_number, numero_limpio, body_junto)
+    except Exception as e:
+        print(f"Error en flujo de celulares: {e}")
+        notificar_asesor(ASESOR_CELULARES, "error del bot", from_number)
+        send_whapi_message(from_number, "Dame un momento, un asesor te atiende enseguida")
+
+def agregar_al_buffer(from_number, numero_limpio, body):
+    with buffer_lock:
+        datos = buffer_mensajes.get(numero_limpio)
+        if datos:
+            datos["timer"].cancel()
+            datos["textos"].append(body)
+        else:
+            datos = {"textos": [body], "from": from_number}
+            buffer_mensajes[numero_limpio] = datos
+        t = threading.Timer(ESPERA_AGRUPAR, procesar_buffer, args=[numero_limpio])
+        t.daemon = True
+        datos["timer"] = t
+        t.start()
 
 PALABRAS_SI = ["si","sí","yes","claro","dale","ok","okay","quiero","aparta","reserva","separa","confirmado","afirmativo","me interesa","la quiero"]
 
@@ -415,10 +451,15 @@ def bloque_equipo(equipos, canal, perfil):
             lineas.append(f"  En divisas (Zelle, USDT, efectivo): ${int(p)}")
             if tasa:
                 bs = precios.precio_bolivares(p, tasa)
-                lineas.append(f"  En bolívares: ${bcv} (Bs {bs:,})")
+                bs_txt = f"{bs:,}".replace(",", ".")
+                tasa_txt = f"{tasa:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                lineas.append(f"  En bolívares a tasa BCV: ${bcv}, que son Bs {bs_txt} "
+                              f"(tasa BCV de hoy: Bs {tasa_txt}). Escríbelo SIEMPRE así: "
+                              f"'${bcv} a tasa BCV (Bs {bs_txt})'. Nunca pongas 'Bs' "
+                              f"delante del monto en dólares.")
             else:
-                lineas.append(f"  En bolívares: ${bcv} "
-                              f"(no menciones el monto en Bs, la tasa no está disponible)")
+                lineas.append(f"  En bolívares a tasa BCV: ${bcv}. La tasa no está "
+                              f"disponible ahora: no des el monto en Bs.")
 
         if eq.get("camara") or eq.get("bateria"):
             lineas.append(f"  [solo si las pide] Cámara {eq.get('camara','-')} · "
@@ -1700,13 +1741,7 @@ def webhook():
             # ── Flujo de celulares ────────────────────────────────────────────
             if es_cliente_celulares:
                 print(f"Cliente celulares: {numero_limpio}")
-                try:
-                    atender_celulares(from_number, numero_limpio, body)
-                except Exception as e:
-                    print(f"Error en flujo de celulares: {e}")
-                    notificar_asesor(ASESOR_CELULARES, "error del bot", from_number)
-                    send_whapi_message(from_number,
-                        "Dame un momento, un asesor te atiende enseguida")
+                agregar_al_buffer(from_number, numero_limpio, body)
                 continue
 
             # ── Flujo original para clientes de repuestos (sin tocar) ──────────
