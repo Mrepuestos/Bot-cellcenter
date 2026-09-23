@@ -108,7 +108,15 @@ ASESOR_CEL_OTROS   = "584126093756"   # accesorios y todo lo demás
 
 # ── Números que van al flujo de celulares aunque estén autorizados ────────────
 # Vaciar la lista ( = [] ) cuando termines de probar.
-NUMEROS_PRUEBA_CELULARES = ["584149202844"]
+NUMEROS_PRUEBA_CELULARES = []
+
+# ── Administradores: consultas de precios y comandos especiales ───────────────
+ADMINISTRADORES = ["584149202844", "584241369824"]
+
+# ── Aviso que recibe cada cliente la primera vez que escribe ──────────────────
+AVISO_IA = ("👋 ¡Hola! Te atiende el asistente virtual de *Cell Center 4620*, "
+            "con inteligencia artificial 🤖. Te doy precios y disponibilidad "
+            "al momento, pero puedo cometer errores.")
 
 # ── Ubicación de la tienda ────────────────────────────────────────────────────
 TIENDA_LAT = 10.2325
@@ -327,6 +335,19 @@ def guardar_perfil(numero, **campos):
             supabase.table("Clientes").insert(datos).execute()
     except Exception as e:
         print(f"Error guardando perfil: {e}")
+        
+
+def enviar_aviso_ia(from_number, numero_limpio):
+    """Manda el aviso de IA solo la primera vez que el cliente escribe."""
+    try:
+        r = supabase.table("Clientes").select("aviso_ia").eq(
+            "numero", numero_limpio).execute()
+        if r.data and r.data[0].get("aviso_ia"):
+            return
+        send_whapi_message(from_number, AVISO_IA)
+        guardar_perfil(numero_limpio, aviso_ia=True)
+    except Exception as e:
+        print(f"Error con el aviso de IA: {e}")
 
 
 # ── Detección de canal, nivel y línea en lo que escribe el cliente ────────────
@@ -1792,13 +1813,18 @@ def webhook():
                 continue
 
             # ── Comando secreto para limpiar historial (funciona en ambos flujos)
-            if body.strip().lower() == "reset_historial":
+            if (body.strip().lower() == "reset_historial"
+                    and numero_limpio in ADMINISTRADORES):
                 try:
                     supabase.table("Clientes").delete().eq("numero", numero_limpio).execute()
                     send_whapi_message(from_number, "✅ Historial limpiado. Puedes empezar una conversación nueva.")
                 except Exception as e:
                     send_whapi_message(from_number, f"❌ Error limpiando historial: {e}")
                 continue
+
+            # ── Aviso de IA la primera vez que escribe ─────────────────────────
+            if numero_limpio not in ADMINISTRADORES:
+                enviar_aviso_ia(from_number, numero_limpio)
 
             # ── Determinar comportamiento según el número ──────────────────────
             es_cliente_celulares = (numero_limpio in NUMEROS_PRUEBA_CELULARES
