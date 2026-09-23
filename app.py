@@ -1578,7 +1578,7 @@ def atender_celulares(from_number, numero_limpio, body):
 
     respuesta = client.messages.create(
         model=MODELO_CELULARES,
-        max_tokens=1500,
+        max_tokens=4000,
         system=get_system_prompt_celulares(info, perfil, bloque_rangos()),
         messages=historial,
     )
