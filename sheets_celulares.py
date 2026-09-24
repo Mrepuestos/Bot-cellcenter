@@ -222,13 +222,16 @@ def ordenar_equipos(equipos):
                                           e["precio_paralelo"] or 0))
 
 
-def listar_por_rango():
+def listar_por_rango(excluir_iphone=False):
     """
     Tres equipos de entrega inmediata: económico, intermedio y gama alta.
     Para cuando el cliente pregunta qué hay sin decir modelo.
+    excluir_iphone=True para clientes Krece Azul.
     """
     equipos = [e for e in _cargar()
                if e["inmediato"] and e["precio_verificado"] and e["precio_paralelo"]]
+    if excluir_iphone:
+        equipos = [e for e in equipos if e["marca"].lower() != "iphone"]
     if not equipos:
         return []
     equipos.sort(key=lambda e: e["precio_paralelo"])
@@ -237,6 +240,17 @@ def listar_por_rango():
         return equipos
     return [equipos[n // 6], equipos[n // 2], equipos[-(n // 6) - 1]]
 
+def listar_mas_baratos(cantidad=8, excluir_iphone=False):
+    """
+    Los equipos más baratos de entrega inmediata y con precio verificado.
+    Para la lista corta y para cuando el cliente dice que está caro.
+    """
+    equipos = [e for e in _cargar()
+               if e["inmediato"] and e["precio_verificado"] and e["precio_paralelo"]]
+    if excluir_iphone:
+        equipos = [e for e in equipos if e["marca"].lower() != "iphone"]
+    equipos.sort(key=lambda e: e["precio_paralelo"])
+    return equipos[:cantidad]
 
 def buscar_foto(marca, modelo, almacenamiento=""):
     """URL de la foto, o None. Se usa solo si el cliente la pide."""
