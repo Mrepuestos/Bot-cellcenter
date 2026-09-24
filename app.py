@@ -879,6 +879,7 @@ REGLAS ESTRICTAS:
             messages=[{"role": "user", "content": prompt}],
         )
         resultado = texto_respuesta(response).strip()
+        registrar_uso("repuestos-rescate-ia", response)
         if not resultado or resultado.upper() == "NINGUNO":
             return None
         # Validación dura 1: solo aceptar si coincide con un repuesto real
@@ -1225,6 +1226,7 @@ Si no puedes leer alguno de los dos con certeza, pon null en ese campo."""
         ]}],
     )
     try:
+    registrar_uso("captura-krece", r)
         datos = json.loads(texto_respuesta(r))
         return datos.get("nivel"), datos.get("linea")
     except Exception as e:
@@ -1505,6 +1507,17 @@ def texto_respuesta(respuesta):
             partes.append(bloque.text)
     return "\n".join(partes).strip()
 
+def registrar_uso(etiqueta, respuesta):
+    """Imprime en el log cuántos tokens gastó cada llamada."""
+    try:
+        u = respuesta.usage
+        print(f"💰 TOKENS [{etiqueta}] modelo={respuesta.model} "
+              f"entrada={u.input_tokens} salida={u.output_tokens} "
+              f"cache_leido={getattr(u, 'cache_read_input_tokens', 0) or 0} "
+              f"cache_creado={getattr(u, 'cache_creation_input_tokens', 0) or 0}")
+    except Exception as e:
+        print(f"No se pudo leer el uso de tokens: {e}")
+
 
 # ── Interpretación del pedido con IA ──────────────────────────────────────────
 
@@ -1573,6 +1586,7 @@ Responde SOLO con JSON, sin explicaciones ni markdown:
             messages=[{"role": "user", "content": prompt}],
         )
         texto = texto_respuesta(r)
+        registrar_uso("celulares-interpretar", r)
         if not texto:
             print("La interpretación llegó vacía (se agotaron los tokens)")
             return [], "ninguno"
@@ -1757,6 +1771,7 @@ def atender_celulares(from_number, numero_limpio, body):
         messages=historial,
     )
     reply = texto_respuesta(respuesta)
+    registrar_uso("celulares-respuesta", respuesta)
     if not reply:
         print("La respuesta al cliente llegó vacía")
         reply = "Dame un momento y te confirmo"
@@ -2253,6 +2268,7 @@ def webhook():
                     messages=historial
                 )
                 reply = texto_respuesta(response)
+                registrar_uso("repuestos", response)
 
                 if "DERIVAR_TECNICO" in reply:
                     notificar_asesor(ASESOR_TECNICO, "celulares o servicio técnico", from_number)
@@ -2310,6 +2326,7 @@ def webhook():
                     messages=[{"role": "user", "content": body + "\n\nINFORMACIÓN DEL INVENTARIO:\nEste producto NO existe en el inventario. Stock: 0. No inventes productos ni precios."}]
                 )
                 reply = texto_respuesta(response)
+                registrar_uso("repuestos-no-encontrado", response)
 
                 if "DERIVAR_TECNICO" in reply:
                     notificar_asesor(ASESOR_TECNICO, "celulares o servicio técnico", from_number)
