@@ -22,7 +22,7 @@ from repertorio import CORRECCIONES_MARCAS, MODELOS_ABREVIADOS, PALABRAS_IGNORAR
 # ── Catálogo de celulares (hojas Catalogo + Disponibilidad) ───────────────────
 from sheets_celulares import (
     catalogo_para_ia, obtener_por_clave, existe_clave,
-    ordenar_equipos, listar_por_rango, buscar_foto, nombre_completo,
+    ordenar_equipos, listar_por_rango, listar_mas_baratos, buscar_foto, nombre_completo,
 )
 
 # ── Motor de precios de celulares ─────────────────────────────────────────────
@@ -305,12 +305,12 @@ def guardar_historial(numero, historial):
 # ── Perfil del cliente de celulares (Supabase) ────────────────────────────────
 
 def cargar_perfil(numero):
-    """canal_pago, nivel_cliente, linea_krece y modelo_interes."""
-    vacio = {"canal_pago": None, "nivel_cliente": None,
+    """canal_pago, canal_extra, nivel_cliente, linea_krece y modelo_interes."""
+    vacio = {"canal_pago": None, "canal_extra": None, "nivel_cliente": None,
              "linea_krece": None, "modelo_interes": None}
     try:
         r = supabase.table("Clientes").select(
-            "canal_pago,nivel_cliente,linea_krece,modelo_interes"
+            "canal_pago,canal_extra,nivel_cliente,linea_krece,modelo_interes"
         ).eq("numero", numero).execute()
         if r.data:
             return {k: r.data[0].get(k) for k in vacio}
@@ -367,6 +367,20 @@ def detectar_canal(texto):
         return "contado"
     return None
 
+
+def detectar_canales(texto):
+    """Todos los canales que nombra el cliente, por ejemplo
+    'con krece y creditienda' -> ['krece', 'creditienda']."""
+    t = "".join(c for c in unicodedata.normalize("NFD", texto.lower())
+                if unicodedata.category(c) != "Mn")
+    encontrados = []
+    if MENSAJE_KRECE in t or "krece" in t or "krese" in t or "crece" in t:
+        encontrados.append("krece")
+    if "cashea" in t or "cashe" in t or "cachea" in t:
+        encontrados.append("cashea")
+    if "creditienda" in t or "credi tienda" in t:
+        encontrados.append("creditienda")
+    return encontrados
 
 def detectar_nivel_krece(texto):
     t = texto.lower()
@@ -496,9 +510,54 @@ def bloque_equipo(equipos, canal, perfil):
     return "\n".join(lineas)
 
 
-def bloque_rangos():
+def sin_iphone(perfil):
+    """True si el cliente es Krece Azul: a él no se le muestran iPhone."""
+    return (perfil.get("canal_pago") == "krece"
+            and perfil.get("nivel_cliente") == "azul")
+
+
+def inicial_corta(eq, canal, perfil):
+    """Una línea corta con lo que paga de entrada. None si no aplica."""
+    p = eq["precio_paralelo"]
+    try:
+        if canal == "krece":
+            nivel, linea = perfil.get("nivel_cliente"), perfil.get("linea_krece")
+            if not nivel or not linea:
+                return f"de contado ${int(p)}"
+            plazo = precios.plazos_krece(nivel)[-1]   # el plazo más largo = cuota más baja
+            k = precios.krece(p, nivel, plazo, linea=linea)
+            if not k.get("aplica"):
+                return None
+            return f"Krece: inicial ${k['inicial']} + {plazo} x ${k['monto_cuota']}"
+        if canal == "cashea":
+            nivel = perfil.get("nivel_cliente")
+            if not nivel:
+                return f"de contado ${int(p)}"
+            c = precios.cashea(p, nivel)
+            return f"Cashea: inicial ${c['inicial']} + 3 x ${c['monto_cuota']}"
+        if canal == "creditienda":
+            c = precios.creditienda(p, "divisas")
+            return f"CrediTienda: inicial ${c['inicial']} + 4 x ${c['monto_cuota']}"
+    except (ValueError, KeyError):
+        return f"de contado ${int(p)}"
+    return f"de contado ${int(p)}"
+
+
+def bloque_lista_corta(canal, perfil, cantidad=8):
+    """Los equipos más baratos, una línea cada uno, en el canal del cliente."""
+    salida = []
+    for eq in listar_mas_baratos(cantidad + 4, excluir_iphone=sin_iphone(perfil)):
+        texto = inicial_corta(eq, canal, perfil)
+        if texto:
+            salida.append(f"  • {nombre_completo(eq)} — {texto}")
+        if len(salida) >= cantidad:
+            break
+    return "\n".join(salida) or "  No hay equipos disponibles en este momento."
+
+
+def bloque_rangos(perfil=None):
     """Tres equipos por rango de precio, para cuando no dice modelo."""
-    equipos = listar_por_rango()
+    equipos = listar_por_rango(excluir_iphone=sin_iphone(perfil or {}))
     if not equipos:
         return "  No hay equipos disponibles en este momento."
     etiquetas = ["Económico", "Intermedio", "Gama alta"]
@@ -1230,7 +1289,7 @@ Responde siempre corto y directo. Muestra el nombre exacto del producto como apa
 
 8. PAGO o datos bancarios: Si el cliente pregunta cómo pagar, pide datos de pago, menciona pago móvil, transferencia o cualquier intención de pagar, responde exactamente: "DATOS_PAGO"""
 
-def get_system_prompt_celulares(info_equipo, perfil, rangos):
+def get_system_prompt_celulares(info_equipo, perfil, rangos, lista_corta):
     """Prompt del vendedor de celulares. Recibe solo el equipo consultado,
     nunca el catálogo completo."""
     tz = pytz.timezone("America/Caracas")
@@ -1241,7 +1300,12 @@ def get_system_prompt_celulares(info_equipo, perfil, rangos):
     estado_tienda = "ABIERTA" if esta_abierto() else "CERRADA"
 
     canal = perfil.get("canal_pago")
-    if canal:
+    canal_extra = perfil.get("canal_extra")
+    if canal and canal_extra:
+        recordatorio = (f"El cliente quiere comparar *{canal.upper()}* y "
+                        f"*{canal_extra.upper()}*. Cuando des precios, muéstrale "
+                        f"los dos. No menciones otros medios salvo que él los pida.")
+    elif canal:
         recordatorio = (f"El cliente viene por *{canal.upper()}*. "
                         f"Háblale SOLO de ese medio, salvo que él pida otro.")
     else:
@@ -1374,6 +1438,14 @@ No mandes el catálogo completo. Muéstrale estas tres opciones y deja que se ub
 {rangos}
 Después pregúntale para qué lo va a usar.
 
+SI PIDE EL CATÁLOGO O UNA LISTA
+La primera vez, muéstrale las tres opciones de arriba. Si lo vuelve a pedir,
+NO te niegues: mándale esta LISTA CORTA tal cual, una línea por equipo, y
+pregúntale cuál le llama la atención:
+{lista_corta}
+Si pide una marca en particular, muéstrale lo que haya de esa marca en
+EQUIPO CONSULTADO.
+
 CERRAR
 El objetivo NO es cerrar la venta por chat: la decisión es del cliente y se
 toma en la tienda, viendo el equipo.
@@ -1385,7 +1457,12 @@ Cuando detectes intención de compra (dice que lo quiere, pregunta cómo apartar
 o confirma que va a ir), responde exactamente: INTENCION_COMPRA
 
 OBJECIONES
-"Está caro" -> recuérdale que con el financiamiento se lo lleva hoy con la inicial.
+"Está caro", "muy alta la inicial", "¿no hay otras opciones?", o pregunta si
+hay iniciales más bajas -> NO insistas con el mismo equipo ni le repitas los
+mismos planes, y no lo presiones. Bájale de gama: muéstrale 2 o 3 equipos
+de la LISTA CORTA que tengan la inicial más baja que la que ya vio. Si le
+dices que hay opciones más económicas, SIEMPRE las muestras en ese mismo
+mensaje.
 "Lo voy a pensar" -> sin presionar, menciona que los equipos rotan rápido.
 "En otra tienda está más barato" -> garantía, soporte directo y financiamiento.
 Nunca hables mal de la competencia.
@@ -1395,7 +1472,8 @@ LO QUE NUNCA HACES
 - Dar montos de Krece sin nivel y línea
 - Dar montos de Cashea sin nivel
 - Prometer entrega inmediata de algo que viene de proveedor
-- Mandar la lista completa de equipos
+- Mandar la lista completa de equipos (la LISTA CORTA sí se puede)
+- Decir que hay opciones más baratas sin mostrarlas
 - Usar la palabra "paralelo"
 
 Si dice "la aplicación" o "la app" sin nombrarla, sigue con el canal que ya
@@ -1551,6 +1629,21 @@ def atender_celulares(from_number, numero_limpio, body):
     canal = detectado or perfil.get("canal_pago")
     canal_anterior = perfil.get("canal_pago")
 
+    # Dos canales a la vez ("con krece y creditienda"): se guardan los dos
+    nombrados = detectar_canales(body)
+    if len(nombrados) >= 2:
+        canal = nombrados[0]
+        cambios["canal_extra"] = nombrados[1]
+        perfil["canal_extra"] = nombrados[1]
+    elif detectado and detectado == perfil.get("canal_extra"):
+        # Pregunta por el segundo canal que ya estaba comparando: no se
+        # cambia nada, se le siguen mostrando los dos
+        canal = canal_anterior
+    elif detectado and detectado != canal_anterior and perfil.get("canal_extra"):
+        # Se fue a un tercer canal: deja de comparar
+        cambios["canal_extra"] = None
+        perfil["canal_extra"] = None
+
     if canal and canal != canal_anterior:
         cambios["canal_pago"] = canal
         perfil["canal_pago"] = canal
@@ -1600,7 +1693,7 @@ def atender_celulares(from_number, numero_limpio, body):
                     f"{perfil['modelo_interes']}. Si ahora no menciona otro "
                     f"modelo, se refiere a ese.\n")
     else:
-        rango_ctx = listar_por_rango()
+        rango_ctx = listar_por_rango(excluir_iphone=sin_iphone(perfil))
         if rango_ctx:
             etiquetas = ["económico", "intermedio", "gama alta"]
             desc = ", ".join(
@@ -1641,6 +1734,14 @@ def atender_celulares(from_number, numero_limpio, body):
     else:
         info = bloque_equipo(equipos, canal, perfil)
 
+    # Si está comparando dos canales, se agregan los precios del segundo
+    canal_extra = perfil.get("canal_extra")
+    if canal_extra and equipos and tipo_resultado in ("exacto", "recomendacion"):
+        perfil_extra = dict(perfil)
+        perfil_extra["nivel_cliente"] = None   # el nivel guardado es del primer canal
+        info += (f"\n\nLOS MISMOS EQUIPOS CON {canal_extra.upper()}:"
+                 + bloque_equipo(equipos, canal_extra, perfil_extra))
+
     print(f"INFO AL MODELO -> {info[:300]}")
 
     historial = cargar_historial(numero_limpio)
@@ -1651,7 +1752,8 @@ def atender_celulares(from_number, numero_limpio, body):
     respuesta = client.messages.create(
         model=MODELO_CELULARES,
         max_tokens=4000,
-        system=get_system_prompt_celulares(info, perfil, bloque_rangos()),
+        system=get_system_prompt_celulares(info, perfil, bloque_rangos(perfil),
+                                           bloque_lista_corta(canal, perfil)),
         messages=historial,
     )
     reply = texto_respuesta(respuesta)
