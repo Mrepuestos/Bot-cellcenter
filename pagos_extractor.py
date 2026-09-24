@@ -237,6 +237,7 @@ REGLAS:
         }],
     )
     texto = response.content[0].text.strip()
+    print(f"💰 TOKENS [pagos-nombre] entrada={response.usage.input_tokens} salida={response.usage.output_tokens}")
     lineas = [l.strip() for l in texto.split("\n") if l.strip()]
     if lineas:
         texto = lineas[-1]
@@ -266,6 +267,7 @@ Responde ÚNICAMENTE con el valor. Si no existe responde: No encontrado"""
         }],
     )
     identificacion = response.content[0].text.strip()
+    print(f"💰 TOKENS [pagos-identificacion] entrada={response.usage.input_tokens} salida={response.usage.output_tokens}")
     print(f"Identificación receptor: '{identificacion}'")
     return identificacion
 
