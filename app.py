@@ -112,6 +112,10 @@ NUMEROS_PRUEBA_CELULARES = []
 # ── Administradores: consultas de precios y comandos especiales ───────────────
 ADMINISTRADORES = ["584149202844", "584241369824"]
 
+# ── Modo cliente temporal: el admin escribe "modo cliente" para probar ───────
+MODO_CLIENTE_SEG = 1800          # 30 minutos
+modo_cliente_hasta = {}          # numero -> hora en que vuelve a modo admin
+
 # ── Aviso que recibe cada cliente la primera vez que escribe ──────────────────
 AVISO_IA = ("👋 ¡Hola! Te atiende el asistente virtual de *Cell Center 4620*, "
             "con inteligencia artificial 🤖. Te doy precios y disponibilidad "
@@ -2148,6 +2152,17 @@ def webhook():
 
             numero_limpio = from_number.replace("@s.whatsapp.net", "").replace("+", "")
 
+            # ── Modo cliente temporal de los administradores ──────────────────
+            en_modo_cliente = False
+            if numero_limpio in modo_cliente_hasta:
+                if time.time() < modo_cliente_hasta[numero_limpio]:
+                    en_modo_cliente = True
+                else:
+                    del modo_cliente_hasta[numero_limpio]
+                    send_whapi_message(from_number,
+                        "🛠️ Terminaron los 30 minutos de modo cliente. "
+                        "Volviste a modo administrador.")
+
             # ── Verificar si el bot está en pausa manual para este número ──────
             if numero_limpio in pausas_activas:
                 if time.time() < pausas_activas[numero_limpio]:
@@ -2161,7 +2176,8 @@ def webhook():
             # ── Mensajes que no son texto (fotos, audios, stickers...) ─────────
             if msg_type != "text":
                 es_cel_temp = (numero_limpio in NUMEROS_PRUEBA_CELULARES
-                               or numero_limpio not in NUMEROS_AUTORIZADOS)
+                               or numero_limpio not in NUMEROS_AUTORIZADOS
+                               or en_modo_cliente)
 
                 # Se ignoran sin responder
                 if msg_type in ("sticker", "contact", "contacts", "location", "reaction"):
@@ -2221,12 +2237,25 @@ def webhook():
                     send_whapi_message(from_number, f"❌ Error limpiando historial: {e}")
                 continue
 
+            
+            # ── Cambiar de modo (solo administradores) ────────────────────────
+            if numero_limpio in ADMINISTRADORES and body.lower() == "modo cliente":
+                modo_cliente_hasta[numero_limpio] = time.time() + MODO_CLIENTE_SEG
+                send_whapi_message(from_number,
+                    "🧪 Modo cliente activado por 30 minutos. Desde ahora te respondo "
+                    "como a un cliente. Escribe *modo admin* para volver antes.")
+                continue
+            if numero_limpio in ADMINISTRADORES and body.lower() == "modo admin":
+                modo_cliente_hasta.pop(numero_limpio, None)
+                send_whapi_message(from_number, "🛠️ Volviste a modo administrador.")
+                continue
+
             # ── Aviso de IA la primera vez que escribe ─────────────────────────
-            if numero_limpio not in ADMINISTRADORES:
+            if numero_limpio not in ADMINISTRADORES or en_modo_cliente:
                 enviar_aviso_ia(from_number, numero_limpio)
 
             # ── Administradores: cotización rápida ────────────────────────────
-            if numero_limpio in ADMINISTRADORES:
+            if numero_limpio in ADMINISTRADORES and not en_modo_cliente:
                 try:
                     if atender_admin(from_number, numero_limpio, body):
                         continue
@@ -2237,7 +2266,8 @@ def webhook():
 
             # ── Determinar comportamiento según el número ──────────────────────
             es_cliente_celulares = (numero_limpio in NUMEROS_PRUEBA_CELULARES
-                                    or numero_limpio not in NUMEROS_AUTORIZADOS)
+                                    or numero_limpio not in NUMEROS_AUTORIZADOS
+                                    or en_modo_cliente)
 
             # ── Flujo de celulares ────────────────────────────────────────────
             if es_cliente_celulares:
