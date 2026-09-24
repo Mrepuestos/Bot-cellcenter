@@ -174,17 +174,37 @@ def _cargar():
 
 # ─── Catálogo para que la IA interprete ──────────────────────────────────────
 
-def catalogo_para_ia():
+# Nombres con que el cliente puede llamar a una marca
+ALIAS_MARCAS = {
+    "xiaomi": {"xiaomi", "redmi", "poco"},
+    "redmi":  {"redmi", "xiaomi"},
+    "poco":   {"poco", "xiaomi"},
+    "iphone": {"iphone", "apple"},
+    "apple":  {"apple", "iphone"},
+}
+
+
+def catalogo_para_ia(texto_cliente=""):
     """
-    Lista compacta de todos los equipos disponibles, para que Sonnet
-    interprete qué pide el cliente. Incluye los que no tienen precio
-    verificado, marcados, para poder decir que existen pero no cotizarlos.
+    Lista compacta de equipos para que la IA interprete qué pide el cliente.
+    Si el cliente nombra una marca, manda solo esa marca (mucho más barato).
+    Si no nombra ninguna, o no hay equipos de esa marca, manda todo.
+
+    Devuelve (texto, completo): completo=True si va el catálogo entero.
+    Formato de cada línea: clave | precio | cámara | entrega
     """
+    todos = _cargar()
+
+    marcas_pedidas = set()
+    for palabra in normalizar(texto_cliente).split():
+        marcas_pedidas |= ALIAS_MARCAS.get(palabra, {palabra})
+    filtrados = [eq for eq in todos if normalizar(eq["marca"]) in marcas_pedidas]
+    equipos = filtrados or todos
+    completo = not filtrados
+
     lineas = []
-    for eq in _cargar():
-        clave = _clave(eq["marca"], eq["modelo"], eq["almacenamiento"], eq["ram"])
-        nombre = nombre_completo(eq)
-        partes = [f"{clave} | {nombre}"]
+    for eq in equipos:
+        partes = [_clave(eq["marca"], eq["modelo"], eq["almacenamiento"], eq["ram"])]
         if eq["precio_verificado"] and eq["precio_paralelo"]:
             partes.append(f"${int(eq['precio_paralelo'])}")
         else:
@@ -193,7 +213,7 @@ def catalogo_para_ia():
             partes.append(f"cam {eq['camara']}")
         partes.append("ya" if eq["inmediato"] else "24-48h")
         lineas.append(" | ".join(partes))
-    return "\n".join(lineas)
+    return "\n".join(lineas), completo
 
 
 def obtener_por_clave(clave, solo_con_precio=True):
