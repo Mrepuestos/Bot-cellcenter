@@ -1225,8 +1225,8 @@ Si no puedes leer alguno de los dos con certeza, pon null en ese campo."""
             {"type": "text", "text": prompt},
         ]}],
     )
-    try:
     registrar_uso("captura-krece", r)
+    try:
         datos = json.loads(texto_respuesta(r))
         return datos.get("nivel"), datos.get("linea")
     except Exception as e:
