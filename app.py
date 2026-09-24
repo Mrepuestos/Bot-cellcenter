@@ -414,8 +414,6 @@ def detectar_linea(texto):
     return float(m.group(1)) if m else None
 
 
-
-
 RELLENO_LINEA = {"y", "mi", "es", "de", "la", "linea", "línea", "tengo", "son", "me",
                  "aprobaron", "aprobado", "aprobada", "limite", "límite", "dolares",
                  "dólares", "usd", "oro", "plata", "azul", "platino", "nivel", "ok",
@@ -503,6 +501,7 @@ def bloque_equipo(equipos, canal, perfil):
             if not nivel:
                 lineas.append("  El equipo SÍ tiene precio, pero falta el nivel de Cashea "
                               "del cliente. Pídeselo. NO respondas DERIVAR_PRECIO.")
+                continue
             try:
                 c = precios.cashea(p, nivel)
                 lineas.append(f"  Cashea: inicial ${c['inicial']} + 3 x ${c['monto_cuota']}")
