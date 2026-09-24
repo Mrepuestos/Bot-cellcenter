@@ -363,7 +363,8 @@ def detectar_canal(texto):
     if "creditienda" in t or "credi tienda" in t:
         return "creditienda"
     if any(p in t for p in ("contado", "efectivo", "divisa", "dolar", "d\u00f3lar",
-                            "zelle", "usdt", "cash")):
+                            "zelle", "usdt", "cash", "precio normal",
+                            "sin financiamiento", "sin financiar", "sin cuotas")):
         return "contado"
     return None
 
@@ -413,6 +414,42 @@ def detectar_linea(texto):
     return float(m.group(1)) if m else None
 
 
+
+
+RELLENO_LINEA = {"y", "mi", "es", "de", "la", "linea", "línea", "tengo", "son", "me",
+                 "aprobaron", "aprobado", "aprobada", "limite", "límite", "dolares",
+                 "dólares", "usd", "oro", "plata", "azul", "platino", "nivel", "ok",
+                 "si", "sí", "con", "krece", "soy", "como"}
+
+
+def detectar_linea_suelta(texto):
+    """Número solo como línea de Krece: "400", "400 nivel oro", "$400".
+    Solo si en ese renglón no hay nada más (ni modelo ni GB)."""
+    for renglon in texto.lower().split("\n"):
+        t = re.sub(r"nivel\s+\w+", " ", renglon)
+        t = re.sub(r"[^\w\s]", " ", t)
+        palabras = [p for p in t.split() if p not in RELLENO_LINEA]
+        if len(palabras) == 1 and palabras[0].isdigit():
+            n = int(palabras[0])
+            if 50 <= n <= 5000 and n not in (64, 128, 256, 512):
+                return float(n)
+    return None
+
+
+def dato_faltante(canal, perfil):
+    """Pregunta para pedir el dato que falta para cotizar, o None."""
+    if canal == "krece" and not perfil.get("nivel_cliente"):
+        return ("Para cotizarte con Krece, ¿qué nivel tienes en la app? "
+                "(Azul, Plata, Oro o Platino) 📲")
+    if canal == "krece" and not perfil.get("linea_krece"):
+        return ("Para darte las cuotas con Krece solo me falta tu línea aprobada. "
+                "¿Cuánto te aparece en la app? 📲")
+    if canal == "cashea" and not perfil.get("nivel_cliente"):
+        return ("Para cotizarte con Cashea, ¿en qué nivel estás? "
+                "Va del 1 Semilla al 6 Araguaney 😊")
+    return None
+
+
 # ── Armado de precios para el prompt de celulares ────────────────────────────
 
 def bloque_equipo(equipos, canal, perfil):
@@ -433,7 +470,14 @@ def bloque_equipo(equipos, canal, perfil):
             nivel = perfil.get("nivel_cliente")
             linea = perfil.get("linea_krece")
             if not nivel or not linea:
-                lineas.append("  Faltan datos para cotizar Krece: nivel y línea aprobada.")
+                if not nivel and not linea:
+                    falta = "su nivel y su línea aprobada"
+                elif not nivel:
+                    falta = f"su nivel (ya sabes que su línea es ${float(linea):.0f})"
+                else:
+                    falta = f"su línea aprobada (ya sabes que es nivel {nivel}, no se lo pidas)"
+                lineas.append(f"  El equipo SÍ tiene precio, pero para cotizar Krece falta "
+                              f"{falta}. Pídeselo en una frase. NO respondas DERIVAR_PRECIO.")
                 continue
             hubo = False
             try:
@@ -457,8 +501,8 @@ def bloque_equipo(equipos, canal, perfil):
         elif canal == "cashea":
             nivel = perfil.get("nivel_cliente")
             if not nivel:
-                lineas.append("  Falta el nivel de Cashea del cliente.")
-                continue
+                lineas.append("  El equipo SÍ tiene precio, pero falta el nivel de Cashea "
+                              "del cliente. Pídeselo. NO respondas DERIVAR_PRECIO.")
             try:
                 c = precios.cashea(p, nivel)
                 lineas.append(f"  Cashea: inicial ${c['inicial']} + 3 x ${c['monto_cuota']}")
@@ -1635,7 +1679,9 @@ def atender_celulares(from_number, numero_limpio, body):
     # suelta de "dólares" o "divisas" como simple unidad de precio no debe
     # hacer saltar el canal a "contado". Solo se cambia si el cliente usa
     # una palabra explícita de pago de contado.
-    PALABRAS_CONTADO_EXPLICITO = ("contado", "efectivo", "zelle", "usdt", "cash")
+    PALABRAS_CONTADO_EXPLICITO = ("contado", "efectivo", "zelle", "usdt", "cash",
+                                  "precio normal", "sin financiamiento",
+                                  "sin financiar", "sin cuotas")
     canal_previo = perfil.get("canal_pago")
     if (detectado == "contado" and canal_previo and canal_previo != "contado"
             and not any(p in body.lower() for p in PALABRAS_CONTADO_EXPLICITO)):
@@ -1683,6 +1729,8 @@ def atender_celulares(from_number, numero_limpio, body):
             cambios["nivel_cliente"] = nivel
             perfil["nivel_cliente"] = nivel
         linea = detectar_linea(body)
+        if not linea:
+            linea = detectar_linea_suelta(body)
         if linea:
             cambios["linea_krece"] = linea
             perfil["linea_krece"] = linea
@@ -1789,6 +1837,11 @@ def atender_celulares(from_number, numero_limpio, body):
             "Un momento, un asesor te atiende enseguida",
             "Ya le pasé tu consulta a un asesor, te escribe mañana a partir de las 6:00 am")
 
+    elif "DERIVAR_PRECIO" in reply and equipos and dato_faltante(canal, perfil):
+        # El equipo SÍ tiene precio: lo que falta es un dato del cliente.
+        # Se le pide el dato y no se manda la alerta falsa.
+        print("DERIVAR_PRECIO descartado: falta un dato del cliente")
+        reply = dato_faltante(canal, perfil)
     elif "DERIVAR_PRECIO" in reply:
         notificar_precio_sin_verificar(from_number, body)
         reply = msg_asesor(
