@@ -1579,19 +1579,21 @@ def interpretar_pedido(mensaje, historial_texto=""):
       "sin_precio"    — lo tenemos pero sin precio verificado
       "ninguno"       — no pide un equipo, o no hay nada que ofrecer
     """
-    catalogo = catalogo_para_ia()
+    catalogo, catalogo_completo = catalogo_para_ia(mensaje)
     if not catalogo:
         return [], "ninguno"
 
-    prompt = f"""Un cliente de una tienda de celulares en Venezuela escribió esto por WhatsApp:
-"{mensaje}"
-{historial_texto}
+    # Parte fija: catálogo + reglas. Va primero para poder guardarla en caché.
+    parte_fija = f"""Interpretas los pedidos de clientes de una tienda de celulares en Venezuela.
+Los clientes escriben por WhatsApp.
+
 Este es el catálogo real de la tienda. Cada línea es:
-clave | nombre | precio | cámara | entrega
+clave | precio | cámara | entrega
+La clave es marca|modelo|almacenamiento|RAM en GB.
 
 {catalogo}
 
-Tu tarea: entender QUÉ QUIERE y elegir hasta 3 equipos del catálogo.
+Tu tarea: entender QUÉ QUIERE el cliente y elegir hasta 3 equipos del catálogo.
 
 Interpreta libremente. El cliente escribe rápido, con errores, abreviado o
 sin saber el nombre exacto. Ejemplos de lo que debes entender:
@@ -1603,7 +1605,7 @@ sin saber el nombre exacto. Ejemplos de lo que debes entender:
 - "quiero un iphone" -> los iPhone que haya
 
 REGLAS:
-- Solo puedes devolver claves que estén EXACTAMENTE en la lista de arriba.
+- Solo puedes devolver claves que estén EXACTAMENTE en el catálogo de arriba.
 - Si pide un modelo conocido que NO está en el catálogo (por ejemplo un
   iPhone 13, un Samsung S24), elige 2 o 3 parecidos en precio y gama, y
   marca tipo "recomendacion".
@@ -1617,7 +1619,7 @@ REGLAS:
 - Si el mensaje solo da nivel, línea aprobada o datos de pago, SIN que antes
   se estuviera hablando de un equipo concreto, devuelve lista vacía y tipo
   "ninguno". No elijas un equipo por tu cuenta basado en la línea.
-- PERO si arriba dice que en mensajes anteriores le interesaba un modelo, y
+- PERO si más abajo dice que en mensajes anteriores le interesaba un modelo, y
   ahora el cliente solo está dando su nivel o línea, devuelve ESE modelo con
   tipo "exacto". Está completando los datos para cotizar lo que ya pidió.
 - Si pide un criterio en vez de un modelo (fotos, juegos, batería,
@@ -1626,11 +1628,22 @@ REGLAS:
 Responde SOLO con JSON, sin explicaciones ni markdown:
 {{"claves": ["clave1", "clave2"], "tipo": "exacto"}}"""
 
+    # Parte variable: cambia en cada mensaje, va después de la caché.
+    parte_variable = f'{historial_texto}\nMensaje del cliente por WhatsApp:\n"{mensaje}"'
+
+    bloque_fijo = {"type": "text", "text": parte_fija}
+    if catalogo_completo:
+        # Solo el catálogo completo se guarda 1 hora en caché
+        bloque_fijo["cache_control"] = {"type": "ephemeral", "ttl": "1h"}
+
     try:
         r = client.messages.create(
             model=MODELO_CELULARES,
             max_tokens=1500,
-            messages=[{"role": "user", "content": prompt}],
+            messages=[{"role": "user", "content": [
+                bloque_fijo,
+                {"type": "text", "text": parte_variable},
+            ]}],
         )
         texto = texto_respuesta(r)
         registrar_uso("celulares-interpretar", r)
