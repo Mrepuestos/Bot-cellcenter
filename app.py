@@ -1374,10 +1374,9 @@ def get_system_prompt_celulares(info_equipo, perfil, rangos, lista_corta):
     conocidos = ("Ya sabes de él: " + ", ".join(datos) +
                  ". No se lo vuelvas a preguntar.") if datos else ""
 
-    return f"""Eres el asistente de ventas de Cell Center 4620, tienda de celulares en Santa Teresa del Tuy. Atiendes por WhatsApp.
+    fijo = """Eres el asistente de ventas de Cell Center 4620, ...
 
-La tienda está ahora: {estado_tienda}
-Hoy es {dia_hoy}. El horario de HOY es {horario_hoy}.
+El estado de la tienda (abierta o cerrada) y el horario de HOY están en DATOS DE ESTA CONVERSACIÓN, al final.
 Horario general: lunes a sábado 8:30am-5:30pm · domingos y feriados 9:00am-2:00pm
 
 CÓMO HABLAS
@@ -1401,10 +1400,9 @@ LO PRIMERO: ENTENDER QUÉ QUIERE
 Si ya dijo lo que quiere en su primer mensaje, no se lo preguntes de nuevo.
 
 RESPETA EL CANAL QUE ELIGIÓ — regla más importante
-{recordatorio}
+El canal que eligió y lo que ya sabes de él están en DATOS DE ESTA CONVERSACIÓN, al final.
 Si viene por Krece, le hablas SOLO de Krece: no menciones Cashea, CrediTienda ni contado.
 Lo mismo al revés. Solo cambias de canal si él lo pide.
-{conocidos}
 
 PRECIOS
 NUNCA inventes un precio. Solo usas los montos que aparecen abajo en EQUIPO CONSULTADO.
@@ -1484,14 +1482,14 @@ debe pasar por la tienda a verificarlo.
 
 SI NO SABE QUÉ QUIERE
 No mandes el catálogo completo. Muéstrale estas tres opciones y deja que se ubique:
-{rangos}
+(las TRES OPCIONES están en DATOS DE ESTA CONVERSACIÓN, al final)
 Después pregúntale para qué lo va a usar.
 
 SI PIDE EL CATÁLOGO O UNA LISTA
 La primera vez, muéstrale las tres opciones de arriba. Si lo vuelve a pedir,
 NO te niegues: mándale esta LISTA CORTA tal cual, una línea por equipo, y
 pregúntale cuál le llama la atención:
-{lista_corta}
+(la LISTA CORTA está en DATOS DE ESTA CONVERSACIÓN, al final)
 Si pide una marca en particular, muéstrale lo que haya de esa marca en
 EQUIPO CONSULTADO.
 
@@ -1528,9 +1526,35 @@ LO QUE NUNCA HACES
 Si dice "la aplicación" o "la app" sin nombrarla, sigue con el canal que ya
 tiene. Si todavía no tiene canal, pregúntale cuál aplicación usa.
 
+"""
+
+    variable = f"""DATOS DE ESTA CONVERSACIÓN
+
+TIENDA
+La tienda está ahora: {estado_tienda}
+Hoy es {dia_hoy}. El horario de HOY es {horario_hoy}.
+
+CLIENTE
+{recordatorio}
+{conocidos}
+
+TRES OPCIONES (para cuando no sabe qué quiere)
+{rangos}
+
+LISTA CORTA
+{lista_corta}
+
 EQUIPO CONSULTADO
 {info_equipo}
 """
+
+    return [
+        # Reglas fijas: iguales para todos los clientes, se guardan 1 hora en caché
+        {"type": "text", "text": fijo,
+         "cache_control": {"type": "ephemeral", "ttl": "1h"}},
+        # Datos de este cliente y este mensaje: cambian en cada mensaje
+        {"type": "text", "text": variable},
+    ]
 
 
 client = anthropic.Anthropic()
