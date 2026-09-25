@@ -1605,7 +1605,7 @@ def interpretar_pedido(mensaje, historial_texto=""):
     """
     catalogo, catalogo_completo = catalogo_para_ia(mensaje)
     if not catalogo:
-        return [], "ninguno"
+        return [], "ninguno", None
 
     # Parte fija: catálogo + reglas. Va primero para poder guardarla en caché.
     parte_fija = f"""Interpretas los pedidos de clientes de una tienda de celulares en Venezuela.
@@ -1648,9 +1648,13 @@ REGLAS:
   tipo "exacto". Está completando los datos para cotizar lo que ya pidió.
 - Si pide un criterio en vez de un modelo (fotos, juegos, batería,
   presupuesto), elige hasta 3 que cumplan y marca tipo "exacto".
+CANAL DE PAGO: si en ESTE mensaje el cliente nombra Krece, Cashea o
+CrediTienda, aunque lo escriba mal ("caschea", "kashea", "kreze",
+"credi tieda"), pon ese canal en "canal": "krece", "cashea" o "creditienda".
+Si no nombra ninguno de los tres, pon "canal": null.
 
 Responde SOLO con JSON, sin explicaciones ni markdown:
-{{"claves": ["clave1", "clave2"], "tipo": "exacto"}}"""
+{{"claves": ["clave1", "clave2"], "tipo": "exacto", "canal": null}}"""
 
     # Parte variable: cambia en cada mensaje, va después de la caché.
     parte_variable = f'{historial_texto}\nMensaje del cliente por WhatsApp:\n"{mensaje}"'
@@ -1673,18 +1677,21 @@ Responde SOLO con JSON, sin explicaciones ni markdown:
         registrar_uso("celulares-interpretar", r)
         if not texto:
             print("La interpretación llegó vacía (se agotaron los tokens)")
-            return [], "ninguno"
+            return [], "ninguno", None
         texto = re.sub(r"^```(?:json)?|```$", "", texto, flags=re.MULTILINE).strip()
         datos = json.loads(texto)
         claves = datos.get("claves") or []
         tipo = datos.get("tipo") or "ninguno"
-        print(f"IA CRUDO -> claves={claves} tipo={tipo}")
+        canal_ia = datos.get("canal")
+        if canal_ia not in ("krece", "cashea", "creditienda"):
+            canal_ia = None
+        print(f"IA CRUDO -> claves={claves} tipo={tipo} canal={canal_ia}")
     except Exception as e:
         print(f"Error interpretando pedido: {e}")
-        return [], "ninguno"
+        return [], "ninguno", None
 
     if not claves:
-        return [], "ninguno"
+        return [], "ninguno", canal_ia
 
     # Validación dura: solo claves que existan de verdad
     equipos, hay_sin_precio = [], False
@@ -1699,11 +1706,11 @@ Responde SOLO con JSON, sin explicaciones ni markdown:
             print(f"IA devolvió una clave inexistente, descartada: '{clave}'")
 
     if not equipos:
-        return [], ("sin_precio" if hay_sin_precio else "ninguno")
+        return [], ("sin_precio" if hay_sin_precio else "ninguno"), canal_ia
 
     if tipo not in ("exacto", "recomendacion"):
         tipo = "exacto"
-    return ordenar_equipos(equipos), tipo
+    return ordenar_equipos(equipos), tipo, canal_ia
 
 
 # ── Flujo de celulares ────────────────────────────────────────────────────────
@@ -1808,7 +1815,38 @@ def atender_celulares(from_number, numero_limpio, body):
                        f"una categoría (económico, intermedio, gama alta) o "
                        f"parte del nombre de una de ellas, elige ese equipo "
                        f"y marca tipo exacto.\n")
-    equipos, tipo_resultado = interpretar_pedido(body, contexto)
+    equipos, tipo_resultado, canal_ia = interpretar_pedido(body, contexto)
+
+    # Si Python no reconoció el canal (mal escrito, como "caschea"),
+    # se usa el que entendió la IA y se leen el nivel o la moneda
+    if (not detectado and canal_ia and canal_ia != canal
+            and canal_ia != perfil.get("canal_extra")):
+        print(f"Canal detectado por IA: {canal_ia} (antes: {canal})")
+        canal = canal_ia
+        cambios["canal_pago"] = canal
+        perfil["canal_pago"] = canal
+        cambios["nivel_cliente"] = None
+        perfil["nivel_cliente"] = None
+        if perfil.get("canal_extra"):
+            cambios["canal_extra"] = None
+            perfil["canal_extra"] = None
+        if canal != "krece":
+            cambios["linea_krece"] = None
+            perfil["linea_krece"] = None
+        if canal == "krece":
+            nivel = detectar_nivel_krece(body)
+            linea = detectar_linea(body) or detectar_linea_suelta(body)
+            if nivel:
+                cambios["nivel_cliente"] = nivel
+                perfil["nivel_cliente"] = nivel
+            if linea:
+                cambios["linea_krece"] = linea
+                perfil["linea_krece"] = linea
+        elif canal == "cashea":
+            nivel = detectar_nivel_cashea(body)
+            if nivel:
+                cambios["nivel_cliente"] = nivel
+                perfil["nivel_cliente"] = nivel
 
     if equipos:
         modelo = nombre_completo(equipos[0])
@@ -2049,7 +2087,7 @@ def atender_admin(from_number, numero_limpio, body):
     # ¿Trae un modelo nuevo o solo completa la consulta anterior?
     equipos, tipo = [], "ninguno"
     if not (previa and _admin_solo_datos(body)):
-        equipos, tipo = interpretar_pedido(body)
+        equipos, tipo, _ = interpretar_pedido(body)
 
     aporta = (canal or _admin_nivel_cashea(body) or _admin_nivel_krece(body)
               or _admin_linea(body))
