@@ -611,8 +611,11 @@ def bloque_rangos(perfil=None):
     salida = []
     for i, eq in enumerate(equipos):
         etiqueta = etiquetas[i] if i < len(etiquetas) else ""
-        salida.append(f"  {etiqueta}: {nombre_completo(eq)} — "
-                      f"desde ${int(eq['precio_paralelo'])} en divisas")
+        canal = (perfil or {}).get("canal_pago")
+        texto = (inicial_corta(eq, canal, perfil) if canal
+                 else f"desde ${int(eq['precio_paralelo'])} en divisas")
+        salida.append(f"  {etiqueta}: {nombre_completo(eq)}"
+                      + (f" — {texto}" if texto else ""))
     return "\n".join(salida)
 
 
@@ -1428,8 +1431,8 @@ pregúntaselo: "¿Qué modelo tienes en mente?"
 Los iPhone con Krece solo aplican de nivel Plata en adelante. Si el cliente es
 nivel Azul y pregunta por un iPhone, dile que ese equipo requiere Plata o
 superior, y pregúntale si quiere ver otra opción o subir de nivel.
-Si el cliente llegó con el mensaje predefinido de Krece ("Hola! Quiero comprar
-con Krece. Como funciona?"), NO le preguntes nivel y línea: asume que es
+Si el cliente llega hablando de Krece sin darte nivel ni línea (con el mensaje
+predefinido o con otras palabras), NO le preguntes nivel y línea: asume que es
 Azul con $300 de línea (es el caso del 95% de los que llegan así) y muéstrale
 de una vez tres opciones —gama baja, media y alta— cotizadas con esos datos.
 Al final, deja abierta la corrección: "Si tu nivel o línea es distinto,
@@ -1521,6 +1524,7 @@ LO QUE NUNCA HACES
 - Prometer entrega inmediata de algo que viene de proveedor
 - Mandar la lista completa de equipos (la LISTA CORTA sí se puede)
 - Decir que hay opciones más baratas sin mostrarlas
+- Decir que solo tenemos los equipos que ya le mostraste
 - Usar la palabra "paralelo"
 
 Si dice "la aplicación" o "la app" sin nombrarla, sigue con el canal que ya
@@ -1648,6 +1652,9 @@ REGLAS:
   tipo "exacto". Está completando los datos para cotizar lo que ya pidió.
 - Si pide un criterio en vez de un modelo (fotos, juegos, batería,
   presupuesto), elige hasta 3 que cumplan y marca tipo "exacto".
+- Si pregunta si hay MÁS opciones ("¿solo esos?", "¿no tienes más?",
+  "¿otras marcas?"), NO está eligiendo los que vio: lista vacía y tipo
+  "mas_opciones". Si nombra una marca, es tipo "exacto".
 CANAL DE PAGO: si en ESTE mensaje el cliente nombra Krece, Cashea o
 CrediTienda, aunque lo escriba mal ("caschea", "kashea", "kreze",
 "credi tieda"), pon ese canal en "canal": "krece", "cashea" o "creditienda".
@@ -1690,6 +1697,8 @@ Responde SOLO con JSON, sin explicaciones ni markdown:
         print(f"Error interpretando pedido: {e}")
         return [], "ninguno", None
 
+    if tipo == "mas_opciones":
+        return [], "mas_opciones", canal_ia
     if not claves:
         return [], "ninguno", canal_ia
 
@@ -1708,7 +1717,7 @@ Responde SOLO con JSON, sin explicaciones ni markdown:
     if not equipos:
         return [], ("sin_precio" if hay_sin_precio else "ninguno"), canal_ia
 
-    if tipo not in ("exacto", "recomendacion"):
+    if tipo not in ("exacto", "recomendacion", "mas_opciones"):
         tipo = "exacto"
     return ordenar_equipos(equipos), tipo, canal_ia
 
@@ -1762,8 +1771,9 @@ def atender_celulares(from_number, numero_limpio, body):
                 cambios["linea_krece"] = None
                 perfil["linea_krece"] = None
 
-    # El mensaje predefinido de Krece: 95% de los casos son Azul/$300
-    if canal == "krece" and MENSAJE_KRECE in body.lower() and not perfil.get("nivel_cliente"):
+    # Llega por Krece sin nivel ni línea: 95% de los casos son Azul/$300
+    if (canal == "krece" and canal_anterior != "krece"
+            and not perfil.get("nivel_cliente") and not perfil.get("linea_krece")):
         cambios["nivel_cliente"] = "azul"
         perfil["nivel_cliente"] = "azul"
         cambios["linea_krece"] = 300
@@ -1848,7 +1858,7 @@ def atender_celulares(from_number, numero_limpio, body):
                 cambios["nivel_cliente"] = nivel
                 perfil["nivel_cliente"] = nivel
 
-    if equipos:
+    if len(equipos) == 1:
         modelo = nombre_completo(equipos[0])
         if modelo != perfil.get("modelo_interes"):
             cambios["modelo_interes"] = modelo
@@ -1867,6 +1877,9 @@ def atender_celulares(from_number, numero_limpio, body):
         info = ("El cliente pidió un modelo que NO tenemos. Dile con claridad "
                 "que ese no lo manejas, y ofrécele estas alternativas "
                 "parecidas:\n" + bloque_equipo(equipos, canal, perfil))
+    elif tipo_resultado == "mas_opciones":
+        info = ("El cliente pregunta si hay más opciones. SÍ hay más: mándale "
+                "la LISTA CORTA tal cual y pregúntale si busca alguna marca o presupuesto.")
     elif tipo_resultado == "ninguno":
         info = ("El cliente no está preguntando por un equipo concreto, o pidió "
                 "algo que no tenemos ni se parece a nada del catálogo. "
@@ -1883,6 +1896,15 @@ def atender_celulares(from_number, numero_limpio, body):
                  + bloque_equipo(equipos, canal_extra, perfil_extra))
 
     print(f"INFO AL MODELO -> {info[:300]}")
+
+    # Si llegó otro mensaje mientras se interpretaba este, se responden juntos
+    with buffer_lock:
+        pendiente = buffer_mensajes.get(numero_limpio)
+        if pendiente:
+            pendiente["textos"].insert(0, body)
+    if pendiente:
+        print(f"⏭️ Llegó otro mensaje de {numero_limpio}: se responden juntos")
+        return
 
     historial = cargar_historial(numero_limpio)
     historial.append({"role": "user", "content": body})
