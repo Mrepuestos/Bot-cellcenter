@@ -161,11 +161,23 @@ ESPERA_AGRUPAR = 6  # segundos que espera a que el cliente termine de escribir
 buffer_mensajes = {}
 buffer_lock = threading.Lock()
 
+procesando = set()   # clientes que se están atendiendo en este momento
+
 def procesar_buffer(numero_limpio):
     with buffer_lock:
+        if numero_limpio in procesando:
+            # Aún se responde un mensaje anterior: se espera 2 s y se reintenta
+            datos = buffer_mensajes.get(numero_limpio)
+            if datos:
+                t = threading.Timer(2, procesar_buffer, args=[numero_limpio])
+                t.daemon = True
+                datos["timer"] = t
+                t.start()
+            return
         datos = buffer_mensajes.pop(numero_limpio, None)
-    if not datos:
-        return
+        if not datos:
+            return
+        procesando.add(numero_limpio)
     body_junto = "\n".join(datos["textos"])
     from_number = datos["from"]
     print(f"📦 Procesando {len(datos['textos'])} mensaje(s) agrupados de {numero_limpio}")
@@ -177,6 +189,9 @@ def procesar_buffer(numero_limpio):
         send_whapi_message(from_number, msg_asesor(
             "Dame un momento, un asesor te atiende enseguida",
             "Un asesor te atenderá mañana a partir de las 6:00 am"))
+    finally:
+        with buffer_lock:
+            procesando.discard(numero_limpio)
 
 def agregar_al_buffer(from_number, numero_limpio, body):
     with buffer_lock:
@@ -404,6 +419,12 @@ def detectar_nivel_cashea(texto):
     for palabra, num in mapa.items():
         if palabra in t:
             return num
+    palabras = {"uno": "1", "dos": "2", "tres": "3", "cuatro": "4", "cinco": "5", "seis": "6"}
+    m = re.search(r"\bnivel\s*(uno|dos|tres|cuatro|cinco|seis)\b", t)
+    if m:
+        return palabras[m.group(1)]
+    if t.strip() in palabras:
+        return palabras[t.strip()]
     m = re.search(r"\bnivel\s*([1-6])\b", t) or re.search(r"\b([1-6])\b", t)
     return m.group(1) if m else None
 
@@ -1445,7 +1466,7 @@ pidas nivel ni línea. Invítalo a registrarse en la app o la página de Krece
 aprobada te escriba para cotizarle.
 
 CASHEA
-Pregunta primero el NIVEL del cliente (1 Semilla al 6 Araguaney). Sin nivel no hay precio. Son 3 cuotas.
+Pregunta primero el NIVEL del cliente: 1 Semilla, 2 Raíz, 3 Hoja, 4 Tronco, 5 Árbol o 6 Araguaney. Usa SOLO esos nombres. Sin nivel no hay precio. Son 3 cuotas.
 
 CREDITIENDA
 No necesita nivel. Pregunta si paga en divisas o en bolívares, porque el precio cambia.
@@ -1863,6 +1884,9 @@ def atender_celulares(from_number, numero_limpio, body):
         if modelo != perfil.get("modelo_interes"):
             cambios["modelo_interes"] = modelo
             perfil["modelo_interes"] = modelo
+    elif len(equipos) > 1 and perfil.get("modelo_interes"):
+        cambios["modelo_interes"] = None
+        perfil["modelo_interes"] = None
 
     if cambios:
         guardar_perfil(numero_limpio,
@@ -1875,8 +1899,8 @@ def atender_celulares(from_number, numero_limpio, body):
                 "No lo cotices: responde DERIVAR_PRECIO.")
     elif tipo_resultado == "recomendacion":
         info = ("El cliente pidió un modelo que NO tenemos. Dile con claridad "
-                "que ese no lo manejas, y ofrécele estas alternativas "
-                "parecidas:\n" + bloque_equipo(equipos, canal, perfil))
+                "que ese no lo manejas (NO respondas DERIVAR_PRECIO), y ofrécele "
+                "estas alternativas parecidas:\n" + bloque_equipo(equipos, canal, perfil))
     elif tipo_resultado == "mas_opciones":
         info = ("El cliente pregunta si hay más opciones. SÍ hay más: mándale "
                 "la LISTA CORTA tal cual y pregúntale si busca alguna marca o presupuesto.")
