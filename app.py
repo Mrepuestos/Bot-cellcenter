@@ -1656,8 +1656,9 @@ sin saber el nombre exacto. Ejemplos de lo que debes entender:
 REGLAS:
 - Solo puedes devolver claves que estén EXACTAMENTE en el catálogo de arriba.
 - Si pide un modelo conocido que NO está en el catálogo (por ejemplo un
-  iPhone 13, un Samsung S24), elige 2 o 3 parecidos en precio y gama, y
-  marca tipo "recomendacion".
+  iPhone 13, un Samsung S24), elige 2 o 3 parecidos en precio y gama,
+  empezando por el más cercano en precio; si hay uno igual o más barato,
+  inclúyelo. Marca tipo "recomendacion".
 - Si el modelo que pide no es conocido ni está en el catálogo, devuelve
   lista vacía y tipo "ninguno".
 - Si lo que pide está en el catálogo pero dice SIN PRECIO, devuélvelo igual
