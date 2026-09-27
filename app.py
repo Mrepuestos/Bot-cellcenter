@@ -23,6 +23,7 @@ from repertorio import CORRECCIONES_MARCAS, MODELOS_ABREVIADOS, PALABRAS_IGNORAR
 from sheets_celulares import (
     catalogo_para_ia, obtener_por_clave, existe_clave,
     ordenar_equipos, listar_por_rango, listar_mas_baratos, buscar_foto, nombre_completo,
+    inventario_admin,
 )
 
 # ── Motor de precios de celulares ─────────────────────────────────────────────
@@ -105,16 +106,12 @@ ASESOR_CELULARES   = "584149202844"   # intención de compra y precios sin verif
 ASESOR_CEL_TECNICO = "584220392375"   # servicio técnico y reparaciones
 ASESOR_CEL_OTROS   = "584126093756"   # accesorios y todo lo demás
 
-# ── Números que van al flujo de celulares aunque estén autorizados ────────────
-# Vaciar la lista ( = [] ) cuando termines de probar.
-NUMEROS_PRUEBA_CELULARES = []
+# ── Números de prueba: van al flujo de celulares como cliente y pueden usar
+#    el comando "reset" para empezar de cero. 573208112456 = número colombiano de pruebas.
+NUMEROS_PRUEBA_CELULARES = ["573208112456"]
 
 # ── Administradores: consultas de precios y comandos especiales ───────────────
 ADMINISTRADORES = ["584149202844", "584241369824"]
-
-# ── Modo cliente temporal: el admin escribe "modo cliente" para probar ───────
-MODO_CLIENTE_SEG = 1800          # 30 minutos
-modo_cliente_hasta = {}          # numero -> hora en que vuelve a modo admin
 
 # ── Aviso que recibe cada cliente la primera vez que escribe ──────────────────
 AVISO_IA = ("👋 ¡Hola! Te atiende el asistente virtual de *Cell Center 4620*, "
@@ -2197,6 +2194,83 @@ def atender_admin(from_number, numero_limpio, body):
     return True
 
 
+# ── Modo administrador: preguntas libres sobre el inventario (IA) ─────────────
+ADMIN_IA_MEMORIA_SEG = 600       # recuerda la conversación 10 minutos
+ADMIN_IA_MAX_MENSAJES = 6        # últimos mensajes que se reenvían a la IA
+memoria_admin_ia = {}            # numero -> {"mensajes": [...], "hora": t}
+
+PALABRAS_INVENTARIO = re.compile(
+    r"\b(cost[oó]|costos|margen|ganancia|ganamos|ubicaci[oó]n|"
+    r"d[oó]nde|proveedor|proveedores|aliada|inventario|cu[aá]ntos|cu[aá]ntas|"
+    r"disponible|disponibles|lleg[oó]|llegaron|lista|p[eé]rdida|stock)\b",
+    re.IGNORECASE)
+
+PROMPT_ADMIN_IA = """Eres el asistente interno de Cell Center 4620 (tienda de celulares en \
+Santa Teresa del Tuy, Venezuela). Hablas con un ADMINISTRADOR de la tienda, no con \
+un cliente: puedes darle costos, márgenes, proveedores y ubicación.
+
+Abajo está el inventario completo, una línea por modelo:
+Modelo Almacenamiento/RAM | precio de venta en divisas | origen (proveedor): costo · disponible · fecha de lista · última vez visto
+
+Significado del origen:
+- tienda: el equipo está físicamente en la tienda (entrega inmediata)
+- aliada: está en una tienda aliada (entrega inmediata)
+- proveedor: hay que pedirlo al proveedor (24-48h)
+
+Reglas:
+- Responde SOLO con datos del inventario. Si algo no está, dilo; nunca inventes.
+- "SIN VERIFICAR" o "SIN PRECIO" significa que el precio de venta no está confirmado: avísalo.
+- Disponible NO = ya no está en la última lista.
+- Margen = precio de venta - costo. Si falta el costo, di que no hay costo cargado.
+- La hoja no tiene cantidad de unidades: si preguntan cuántas unidades, di dónde hay \
+disponibilidad y que las unidades no están en la hoja.
+- Di "precio en divisas" o "precio de venta"; nunca uses la palabra "paralelo".
+- Para bolívares usa la tasa BCV que viene con la pregunta.
+- Respuestas cortas para WhatsApp: sin tablas, una línea por equipo, *negritas* \
+solo para el nombre del modelo.
+
+INVENTARIO:
+"""
+
+
+def es_pregunta_inventario(texto):
+    """True si el admin pregunta por costo, ubicación, proveedor, inventario..."""
+    return bool(PALABRAS_INVENTARIO.search(texto))
+
+
+def atender_admin_ia(from_number, numero_limpio, body):
+    """Responde con IA cualquier pregunta del administrador sobre el inventario."""
+    inventario = inventario_admin()
+    if not inventario:
+        send_whapi_message(from_number, "❌ No pude leer el inventario de la hoja.")
+        return
+
+    ahora = time.time()
+    memoria = memoria_admin_ia.get(numero_limpio)
+    if not memoria or ahora - memoria["hora"] > ADMIN_IA_MEMORIA_SEG:
+        memoria = {"mensajes": [], "hora": ahora}
+
+    tasa = obtener_tasa_bcv()
+    pregunta = f"(Tasa BCV hoy: {tasa or 'no disponible'})\n{body}"
+    mensajes = memoria["mensajes"] + [{"role": "user", "content": pregunta}]
+
+    r = client.messages.create(
+        model=MODELO_CELULARES,
+        max_tokens=1200,
+        # Prompt + inventario en caché 1h: solo cambia si cambia la hoja
+        system=[{"type": "text", "text": PROMPT_ADMIN_IA + inventario,
+                 "cache_control": {"type": "ephemeral", "ttl": "1h"}}],
+        messages=mensajes,
+    )
+    registrar_uso("admin-ia", r)
+    respuesta = texto_respuesta(r) or "No pude armar la respuesta, intenta de nuevo."
+    send_whapi_message(from_number, respuesta)
+
+    mensajes.append({"role": "assistant", "content": respuesta})
+    memoria_admin_ia[numero_limpio] = {
+        "mensajes": mensajes[-ADMIN_IA_MAX_MENSAJES:], "hora": ahora}
+
+
 # ── Webhook ───────────────────────────────────────────────────────────────────
 
 @app.route('/webhook', methods=['POST'])
@@ -2269,19 +2343,14 @@ def webhook():
 
             numero_limpio = from_number.replace("@s.whatsapp.net", "").replace("+", "")
 
-            # ── Modo cliente temporal de los administradores ──────────────────
-            en_modo_cliente = False
-            if numero_limpio in modo_cliente_hasta:
-                if time.time() < modo_cliente_hasta[numero_limpio]:
-                    en_modo_cliente = True
-                else:
-                    del modo_cliente_hasta[numero_limpio]
-                    send_whapi_message(from_number,
-                        "🛠️ Terminaron los 30 minutos de modo cliente. "
-                        "Volviste a modo administrador.")
-
             # ── Verificar si el bot está en pausa manual para este número ──────
-            if numero_limpio in pausas_activas:
+            #    (el comando reset de admins y números de prueba pasa igual)
+            es_reset = (msg_type == "text"
+                        and msg.get("text", {}).get("body", "").strip().lower()
+                        in ("reset", "reset_historial")
+                        and (numero_limpio in ADMINISTRADORES
+                             or numero_limpio in NUMEROS_PRUEBA_CELULARES))
+            if numero_limpio in pausas_activas and not es_reset:
                 if time.time() < pausas_activas[numero_limpio]:
                     print(f"⏸️ Bot en pausa para {numero_limpio}, mensaje ignorado")
                     continue
@@ -2292,9 +2361,9 @@ def webhook():
             
             # ── Mensajes que no son texto (fotos, audios, stickers...) ─────────
             if msg_type != "text":
-                es_cel_temp = (numero_limpio in NUMEROS_PRUEBA_CELULARES
-                               or numero_limpio not in NUMEROS_AUTORIZADOS
-                               or en_modo_cliente)
+                es_cel_temp = ((numero_limpio in NUMEROS_PRUEBA_CELULARES
+                                or numero_limpio not in NUMEROS_AUTORIZADOS)
+                               and numero_limpio not in ADMINISTRADORES)
 
                 # Se ignoran sin responder
                 if msg_type in ("sticker", "contact", "contacts", "location", "reaction"):
@@ -2352,47 +2421,44 @@ def webhook():
             if not body:
                 continue
 
-            # ── Comando secreto para limpiar historial (funciona en ambos flujos)
-            if (body.strip().lower() == "reset_historial"
-                    and numero_limpio in ADMINISTRADORES):
+            # ── Comando para limpiar historial (administradores y números de prueba)
+            if (body.strip().lower() in ("reset", "reset_historial")
+                    and (numero_limpio in ADMINISTRADORES
+                         or numero_limpio in NUMEROS_PRUEBA_CELULARES)):
                 try:
                     supabase.table("Clientes").delete().eq("numero", numero_limpio).execute()
+                    with buffer_lock:
+                        datos_buffer = buffer_mensajes.pop(numero_limpio, None)
+                    if datos_buffer and datos_buffer.get("timer"):
+                        datos_buffer["timer"].cancel()
+                    pausas_activas.pop(numero_limpio, None)
+                    consultas_admin.pop(numero_limpio, None)
+                    memoria_admin_ia.pop(numero_limpio, None)
                     send_whapi_message(from_number, "✅ Historial limpiado. Puedes empezar una conversación nueva.")
                 except Exception as e:
                     send_whapi_message(from_number, f"❌ Error limpiando historial: {e}")
                 continue
 
-            
-            # ── Cambiar de modo (solo administradores) ────────────────────────
-            if numero_limpio in ADMINISTRADORES and body.lower() == "modo cliente":
-                modo_cliente_hasta[numero_limpio] = time.time() + MODO_CLIENTE_SEG
-                send_whapi_message(from_number,
-                    "🧪 Modo cliente activado por 30 minutos. Desde ahora te respondo "
-                    "como a un cliente. Escribe *modo admin* para volver antes.")
-                continue
-            if numero_limpio in ADMINISTRADORES and body.lower() == "modo admin":
-                modo_cliente_hasta.pop(numero_limpio, None)
-                send_whapi_message(from_number, "🛠️ Volviste a modo administrador.")
-                continue
-
             # ── Aviso de IA la primera vez que escribe ─────────────────────────
-            if numero_limpio not in ADMINISTRADORES or en_modo_cliente:
+            if numero_limpio not in ADMINISTRADORES:
                 enviar_aviso_ia(from_number, numero_limpio)
 
-            # ── Administradores: cotización rápida ────────────────────────────
-            if numero_limpio in ADMINISTRADORES and not en_modo_cliente:
+            # ── Administradores: solo modo administrador ──────────────────────
+            # Inventario, costos, ubicación → IA con el inventario completo.
+            # Cotizaciones → cálculo exacto en Python. Nunca van al flujo de clientes.
+            if numero_limpio in ADMINISTRADORES:
                 try:
-                    if atender_admin(from_number, numero_limpio, body):
-                        continue
+                    if (es_pregunta_inventario(body)
+                            or not atender_admin(from_number, numero_limpio, body)):
+                        atender_admin_ia(from_number, numero_limpio, body)
                 except Exception as e:
                     print(f"Error en modo administrador: {e}")
                     send_whapi_message(from_number, f"❌ Error en la consulta: {e}")
-                    continue
+                continue
 
             # ── Determinar comportamiento según el número ──────────────────────
             es_cliente_celulares = (numero_limpio in NUMEROS_PRUEBA_CELULARES
-                                    or numero_limpio not in NUMEROS_AUTORIZADOS
-                                    or en_modo_cliente)
+                                    or numero_limpio not in NUMEROS_AUTORIZADOS)
 
             # ── Flujo de celulares ────────────────────────────────────────────
             if es_cliente_celulares:
