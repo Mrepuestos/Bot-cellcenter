@@ -297,3 +297,79 @@ def nombre_completo(eq):
 def refrescar():
     """Fuerza recarga en la próxima consulta."""
     _cache["timestamp"] = None
+    _cache_admin["timestamp"] = None
+
+
+# ─── Inventario completo para los administradores ────────────────────────────
+# Incluye costo, todos los orígenes y los no disponibles. NUNCA va a un cliente.
+
+_cache_admin = {"texto": None, "timestamp": None}
+
+
+def inventario_admin():
+    """
+    Texto con todo el inventario para que la IA responda al administrador.
+    Una línea por modelo:
+      Marca Modelo Alm/RAM | venta $X (verificado) | origen (proveedor): costo $Y · SÍ · lista dd/mm
+    """
+    ahora = datetime.now()
+    if (_cache_admin["texto"] is not None
+            and _cache_admin["timestamp"] is not None
+            and ahora - _cache_admin["timestamp"] < timedelta(minutes=CACHE_MINUTOS)):
+        return _cache_admin["texto"]
+
+    try:
+        sh = _get_sheet().open_by_key(GOOGLE_SHEET_ID_CELULARES)
+
+        modelos = {}   # clave -> {"nombre": ..., "venta": ..., "origenes": []}
+        for fila in sh.worksheet("Catalogo").get_all_values()[4:]:
+            fila = fila + [""] * (9 - len(fila))
+            marca, modelo, almacen, ram = (x.strip() for x in fila[0:4])
+            if not marca or not modelo:
+                continue
+            nombre = f"{marca} {modelo}"
+            if almacen or ram:
+                nombre += f" {almacen or '-'}/{ram or '-'}"
+            precio = _num(fila[7])
+            verificado = fila[8].strip().upper() in ("SI", "SÍ")
+            if precio:
+                venta = f"venta ${int(precio)}" + ("" if verificado else " (SIN VERIFICAR)")
+            else:
+                venta = "venta SIN PRECIO"
+            modelos[_clave(marca, modelo, almacen, ram)] = {
+                "nombre": nombre, "venta": venta, "origenes": []}
+
+        for fila in sh.worksheet("Disponibilidad").get_all_values()[5:]:
+            fila = fila + [""] * (10 - len(fila))
+            marca, modelo, almacen, ram, origen, proveedor, disponible, costo, fecha, visto = (
+                x.strip() for x in fila[0:10])
+            if not marca or not modelo:
+                continue
+            clave = _clave(marca, modelo, almacen, ram)
+            m = modelos.setdefault(clave, {
+                "nombre": f"{marca} {modelo} {almacen or '-'}/{ram or '-'}",
+                "venta": "NO ESTÁ EN CATALOGO", "origenes": []})
+            partes = [f"{origen.lower() or '?'} ({proveedor or '-'})"]
+            c = _num(costo)
+            partes.append(f"costo ${c:g}" if c else "costo -")
+            partes.append("SÍ" if disponible.upper() in ("SI", "SÍ") else "NO")
+            if fecha:
+                partes.append(f"lista {fecha}")
+            if visto:
+                partes.append(f"visto {visto}")
+            m["origenes"].append(": ".join(partes[:2]) + " · " + " · ".join(partes[2:]))
+
+        lineas = []
+        for m in modelos.values():
+            origenes = " | ".join(m["origenes"]) or "sin filas en Disponibilidad"
+            lineas.append(f"{m['nombre']} | {m['venta']} | {origenes}")
+        texto = "\n".join(lineas)
+
+        _cache_admin["texto"] = texto
+        _cache_admin["timestamp"] = ahora
+        print(f"✅ Inventario admin cargado: {len(lineas)} modelos")
+        return texto
+
+    except Exception as e:
+        print(f"❌ Error leyendo inventario admin: {e}")
+        return _cache_admin["texto"] or ""
