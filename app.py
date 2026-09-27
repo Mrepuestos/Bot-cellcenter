@@ -1276,7 +1276,7 @@ def leer_captura_krece(image_data):
             if r.ok:
                 url = r.json().get("url") or r.json().get("link")
     if not url:
-        return None, None
+        return None, None, True
 
     headers = {"Authorization": f"Bearer {WHAPI_TOKEN}"}
     resp = requests.get(url, headers=headers, timeout=30)
@@ -1284,10 +1284,11 @@ def leer_captura_krece(image_data):
     mime = resp.headers.get("Content-Type", "image/jpeg").split(";")[0]
     b64 = base64.standard_b64encode(resp.content).decode("utf-8")
 
-    prompt = """Esta es una captura de la app de Krece. Extrae el NIVEL del
+    prompt = """Si esta imagen es una captura de la app de Krece, extrae el NIVEL del
 cliente (Azul, Plata, Oro o Platino) y la LÍNEA APROBADA o límite de crédito
-en dólares. Responde SOLO con JSON: {"nivel": "plata", "linea": 220}
-Si no puedes leer alguno de los dos con certeza, pon null en ese campo."""
+en dólares. Responde SOLO con JSON: {"es_krece": true, "nivel": "plata", "linea": 220}
+Si no puedes leer alguno de los dos con certeza, pon null en ese campo.
+Si la imagen NO es una captura de Krece, responde {"es_krece": false}"""
 
     r = client.messages.create(
         model=MODELO_CELULARES, max_tokens=200,
@@ -1299,10 +1300,10 @@ Si no puedes leer alguno de los dos con certeza, pon null en ese campo."""
     registrar_uso("captura-krece", r)
     try:
         datos = json.loads(texto_respuesta(r))
-        return datos.get("nivel"), datos.get("linea")
+        return datos.get("nivel"), datos.get("linea"), bool(datos.get("es_krece"))
     except Exception as e:
         print(f"Error leyendo captura Krece: {e}")
-        return None, None
+        return None, None, True
 
 # ── System prompt ─────────────────────────────────────────────────────────────
 
@@ -1419,8 +1420,8 @@ lo pregunte, o que quiera pasar hoy y ya esté cerrado. No lo digas al saludar.
 
 LO PRIMERO: ENTENDER QUÉ QUIERE
 - Compra de celular -> lo atiendes tú
-- Servicio técnico o reparación -> responde exactamente: DERIVAR_TECNICO
-- Accesorios, repuestos o cualquier otra cosa -> responde exactamente: DERIVAR_OTROS
+- Servicio técnico, reparación, pantallas o repuestos -> responde exactamente: DERIVAR_TECNICO
+- Accesorios o cualquier otra cosa -> responde exactamente: DERIVAR_OTROS
 Si ya dijo lo que quiere en su primer mensaje, no se lo preguntes de nuevo.
 
 RESPETA EL CANAL QUE ELIGIÓ — regla más importante
@@ -1663,9 +1664,10 @@ REGLAS:
   lista vacía y tipo "ninguno".
 - Si lo que pide está en el catálogo pero dice SIN PRECIO, devuélvelo igual
   con tipo "sin_precio".
-- Si solo saluda, pregunta por horario, ubicación, servicio técnico o
-  cualquier cosa que no sea elegir un celular, devuelve lista vacía y
-  tipo "ninguno".
+- Si solo saluda, pregunta por horario, ubicación, servicio técnico,
+  reparación, pantallas o repuestos, o cualquier cosa que no sea elegir un
+  celular, devuelve lista vacía y tipo "ninguno", aunque antes le
+  interesara un modelo.
 - Si el mensaje solo da nivel, línea aprobada o datos de pago, SIN que antes
   se estuviera hablando de un equipo concreto, devuelve lista vacía y tipo
   "ninguno". No elijas un equipo por tu cuenta basado en la línea.
@@ -1832,7 +1834,7 @@ def atender_celulares(from_number, numero_limpio, body):
     if perfil.get("modelo_interes"):
         contexto = (f"\nEn mensajes anteriores le interesaba el "
                     f"{perfil['modelo_interes']}. Si ahora no menciona otro "
-                    f"modelo, se refiere a ese.\n")
+                    f"modelo, se refiere a ese o esos.\n")
     else:
         rango_ctx = listar_por_rango(excluir_iphone=sin_iphone(perfil))
         if rango_ctx:
@@ -1880,14 +1882,11 @@ def atender_celulares(from_number, numero_limpio, body):
                 cambios["nivel_cliente"] = nivel
                 perfil["nivel_cliente"] = nivel
 
-    if len(equipos) == 1:
-        modelo = nombre_completo(equipos[0])
+    if equipos:
+        modelo = " / ".join(nombre_completo(e) for e in equipos)
         if modelo != perfil.get("modelo_interes"):
             cambios["modelo_interes"] = modelo
             perfil["modelo_interes"] = modelo
-    elif len(equipos) > 1 and perfil.get("modelo_interes"):
-        cambios["modelo_interes"] = None
-        perfil["modelo_interes"] = None
 
     if cambios:
         guardar_perfil(numero_limpio,
@@ -1951,16 +1950,12 @@ def atender_celulares(from_number, numero_limpio, body):
 
     # ── Marcadores ────────────────────────────────────────────────────────────
     if "DERIVAR_TECNICO" in reply:
-        notificar_asesor(ASESOR_CEL_TECNICO, "servicio técnico", from_number)
-        reply = msg_asesor(
-            "Un momento, te comunico con el asesor de servicio técnico",
-            "Ya le pasé tu consulta al asesor de servicio técnico, te escribe mañana a partir de las 6:00 am")
+        reply = ("Para servicio técnico y reparaciones escríbenos a este número: "
+                 "0422-039-2375 📲")
 
     elif "DERIVAR_OTROS" in reply:
-        notificar_asesor(ASESOR_CEL_OTROS, "accesorios u otra consulta", from_number)
-        reply = msg_asesor(
-            "Un momento, un asesor te atiende enseguida",
-            "Ya le pasé tu consulta a un asesor, te escribe mañana a partir de las 6:00 am")
+        reply = ("Para accesorios y otras consultas escríbenos a este número: "
+                 "0412-609-3756 📲")
 
     elif "DERIVAR_PRECIO" in reply and equipos and dato_faltante(canal, perfil):
         # El equipo SÍ tiene precio: lo que falta es un dato del cliente.
@@ -2311,22 +2306,30 @@ def webhook():
                         send_whapi_message(from_number, "Por los momentos solo puedo leer mensajes de texto. Por favor escribe el modelo que buscas. 📝")
                     continue
 
-                # Foto cuando el cliente está hablando de Krece: leer la captura
-                if msg_type == "image" and cargar_perfil(numero_limpio).get("canal_pago") == "krece":
+                # Foto de un cliente de Krece al que le falta nivel o línea: leer la captura
+                perfil_img = cargar_perfil(numero_limpio) if msg_type == "image" else {}
+                if (msg_type == "image" and perfil_img.get("canal_pago") == "krece"
+                        and not (perfil_img.get("nivel_cliente") and perfil_img.get("linea_krece"))):
                     try:
-                        nivel, linea = leer_captura_krece(msg.get("image", {}))
+                        nivel, linea, es_krece = leer_captura_krece(msg.get("image", {}))
                     except Exception as e:
                         print(f"Error procesando captura Krece: {e}")
-                        nivel, linea = None, None
+                        nivel, linea, es_krece = None, None, False
                     if nivel or linea:
-                        guardar_perfil(numero_limpio, canal_pago="krece",
-                                       nivel_cliente=nivel, linea_krece=linea)
+                        datos_krece = {"canal_pago": "krece"}
+                        if nivel:
+                            datos_krece["nivel_cliente"] = nivel
+                        if linea:
+                            datos_krece["linea_krece"] = linea
+                        guardar_perfil(numero_limpio, **datos_krece)
                         atender_celulares(from_number, numero_limpio,
                                           "Aquí está mi captura de Krece")
-                    else:
+                        continue
+                    if es_krece:
                         send_whapi_message(from_number,
                             "No pude leer bien la captura. ¿Me confirmas tu nivel y línea aprobada por escrito?")
-                    continue
+                        continue
+                    # No es una captura de Krece: sigue abajo como cualquier otra foto
 
                 # Cualquier otra foto, video, documento o nota de voz
                 if msg_type in ("image", "video", "document", "audio", "voice"):
