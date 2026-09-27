@@ -109,6 +109,7 @@ ASESOR_CEL_OTROS   = "584126093756"   # accesorios y todo lo demás
 # ── Números de prueba: van al flujo de celulares como cliente y pueden usar
 #    el comando "reset" para empezar de cero. 573208112456 = número colombiano de pruebas.
 NUMEROS_PRUEBA_CELULARES = ["573208112456"]
+modo_prueba_pantallas = set()   # números de prueba probando el flujo de pantallas
 
 # ── Administradores: consultas de precios y comandos especiales ───────────────
 ADMINISTRADORES = ["584149202844", "584241369824"]
@@ -2363,7 +2364,8 @@ def webhook():
             if msg_type != "text":
                 es_cel_temp = ((numero_limpio in NUMEROS_PRUEBA_CELULARES
                                 or numero_limpio not in NUMEROS_AUTORIZADOS)
-                               and numero_limpio not in ADMINISTRADORES)
+                               and numero_limpio not in ADMINISTRADORES
+                               and numero_limpio not in modo_prueba_pantallas)
 
                 # Se ignoran sin responder
                 if msg_type in ("sticker", "contact", "contacts", "location", "reaction"):
@@ -2439,6 +2441,18 @@ def webhook():
                     send_whapi_message(from_number, f"❌ Error limpiando historial: {e}")
                 continue
 
+            # ── Números de prueba: cambiar entre flujo de pantallas y celulares ─
+            if numero_limpio in NUMEROS_PRUEBA_CELULARES:
+                if body.strip().lower() == "modo pantallas":
+                    modo_prueba_pantallas.add(numero_limpio)
+                    send_whapi_message(from_number, "🔧 Modo pantallas (técnico) activado. "
+                                       "Escribe *modo celulares* para volver.")
+                    continue
+                if body.strip().lower() == "modo celulares":
+                    modo_prueba_pantallas.discard(numero_limpio)
+                    send_whapi_message(from_number, "📱 Modo celulares activado.")
+                    continue
+
             # ── Aviso de IA la primera vez que escribe ─────────────────────────
             if numero_limpio not in ADMINISTRADORES:
                 enviar_aviso_ia(from_number, numero_limpio)
@@ -2457,8 +2471,9 @@ def webhook():
                 continue
 
             # ── Determinar comportamiento según el número ──────────────────────
-            es_cliente_celulares = (numero_limpio in NUMEROS_PRUEBA_CELULARES
-                                    or numero_limpio not in NUMEROS_AUTORIZADOS)
+            es_cliente_celulares = ((numero_limpio in NUMEROS_PRUEBA_CELULARES
+                                     or numero_limpio not in NUMEROS_AUTORIZADOS)
+                                    and numero_limpio not in modo_prueba_pantallas)
 
             # ── Flujo de celulares ────────────────────────────────────────────
             if es_cliente_celulares:
@@ -2467,7 +2482,8 @@ def webhook():
                 continue
 
             # ── Flujo original para clientes de repuestos (sin tocar) ──────────
-            if numero_limpio not in NUMEROS_AUTORIZADOS:
+            if (numero_limpio not in NUMEROS_AUTORIZADOS
+                    and numero_limpio not in modo_prueba_pantallas):
                 print("Número no autorizado: " + numero_limpio)
                 continue
 
