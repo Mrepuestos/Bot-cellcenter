@@ -381,7 +381,9 @@ def detectar_canal(texto):
         return "creditienda"
     if any(p in t for p in ("contado", "efectivo", "divisa", "dolar", "d\u00f3lar",
                             "zelle", "usdt", "cash", "precio normal",
-                            "sin financiamiento", "sin financiar", "sin cuotas")):
+                            "sin financiamiento", "sin financiar", "sin cuotas",
+                            "pago de una vez", "pagar de una vez",
+                            "pagarlo de una vez", "un solo pago", "pago completo")):
         return "contado"
     return None
 
@@ -1458,7 +1460,8 @@ Los iPhone con Krece solo aplican de nivel Plata en adelante. Si el cliente es
 nivel Azul y pregunta por un iPhone, dile que ese equipo requiere Plata o
 superior, y pregúntale si quiere ver otra opción o subir de nivel.
 Si el cliente llega hablando de Krece sin darte nivel ni línea (con el mensaje
-predefinido o con otras palabras), NO le preguntes nivel y línea: asume que es
+predefinido o con otras palabras), NO le preguntes nivel y línea (salvo que pida
+un iPhone: ahí sí pregúntaselos, porque el iPhone requiere Plata o superior): asume que es
 Azul con $300 de línea (es el caso del 95% de los que llegan así) y muéstrale
 de una vez tres opciones —gama baja, media y alta— cotizadas con esos datos.
 Al final, deja abierta la corrección: "Si tu nivel o línea es distinto,
@@ -1769,7 +1772,9 @@ def atender_celulares(from_number, numero_limpio, body):
     # una palabra explícita de pago de contado.
     PALABRAS_CONTADO_EXPLICITO = ("contado", "efectivo", "zelle", "usdt", "cash",
                                   "precio normal", "sin financiamiento",
-                                  "sin financiar", "sin cuotas")
+                                  "sin financiar", "sin cuotas",
+                                  "pago de una vez", "pagar de una vez",
+                                  "pagarlo de una vez", "un solo pago", "pago completo")
     canal_previo = perfil.get("canal_pago")
     if (detectado == "contado" and canal_previo and canal_previo != "contado"
             and not any(p in body.lower() for p in PALABRAS_CONTADO_EXPLICITO)):
@@ -1803,8 +1808,11 @@ def atender_celulares(from_number, numero_limpio, body):
                 cambios["linea_krece"] = None
                 perfil["linea_krece"] = None
 
-    # Llega por Krece sin nivel ni línea: 95% de los casos son Azul/$300
-    if (canal == "krece" and canal_anterior != "krece"
+    # Llega por Krece sin nivel ni línea: 95% de los casos son Azul/$300.
+    # Si pide iPhone no se asume (Azul no aplica): se le pregunta nivel y línea.
+    pide_iphone = ("iphone" in body.lower()
+                   or "iphone" in (perfil.get("modelo_interes") or "").lower())
+    if (canal == "krece" and canal_anterior != "krece" and not pide_iphone
             and not perfil.get("nivel_cliente") and not perfil.get("linea_krece")):
         cambios["nivel_cliente"] = "azul"
         perfil["nivel_cliente"] = "azul"
