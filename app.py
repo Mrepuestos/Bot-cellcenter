@@ -1319,18 +1319,18 @@ Hoy es {dia_hoy}. El horario de HOY es {horario_hoy}. Usa SOLO este horario cuan
 REGLA PRINCIPAL: Cuando el inventario muestre productos con stock mayor a 0, SIEMPRE da el precio. NUNCA digas que no está disponible si hay stock. NUNCA preguntes si es para pantalla o celular, asume que siempre es para pantalla.
 
 1. PANTALLAS: Si el inventario muestra productos disponibles, responde con precio en USD y bolívares. Formato EXACTO:
-✅ *Nombre producto*: $XX USD / (€) Bs. XX,XXX
+✅ *Nombre producto*: $XX USD / Bs. XX,XXX
 
 Donde $XX es el precio en USD y Bs. XX,XXX es el precio en bolívares calculado con tasa euro. NO hay precio intermedio.
 
 MÚLTIPLES PRODUCTOS: Si el inventario muestra varios productos, responde en lista:
-✅ *Modelo*: $12 USD / (€) Bs. 8,243
-✅ *Modelo*: $13 USD / (€) Bs. 8,856
+✅ *Modelo*: $12 USD / Bs. 8,243
+✅ *Modelo*: $13 USD / Bs. 8,856
 
 COMPATIBILIDADES: Si el inventario dice "PRODUCTOS COMPATIBLES":
 - Si el stock es mayor a 0, responde:
 "Tenemos una pantalla compatible para ese modelo 👍
-✅ *[nombre exacto del producto]*: $XX USD / (€) Bs. XX,XXX"
+✅ *[nombre exacto del producto]*: $XX USD / Bs. XX,XXX"
 - Si el stock es 0, responde solo:
 "No tenemos disponible para ese modelo en este momento."
 
@@ -2508,7 +2508,7 @@ def webhook():
                         precio_usd, precio_bs = calcular_precio_bs(p['list_price'])
                         stock = int(p['qty_available'])
                         nombre = p['name']
-                        bs_str = f" (€) Bs. {precio_bs:,}" if precio_bs is not None else ""
+                        bs_str = f" Bs. {precio_bs:,}" if precio_bs is not None else ""
                         contexto_odoo += f"- {nombre}: ${precio_usd}{bs_str} | Stock: {stock} unidades\n"
                         if stock_bajo_info is None and 1 <= stock <= 2:
                             stock_bajo_info = {"producto": nombre, "stock": stock}
@@ -2522,7 +2522,7 @@ def webhook():
                             nombre = comp['name']
                             modelo_pedido = comp.get('_compatible_con', '')
                             ref = comp.get('_referencia', '')
-                            bs_str = f" (€) Bs. {precio_bs:,}" if precio_bs is not None else ""
+                            bs_str = f" Bs. {precio_bs:,}" if precio_bs is not None else ""
                             contexto_odoo += f"- {nombre} (compatible con {ref or modelo_pedido}): ${precio_usd}{bs_str} | Stock: {stock} unidades\n"
                             if stock_bajo_info is None and 1 <= stock <= 2:
                                 stock_bajo_info = {"producto": nombre, "stock": stock}
@@ -2531,7 +2531,7 @@ def webhook():
                         stock = int(compatibles['qty_available'])
                         nombre = compatibles['name']
                         modelo_pedido = compatibles.get('_compatible_con', '')
-                        bs_str = f" (€) Bs. {precio_bs:,}" if precio_bs is not None else ""
+                        bs_str = f" Bs. {precio_bs:,}" if precio_bs is not None else ""
                         contexto_odoo += f"- {nombre} (compatible con {modelo_pedido}): ${precio_usd}{bs_str} | Stock: {stock} unidades\n"
                         if stock_bajo_info is None and 1 <= stock <= 2:
                             stock_bajo_info = {"producto": nombre, "stock": stock}
