@@ -533,6 +533,10 @@ def bloque_equipo(equipos, canal, perfil):
                               f"Pídele que confirme: 1 Semilla, 2 Raíz, 3 Hoja, "
                               f"4 Tronco, 5 Árbol o 6 Araguaney.")
 
+        elif canal == "creditienda" and eq["marca"].lower() == "iphone":
+            lineas.append("  Los iPhone NO se venden por CrediTienda. Ofrécele "
+                          "contado, Cashea o Krece (nivel Plata o superior).")
+
         elif canal == "creditienda":
             moneda = perfil.get("nivel_cliente")
             variantes = [moneda] if moneda in ("divisas", "bs") else ["divisas", "bs"]
@@ -577,7 +581,9 @@ def bloque_equipo(equipos, canal, perfil):
 
 
 def sin_iphone(perfil):
-    """True si el cliente es Krece Azul: a él no se le muestran iPhone."""
+    """True si al cliente no se le muestran iPhone: Krece Azul o CrediTienda."""
+    if perfil.get("canal_pago") == "creditienda":
+        return True
     return (perfil.get("canal_pago") == "krece"
             and perfil.get("nivel_cliente") == "azul")
 
@@ -1471,6 +1477,10 @@ CREDITIENDA
 No necesita nivel. Pregunta si paga en divisas o en bolívares, porque el precio cambia.
 Da la inicial y las cuotas en dólares. Los montos en bolívares solo si el cliente
 los pide, aclarando que son a la tasa BCV de hoy.
+Los iPhone NO se venden por CrediTienda. Nunca ofrezcas ni sugieras un iPhone a
+un cliente CrediTienda. Si él lo pide, dile: "Los iPhone no están disponibles por
+CrediTienda 🙏 Puedes llevártelo de contado, con Cashea o con Krece (nivel Plata
+o superior). ¿Cuál te interesa?"
 
 CUANDO NO SABES CÓMO VA A PAGAR
 Si el cliente pregunta por un equipo y no ha dicho su medio de pago, confirma
@@ -2078,7 +2088,9 @@ def _admin_cotizar(eq, c):
         else:
             lineas.append(f"   Tasa BCV: ${bcv} (tasa no disponible)")
 
-    if canal in (None, "creditienda"):
+    if canal in (None, "creditienda") and eq["marca"].lower() == "iphone":
+        lineas.append("   CrediTienda: no aplica para iPhone")
+    elif canal in (None, "creditienda"):
         for moneda, etiqueta in (("divisas", "divisas"), ("bs", "Bs")):
             ct = precios.creditienda(p, moneda)
             lineas.append(f"   CrediTienda {etiqueta}: inicial ${ct['inicial']} "
