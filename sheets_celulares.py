@@ -218,7 +218,9 @@ def catalogo_para_ia(texto_cliente=""):
 
 def obtener_por_clave(clave, solo_con_precio=True):
     """Devuelve el equipo exacto que la IA eligió, o None."""
-    clave = str(clave).strip().lower()
+    partes = [p.strip() for p in str(clave).strip().lower().split("|")]
+    partes += [""] * (4 - len(partes))   # la IA a veces omite la RAM vacía
+    clave = "|".join(partes)
     for eq in _cargar():
         if _clave(eq["marca"], eq["modelo"], eq["almacenamiento"], eq["ram"]) == clave:
             if solo_con_precio and not (eq["precio_verificado"] and eq["precio_paralelo"]):
