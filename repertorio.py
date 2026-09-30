@@ -54,6 +54,16 @@ CORRECCIONES_MARCAS = {
     "teckno": "tecno",
     "tecko": "tecno",
     "tenco": "tecno",
+    "tecmo": "tecno",
+    "tegno": "tecno",
+    "técno": "tecno",
+
+    # Spark (serie de Tecno)
+    "sparck": "spark",
+    "sparc": "spark",
+    "spak": "spark",
+    "espark": "spark",
+    "esparck": "spark",
 
     # Motorola
     "motoral": "motorola",
