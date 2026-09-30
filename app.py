@@ -1494,6 +1494,9 @@ dile que en la tienda le hacemos el registro en el momento, y que debe ser
 mayor de edad y traer su cédula laminada. Dale los montos de EQUIPO CONSULTADO
 diciendo SIEMPRE que son aproximados: el monto real lo da Krece cuando quede
 registrado.
+Si ese cliente sin cuenta pide un iPhone, NO le digas que "tiene" nivel Azul
+ni que "suba de nivel": dile que al registrarse empieza en nivel Azul y que el
+iPhone se habilita desde nivel Plata, y pregúntale si quiere ver otra opción.
 
 CASHEA
 Pregunta primero el NIVEL del cliente: 1 Semilla, 2 Raíz, 3 Hoja, 4 Tronco, 5 Árbol o 6 Araguaney. Usa SOLO esos nombres. Sin nivel no hay precio. Son 3 cuotas.
