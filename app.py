@@ -231,6 +231,9 @@ def normalizar_texto(texto):
     for error, correcto in CORRECCIONES_MARCAS.items():
         texto = re.sub(r'\b' + re.escape(error) + r'\b', correcto, texto)
     texto = re.sub(r'\b([acgpx])\s+(\d)', r'\1\2', texto)
+    # Tecno Spark Go: "go1", "go 1", "tecno go1", "sparkgo1" -> "spark go 1"; "go 24" -> "spark go 2024"
+    texto = re.sub(r'\b(?:spark\s*)?go\s*(\d+)\b', r'spark go \1', texto)
+    texto = re.sub(r'\bspark go (2[0-4])\b', r'spark go 20\1', texto)
     return texto
 
 
@@ -895,15 +898,22 @@ def buscar_similares(todos, palabras_clave, max_resultados=5):
 INTERPRETAR_MODELO_ACTIVO = True  # poner en False para apagar el rescate IA
 
 def _lista_repuestos(todos):
-    """Nombres de productos de la categoría REPUESTOS, para anclar la IA."""
+    """Nombres de la categoría REPUESTOS y de sus modelos COMPATIBLE:, para anclar la IA."""
     nombres = []
+    vistos = set()
     for p in todos:
         categ = p.get('categ_id')
         categ_nombre = categ[1] if isinstance(categ, (list, tuple)) and len(categ) > 1 else ""
         if "REPUESTOS" in str(categ_nombre).upper():
-            nombre = p.get('name', '').strip()
-            if nombre and nombre not in nombres:
-                nombres.append(nombre)
+            candidatos = [p.get('name', '')]
+            notas = limpiar_html(p.get('description') or "")
+            for parte in re.split(r'compatible:', notas, flags=re.IGNORECASE)[1:]:
+                candidatos.extend(parte.split(','))
+            for nombre in candidatos:
+                nombre = nombre.strip()
+                if nombre and nombre.lower() not in vistos:
+                    vistos.add(nombre.lower())
+                    nombres.append(nombre)
     return nombres
 
 
