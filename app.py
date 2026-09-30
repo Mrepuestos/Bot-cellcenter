@@ -432,6 +432,17 @@ def detectar_nivel_cashea(texto):
     return m.group(1) if m else None
 
 
+def detectar_sin_cuenta(texto):
+    """True si el cliente dice que no tiene cuenta en Krece o Cashea."""
+    t = "".join(c for c in unicodedata.normalize("NFD", texto.lower())
+                if unicodedata.category(c) != "Mn")
+    return bool(re.search(
+        r"no (tengo|uso|manejo) (ni |cuenta|la app|la aplicacion|krece|crece|cashea|cashe)"
+        r"|no (estoy|me he|he) (registrad|inscrit|afiliad)"
+        r"|no (estoy|tengo) en (krece|crece|cashea|cashe)"
+        r"|nunca (lo |la )?he usado|no (lo |la )?he usado", t))
+
+
 def detectar_linea(texto):
     """Busca un monto que parezca la línea aprobada de Krece."""
     m = re.search(r"(?:linea|l\u00ednea|aprobad[oa]|credito|cr\u00e9dito|limite|l\u00edmite)"
@@ -1478,13 +1489,19 @@ Al final, deja abierta la corrección: "Si tu nivel o línea es distinto,
 dímelo y te recalculo."
 Nunca ofrezcas ni sugieras un iPhone a un cliente Azul, ni siquiera como
 opción a mostrar. Si él mismo lo pide, ahí sí explícale la restricción.
-Si el cliente dice que nunca ha usado Krece o que no tiene cuenta, no le
-pidas nivel ni línea. Invítalo a registrarse en la app o la página de Krece
-(no le expliques los pasos) y dile que cuando tenga su nivel y línea
-aprobada te escriba para cotizarle.
+Si el cliente dice que no tiene Krece o nunca lo ha usado, NO es un obstáculo:
+dile que en la tienda le hacemos el registro en el momento, y que debe ser
+mayor de edad y traer su cédula laminada. Dale los montos de EQUIPO CONSULTADO
+diciendo SIEMPRE que son aproximados: el monto real lo da Krece cuando quede
+registrado.
 
 CASHEA
 Pregunta primero el NIVEL del cliente: 1 Semilla, 2 Raíz, 3 Hoja, 4 Tronco, 5 Árbol o 6 Araguaney. Usa SOLO esos nombres. Sin nivel no hay precio. Son 3 cuotas.
+Si el cliente dice que no tiene Cashea o nunca lo ha usado, NO es un obstáculo
+y NO le preguntes el nivel: dile que en la tienda le hacemos el registro, y que
+debe ser mayor de edad y traer su cédula laminada. Dale los montos de EQUIPO
+CONSULTADO diciendo SIEMPRE que son aproximados: el monto real lo da Cashea
+cuando quede registrado.
 
 CREDITIENDA
 No necesita nivel. Pregunta si paga en divisas o en bolívares, porque el precio cambia.
@@ -1559,6 +1576,12 @@ pregúntale cuál le llama la atención:
 (la LISTA CORTA está en DATOS DE ESTA CONVERSACIÓN, al final)
 Si pide una marca en particular, muéstrale lo que haya de esa marca en
 EQUIPO CONSULTADO.
+
+MAYORES DE EDAD
+Todas las ventas son solo para mayores de edad. No lo preguntes de entrada:
+menciónalo cuando expliques los requisitos o el registro en Krece o Cashea.
+Si el cliente dice que es menor de edad, dile con amabilidad que la compra
+la debe hacer un adulto, por ejemplo su representante.
 
 CERRAR
 El objetivo NO es cerrar la venta por chat: la decisión es del cliente y se
@@ -1935,6 +1958,16 @@ def atender_celulares(from_number, numero_limpio, body):
             if nivel:
                 cambios["nivel_cliente"] = nivel
                 perfil["nivel_cliente"] = nivel
+
+    # Cliente sin cuenta en Krece o Cashea: se cotiza con el nivel de entrada
+    # (el registro se lo hacemos en la tienda con su cédula laminada)
+    if canal in ("krece", "cashea") and detectar_sin_cuenta(body):
+        if canal == "krece":
+            cambios.update(nivel_cliente="azul", linea_krece=300)
+            perfil.update(nivel_cliente="azul", linea_krece=300)
+        else:
+            cambios["nivel_cliente"] = "1"
+            perfil["nivel_cliente"] = "1"
 
     if equipos:
         modelo = " / ".join(nombre_completo(e) for e in equipos)
