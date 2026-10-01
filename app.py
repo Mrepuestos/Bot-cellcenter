@@ -97,12 +97,12 @@ NUMEROS_AUTORIZADOS = [
     "584241255279"
 ]
 
-ASESOR_TECNICO = "584149202844"
-ASESOR_ACCESORIOS = "584149202844"
-ASESOR_STOCK = "584149202844"
+ASESOR_TECNICO = "584126093756"
+ASESOR_ACCESORIOS = "584126093756"
+ASESOR_STOCK = "584126093756"
 
 # ── Asesores del flujo de celulares ───────────────────────────────────────────
-ASESOR_CELULARES   = "584149202844"   # intención de compra y precios sin verificar
+ASESOR_CELULARES   = "584126093756"   # intención de compra y precios sin verificar
 ASESOR_CEL_TECNICO = "584220392375"   # servicio técnico y reparaciones
 ASESOR_CEL_OTROS   = "584126093756"   # accesorios y todo lo demás
 
@@ -1269,7 +1269,7 @@ def msg_asesor(de_dia, de_noche):
     return de_dia if asesor_disponible() else de_noche
 
 
-def notificar_intencion_compra(numero_cliente, perfil, equipos):
+def notificar_intencion_compra(numero_cliente, perfil, equipos, online=False):
     numero = "+" + numero_cliente.replace("@s.whatsapp.net", "")
     modelo = perfil.get("modelo_interes") or (
         nombre_completo(equipos[0]) if equipos else "sin especificar")
@@ -1280,6 +1280,8 @@ def notificar_intencion_compra(numero_cliente, perfil, equipos):
         partes.append(f"Nivel: {perfil['nivel_cliente']}")
     if perfil.get("linea_krece"):
         partes.append(f"Línea aprobada: ${float(perfil['linea_krece']):.0f}")
+    if online:
+        partes.append("Compra: 🌐 ONLINE")
     send_whapi_message(ASESOR_CELULARES, "\n".join(partes))
 
 
@@ -1425,6 +1427,9 @@ def get_system_prompt_celulares(info_equipo, perfil, rangos, lista_corta):
         datos.append(f"le interesa el {perfil['modelo_interes']}")
     conocidos = ("Ya sabes de él: " + ", ".join(datos) +
                  ". No se lo vuelvas a preguntar.") if datos else ""
+    if perfil.get("_krece_supuesto"):
+        conocidos += (" OJO: el nivel Azul y la línea $300 son SUPUESTOS, él no "
+                      "te los dio: no digas que ya tienes sus datos.")
 
     fijo = """Eres el asistente de ventas de Cell Center 4620, ...
 
@@ -1601,6 +1606,8 @@ o confirma que va a ir), responde exactamente: INTENCION_COMPRA
 Pero si todavía no le has dado el precio en el medio de pago que acaba de
 nombrar (ej. "lo quiero sacar por Krece" y solo vio contado), dale primero
 ese cálculo. Todavía no es INTENCION_COMPRA.
+Si pregunta si puede comprar online o a distancia (sin ir a la tienda), o dice
+que quiere comprar así, responde exactamente: INTENCION_COMPRA_ONLINE
 
 OBJECIONES
 "Está caro", "muy alta la inicial", "¿no hay otras opciones?", o pregunta si
@@ -1885,16 +1892,23 @@ def atender_celulares(from_number, numero_limpio, body):
         perfil["nivel_cliente"] = "azul"
         cambios["linea_krece"] = 300
         perfil["linea_krece"] = 300
+        perfil["_krece_supuesto"] = True   # solo en memoria, no va a Supabase
 
     # Nivel y línea, según el canal
     if canal == "krece":
         nivel = detectar_nivel_krece(body)
-        if nivel:
-            cambios["nivel_cliente"] = nivel
-            perfil["nivel_cliente"] = nivel
         linea = detectar_linea(body)
         if not linea:
             linea = detectar_linea_suelta(body)
+        if nivel:
+            nivel_antes = perfil.get("nivel_cliente")
+            if nivel_antes and nivel != nivel_antes and not linea:
+                # Otro nivel sin línea: la anterior (o la supuesta) ya no sirve
+                cambios["linea_krece"] = None
+                perfil["linea_krece"] = None
+            cambios["nivel_cliente"] = nivel
+            perfil["nivel_cliente"] = nivel
+            perfil.pop("_krece_supuesto", None)
         if linea:
             cambios["linea_krece"] = linea
             perfil["linea_krece"] = linea
@@ -2068,9 +2082,19 @@ def atender_celulares(from_number, numero_limpio, body):
             "Déjame confirmarte el precio de ese modelo, te escribo mañana a partir de las 6:00 am")
 
     elif "INTENCION_COMPRA" in reply:
-        notificar_intencion_compra(from_number, perfil, equipos)
+        online = "INTENCION_COMPRA_ONLINE" in reply
+        notificar_intencion_compra(from_number, perfil, equipos, online)
         hora_vzla = datetime.now(pytz.timezone("America/Caracas")).hour
-        if 6 <= hora_vzla < 22:
+        if online and 6 <= hora_vzla < 22:
+            reply = ("¡Claro que sí, puedes hacer tu compra online! 🙌 Ya le pasé tu "
+                     "solicitud a un asesor de la tienda, él te da todos los detalles. "
+                     "Solo debes estar atento a sus indicaciones al momento de hacer la compra.")
+        elif online:
+            reply = ("¡Claro que sí, puedes hacer tu compra online! 🙌 Ya le pasé tu "
+                     "solicitud a un asesor de la tienda y mañana a partir de las 6:00 am "
+                     "te da todos los detalles. Solo debes estar atento a sus indicaciones "
+                     "al momento de hacer la compra.")
+        elif 6 <= hora_vzla < 22:
             reply = ("¡Perfecto! Ya le pasé tu solicitud a un asesor de la tienda, "
                      "en breve te contacta para coordinar 🙌")
         else:
