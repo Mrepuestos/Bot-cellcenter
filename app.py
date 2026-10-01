@@ -1428,8 +1428,10 @@ def get_system_prompt_celulares(info_equipo, perfil, rangos, lista_corta):
     conocidos = ("Ya sabes de él: " + ", ".join(datos) +
                  ". No se lo vuelvas a preguntar.") if datos else ""
     if perfil.get("_krece_supuesto"):
-        conocidos += (" OJO: el nivel Azul y la línea $300 son SUPUESTOS, él no "
-                      "te los dio: no digas que ya tienes sus datos.")
+        conocidos += (" OJO: él NO te dio nivel ni línea; tú supusiste Azul con $300. "
+                      "Cotiza igual con los montos de EQUIPO CONSULTADO, sin pedirle "
+                      "esos datos, y di que calculaste con Azul y $300 por ser lo más "
+                      "común (no digas que ya tienes sus datos).")
 
     fijo = """Eres el asistente de ventas de Cell Center 4620, ...
 
@@ -1606,8 +1608,10 @@ o confirma que va a ir), responde exactamente: INTENCION_COMPRA
 Pero si todavía no le has dado el precio en el medio de pago que acaba de
 nombrar (ej. "lo quiero sacar por Krece" y solo vio contado), dale primero
 ese cálculo. Todavía no es INTENCION_COMPRA.
-Si pregunta si puede comprar online o a distancia (sin ir a la tienda), o dice
-que quiere comprar así, responde exactamente: INTENCION_COMPRA_ONLINE
+Si solo pregunta si se puede comprar online o a distancia, todavía NO decidió:
+respóndele que sí, que los detalles se los da un asesor al momento de la compra
+y que solo debe estar atento a sus indicaciones. Eso NO es INTENCION_COMPRA.
+Si ya dice que lo quiere comprar online, responde exactamente: INTENCION_COMPRA_ONLINE
 
 OBJECIONES
 "Está caro", "muy alta la inicial", "¿no hay otras opciones?", o pregunta si
@@ -2086,12 +2090,12 @@ def atender_celulares(from_number, numero_limpio, body):
         notificar_intencion_compra(from_number, perfil, equipos, online)
         hora_vzla = datetime.now(pytz.timezone("America/Caracas")).hour
         if online and 6 <= hora_vzla < 22:
-            reply = ("¡Claro que sí, puedes hacer tu compra online! 🙌 Ya le pasé tu "
-                     "solicitud a un asesor de la tienda, él te da todos los detalles. "
-                     "Solo debes estar atento a sus indicaciones al momento de hacer la compra.")
+            reply = ("¡Perfecto! 🙌 Ya le pasé tu solicitud de compra online a un asesor "
+                     "de la tienda, él te da todos los detalles. Solo debes estar atento "
+                     "a sus indicaciones al momento de hacer la compra.")
         elif online:
-            reply = ("¡Claro que sí, puedes hacer tu compra online! 🙌 Ya le pasé tu "
-                     "solicitud a un asesor de la tienda y mañana a partir de las 6:00 am "
+            reply = ("¡Perfecto! 🙌 Ya le pasé tu solicitud de compra online a un asesor "
+                     "de la tienda y mañana a partir de las 6:00 am "
                      "te da todos los detalles. Solo debes estar atento a sus indicaciones "
                      "al momento de hacer la compra.")
         elif 6 <= hora_vzla < 22:
