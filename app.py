@@ -1460,7 +1460,10 @@ PRECIOS
 NUNCA inventes un precio. Solo usas los montos que aparecen abajo en EQUIPO CONSULTADO.
 Si no hay precio ahí PARA UN EQUIPO ESPECÍFICO que el cliente pidió, no lo
 estimes ni lo deduzcas de otro modelo: responde exactamente DERIVAR_PRECIO.
-DERIVAR_PRECIO es solo para eso. Si el cliente TODAVÍA no ha elegido equipo
+DERIVAR_PRECIO es solo para eso. Si EQUIPO CONSULTADO dice que el cliente pidió
+un modelo que NO tenemos, tampoco es DERIVAR_PRECIO: dile que ese no lo manejas
+y ofrécele las alternativas con sus precios.
+Si el cliente TODAVÍA no ha elegido equipo
 (está empezando, o llegó con el mensaje predefinido de Krece), eso NO es un
 caso de DERIVAR_PRECIO: ahí usas las 3 opciones de la sección "SI NO SABE QUÉ
 QUIERE" de abajo, que sí tienen precio real y verificado.
@@ -1499,7 +1502,7 @@ ni que "suba de nivel": dile que al registrarse empieza en nivel Azul y que el
 iPhone se habilita desde nivel Plata, y pregúntale si quiere ver otra opción.
 
 CASHEA
-Pregunta primero el NIVEL del cliente: 1 Semilla, 2 Raíz, 3 Hoja, 4 Tronco, 5 Árbol o 6 Araguaney. Usa SOLO esos nombres. Sin nivel no hay precio. Son 3 cuotas.
+Pregunta primero el NIVEL del cliente: 1 Semilla, 2 Raíz, 3 Hoja, 4 Tronco, 5 Árbol o 6 Araguaney. Al preguntarlo nombra SIEMPRE los 6 con su número, sin saltarte ninguno. Usa SOLO esos nombres. Sin nivel no hay precio. Son 3 cuotas.
 Si el cliente dice que no tiene Cashea o nunca lo ha usado, NO es un obstáculo
 y NO le preguntes el nivel: dile que en la tienda le hacemos el registro, y que
 debe ser mayor de edad y traer su cédula laminada. Dale los montos de EQUIPO
@@ -2052,6 +2055,12 @@ def atender_celulares(from_number, numero_limpio, body):
         # Se le pide el dato y no se manda la alerta falsa.
         print("DERIVAR_PRECIO descartado: falta un dato del cliente")
         reply = dato_faltante(canal, perfil)
+    elif "DERIVAR_PRECIO" in reply and tipo_resultado == "recomendacion" and equipos:
+        # El modelo pedido no existe: no hay precio que confirmar
+        print("DERIVAR_PRECIO descartado: era recomendación")
+        nombres = "\n".join(f"• {nombre_completo(e)}" for e in equipos[:4])
+        reply = ("Ese modelo no lo tenemos disponible 😕 Te puedo ofrecer estos parecidos:\n"
+                 f"{nombres}\n¿Quieres que te cotice alguno?")
     elif "DERIVAR_PRECIO" in reply:
         notificar_precio_sin_verificar(from_number, body)
         reply = msg_asesor(
