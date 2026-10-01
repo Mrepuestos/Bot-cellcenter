@@ -110,6 +110,7 @@ ASESOR_CEL_OTROS   = "584126093756"   # accesorios y todo lo demás
 #    el comando "reset" para empezar de cero. 573208112456 = número colombiano de pruebas.
 NUMEROS_PRUEBA_CELULARES = ["573208112456"]
 modo_prueba_pantallas = set()   # números de prueba probando el flujo de pantallas
+krece_supuesto = set()          # clientes cotizados con Azul/$300 supuesto (solo en memoria)
 
 # ── Administradores: consultas de precios y comandos especiales ───────────────
 ADMINISTRADORES = ["584149202844", "584241369824"]
@@ -512,7 +513,9 @@ def bloque_equipo(equipos, canal, perfil):
                 elif not nivel:
                     falta = f"su nivel (ya sabes que su línea es ${float(linea):.0f})"
                 else:
-                    falta = f"su línea aprobada (ya sabes que es nivel {nivel}, no se lo pidas)"
+                    falta = (f"su línea aprobada (su nivel {nivel} ya está anotado: no se lo "
+                             f"pidas ni digas que ya lo sabías; si te lo acaba de decir, "
+                             f"confírmalo natural, ej. '¡Perfecto, nivel {nivel.capitalize()}!')")
                 lineas.append(f"  El equipo SÍ tiene precio, pero para cotizar Krece falta "
                               f"{falta}. Pídeselo en una frase. NO respondas DERIVAR_PRECIO.")
                 continue
@@ -1429,9 +1432,9 @@ def get_system_prompt_celulares(info_equipo, perfil, rangos, lista_corta):
                  ". No se lo vuelvas a preguntar.") if datos else ""
     if perfil.get("_krece_supuesto"):
         conocidos += (" OJO: él NO te dio nivel ni línea; tú supusiste Azul con $300. "
-                      "Cotiza igual con los montos de EQUIPO CONSULTADO, sin pedirle "
-                      "esos datos, y di que calculaste con Azul y $300 por ser lo más "
-                      "común (no digas que ya tienes sus datos).")
+                      "Cotiza con los montos de EQUIPO CONSULTADO sin pedirle esos datos. "
+                      "Nunca digas 'tu nivel' ni 'tu línea': di que es calculado con "
+                      "Azul y $300 por ser lo más común.")
 
     fijo = """Eres el asistente de ventas de Cell Center 4620, ...
 
@@ -1841,6 +1844,9 @@ def atender_celulares(from_number, numero_limpio, body):
     """Atiende a un cliente de celulares de punta a punta."""
     perfil = cargar_perfil(numero_limpio)
     cambios = {}
+    if (numero_limpio in krece_supuesto and perfil.get("nivel_cliente") == "azul"
+            and float(perfil.get("linea_krece") or 0) == 300):
+        perfil["_krece_supuesto"] = True   # sigue con el Azul/$300 supuesto
 
     # Canal de pago
     detectado = detectar_canal(body)
@@ -1897,6 +1903,7 @@ def atender_celulares(from_number, numero_limpio, body):
         cambios["linea_krece"] = 300
         perfil["linea_krece"] = 300
         perfil["_krece_supuesto"] = True   # solo en memoria, no va a Supabase
+        krece_supuesto.add(numero_limpio)
 
     # Nivel y línea, según el canal
     if canal == "krece":
@@ -1912,10 +1919,13 @@ def atender_celulares(from_number, numero_limpio, body):
                 perfil["linea_krece"] = None
             cambios["nivel_cliente"] = nivel
             perfil["nivel_cliente"] = nivel
-            perfil.pop("_krece_supuesto", None)
         if linea:
             cambios["linea_krece"] = linea
             perfil["linea_krece"] = linea
+        if nivel or linea:
+            # Ya dio un dato real: deja de ser supuesto
+            perfil.pop("_krece_supuesto", None)
+            krece_supuesto.discard(numero_limpio)
     elif canal == "cashea":
         nivel = detectar_nivel_cashea(body)
         if nivel:
@@ -1989,6 +1999,8 @@ def atender_celulares(from_number, numero_limpio, body):
         if canal == "krece":
             cambios.update(nivel_cliente="azul", linea_krece=300)
             perfil.update(nivel_cliente="azul", linea_krece=300)
+            perfil.pop("_krece_supuesto", None)   # sin cuenta: es el nivel de entrada
+            krece_supuesto.discard(numero_limpio)
         else:
             cambios["nivel_cliente"] = "1"
             perfil["nivel_cliente"] = "1"
@@ -2567,6 +2579,7 @@ def webhook():
                     pausas_activas.pop(numero_limpio, None)
                     consultas_admin.pop(numero_limpio, None)
                     memoria_admin_ia.pop(numero_limpio, None)
+                    krece_supuesto.discard(numero_limpio)
                     send_whapi_message(from_number, "✅ Historial limpiado. Puedes empezar una conversación nueva.")
                 except Exception as e:
                     send_whapi_message(from_number, f"❌ Error limpiando historial: {e}")
