@@ -2042,7 +2042,7 @@ def atender_celulares(from_number, numero_limpio, body):
         info += (f"\n\nLOS MISMOS EQUIPOS CON {canal_extra.upper()}:"
                  + bloque_equipo(equipos, canal_extra, perfil_extra))
 
-    print(f"INFO AL MODELO -> {info[:2000]}")
+    print(f"INFO AL MODELO [{numero_limpio}] -> " + info[:2000].replace("\n", " / "))
 
     # Si llegó otro mensaje mientras se interpretaba este, se responden juntos
     with buffer_lock:
@@ -2424,7 +2424,8 @@ def webhook():
         messages_list = data.get("messages", [])
 
         for msg in messages_list:
-            print(f"📨 MSG RECIBIDO | chat: {msg.get('chat_id','')} | from: {msg.get('from','')} | type: {msg.get('type','')} | body: {msg.get('text',{}).get('body','')[:1500]} | ts: {msg.get('timestamp',0)} | from_me: {msg.get('from_me',False)}")
+            texto_log = (msg.get('text', {}).get('body', '') or '')[:1500].replace('\n', ' / ')
+            print(f"📨 MSG RECIBIDO | chat: {msg.get('chat_id','')} | from: {msg.get('from','')} | type: {msg.get('type','')} | body: {texto_log} | ts: {msg.get('timestamp',0)} | from_me: {msg.get('from_me',False)}")
             if msg.get("from_me", False):
                 # Detectar si el asesor escribe ** para pausar el bot
                 body_asesor = msg.get("text", {}).get("body", "").strip()
