@@ -450,6 +450,10 @@ def detectar_linea(texto):
                   r"[^\d]{0,15}(\d{2,5})", texto.lower())
     if m:
         return float(m.group(1))
+    m = re.search(r"\b(\d{2,5})\s*(?:\$|d[oó]lares|usd)?\s*(?:de\s+)?"
+                  r"(?:linea|línea|cr[eé]dito|l[ií]mite)", texto.lower())
+    if m:
+        return float(m.group(1))
     m = re.search(r"\$\s*(\d{2,5})", texto)
     return float(m.group(1)) if m else None
 
