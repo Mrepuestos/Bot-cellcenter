@@ -433,6 +433,18 @@ def detectar_nivel_cashea(texto):
     return m.group(1) if m else None
 
 
+def detectar_nivel_cashea_claro(texto):
+    """Nivel de Cashea dicho sin dudas: 'nivel 2', 'raíz', 'cashea 3' o solo '2'."""
+    t = texto.lower().strip(" .!¿?")
+    claro = (any(p in t for p in ("semilla", "raiz", "ra\u00edz", "hoja", "tronco",
+                                  "arbol", "\u00e1rbol", "araguaney"))
+             or re.search(r"\bnivel\W*([2-6]|dos|tres|cuatro|cinco|seis)\b", t)
+             or (("cashe" in t or "cachea" in t)
+                 and re.search(r"\b([1-6]|uno|dos|tres|cuatro|cinco|seis)\b", t))
+             or t in ("2", "3", "4", "5", "6", "dos", "tres", "cuatro", "cinco", "seis"))
+    return detectar_nivel_cashea(t) if claro else None
+
+
 def detectar_sin_cuenta(texto):
     """True si el cliente dice que no tiene cuenta en Krece o Cashea."""
     t = "".join(c for c in unicodedata.normalize("NFD", texto.lower())
@@ -522,6 +534,14 @@ def bloque_equipo(equipos, canal, perfil):
                              f"confírmalo natural, ej. '¡Perfecto, nivel {nivel.capitalize()}!')")
                 lineas.append(f"  El equipo SÍ tiene precio, pero para cotizar Krece falta "
                               f"{falta}. Pídeselo en una frase. NO respondas DERIVAR_PRECIO.")
+                continue
+            if eq["marca"].lower() == "iphone" and nivel == "azul":
+                if perfil.get("_krece_supuesto"):
+                    lineas.append("  Los iPhone requieren Krece Plata o superior y tú SUPUSISTE "
+                                  "Azul: NO des cuotas de Krece; pregúntale su nivel y su línea.")
+                else:
+                    lineas.append("  Los iPhone NO aplican con Krece Azul (requieren Plata o "
+                                  "superior). NO des cuotas de Krece para este equipo.")
                 continue
             hubo = False
             try:
@@ -1890,6 +1910,16 @@ def atender_celulares(from_number, numero_limpio, body):
         # Se fue a un tercer canal: deja de comparar
         cambios["canal_extra"] = None
         perfil["canal_extra"] = None
+
+    # Comparando Krece y Cashea: si da su nivel de Cashea, ya eligió Cashea
+    nivel_c = detectar_nivel_cashea_claro(body)
+    if (perfil.get("canal_extra") == "cashea" and canal != "cashea"
+            and len(nombrados) < 2 and nivel_c):
+        canal = "cashea"
+        cambios["canal_extra"] = None
+        perfil["canal_extra"] = None
+        perfil.pop("_krece_supuesto", None)
+        krece_supuesto.discard(numero_limpio)
 
     if canal and canal != canal_anterior:
         cambios["canal_pago"] = canal
