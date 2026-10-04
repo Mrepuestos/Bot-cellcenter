@@ -2630,18 +2630,10 @@ def webhook():
 
                 # Cualquier otra foto, video, documento o nota de voz
                 if msg_type in ("image", "video", "document", "audio", "voice"):
-                    notificar_asesor(ASESOR_CELULARES,
-                        "un archivo que el bot no puede ver (foto, video, documento o audio)",
-                        from_number)
-                    send_whapi_message(from_number, msg_asesor(
+                    send_whapi_message(from_number,
                         "Soy un asistente con inteligencia artificial y no puedo ver fotos, "
-                        "videos ni documentos, ni escuchar notas de voz 🙏 Ya le avisé a un "
-                        "asesor para que lo revise. Si tu consulta se puede escribir, "
-                        "cuéntamela por aquí y te ayudo.",
-                        "Soy un asistente con inteligencia artificial y no puedo ver fotos, "
-                        "videos ni documentos, ni escuchar notas de voz 🙏 Un asesor lo "
-                        "revisará mañana a partir de las 6:00 am. Si tu consulta se puede "
-                        "escribir, cuéntamela por aquí y te ayudo."))
+                        "videos ni documentos, ni escuchar notas de voz 🙏 Por favor "
+                        "escríbeme tu consulta por aquí y con gusto te ayudo 📝")
                 continue        
 
             # ── Obtener body aquí para que esté disponible en ambos flujos ──────
