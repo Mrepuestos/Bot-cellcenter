@@ -1361,6 +1361,48 @@ Si la imagen NO es una captura de Krece, responde {"es_krece": false}"""
         print(f"Error leyendo captura Krece: {e}")
         return None, None, True
 
+# ── Cortesía en el flujo de repuestos (técnicos) ──────────────────────────────
+
+CORTESIA_CAMINO = {"voy", "camino", "salgo", "saliendo", "llego", "llegando", "voyy"}
+CORTESIA_GRACIAS = {"gracias", "grax", "graciass", "agradecido"}
+CORTESIA_DESPEDIDA = {"chao", "chau", "vemos", "bendiciones", "luego"}
+CORTESIA_CONFIRMA = {"ok", "okay", "oki", "okey", "listo", "perfecto", "dale", "vale",
+                     "excelente", "bueno", "va", "fino", "chevere"}
+CORTESIA_RELLENO = {"ya", "para", "alla", "aya", "ahi", "ahorita", "ahora", "en", "de",
+                    "muchas", "mil", "nos", "hasta", "amigo", "amiga", "hermano", "pana",
+                    "mi", "bro", "jefe", "ok", "y", "si", "sí", "pues", "entonces"}
+CORTESIA_EMOJIS = ("👍", "👌", "🙏", "🤝", "✅", "💪")
+
+
+def respuesta_cortesia_repuestos(body):
+    """Si el técnico SOLO avisa que viene, agradece, confirma o se despide,
+    devuelve una respuesta fija (sin IA). Si es un pedido, devuelve None."""
+    texto = unicodedata.normalize("NFKD", (body or "").lower())
+    texto = "".join(c for c in texto if not unicodedata.combining(c))
+    texto = re.sub(r"[^a-zñ ]", " ", texto)
+    palabras = texto.split()
+
+    if not palabras:
+        return "¡A la orden! 👍" if any(e in (body or "") for e in CORTESIA_EMOJIS) else None
+    if len(palabras) > 6:
+        return None
+
+    nucleo = CORTESIA_CAMINO | CORTESIA_GRACIAS | CORTESIA_DESPEDIDA | CORTESIA_CONFIRMA
+    if not all(p in nucleo or p in CORTESIA_RELLENO for p in palabras):
+        return None
+    if not any(p in nucleo for p in palabras):
+        return None
+
+    if any(p in CORTESIA_CAMINO for p in palabras):
+        if esta_abierto():
+            tz = pytz.timezone("America/Caracas")
+            cierre = "2:00pm" if datetime.now(tz).weekday() == 6 else "5:30pm"
+            return f"¡Perfecto! Te esperamos en *Cell Center 4620* 😊 Hoy estamos hasta las {cierre}."
+        return ("¡Perfecto! Ahora mismo estamos cerrados 🕐 Abrimos lunes a sábado 8:30am-5:30pm, "
+                "domingos y feriados 9:00am-2:00pm.")
+    return "¡A la orden! 👍"
+
+
 # ── System prompt ─────────────────────────────────────────────────────────────
 
 def get_system_prompt():
@@ -2680,6 +2722,13 @@ def webhook():
                     continue
                 else:
                     stock_bajo_pendiente.pop(from_number)               
+
+            # Mensajes de cortesía ("ya voy", "gracias", "ok"): respuesta fija, sin IA ni Odoo
+            respuesta_cortesia = respuesta_cortesia_repuestos(body)
+            if respuesta_cortesia:
+                print(f"Cortesía repuestos ({numero_limpio}): {body}")
+                send_whapi_message(from_number, respuesta_cortesia)
+                continue
 
             productos, compatibles, similares = consultar_odoo(body)
             stock_bajo_info = None
