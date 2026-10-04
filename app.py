@@ -631,6 +631,20 @@ def es_no_corto(canal, perfil, body):
                                  r"todav[ií]a no|a[uú]n no)\s*[.!]*\s*", body.lower()))
 
 
+def texto_iphone_cashea(equipos, tipo):
+    """Respuesta fija al cliente Krece Azul que pide iPhone: se le ofrece Cashea."""
+    texto = ""
+    if tipo == "recomendacion":
+        nombres = "\n".join(f"• {nombre_completo(e)}" for e in equipos[:4])
+        texto = f"Ese modelo no lo tenemos disponible 😕 pero tenemos estos iPhone:\n{nombres}\n\n"
+    return texto + ("Con Krece nivel Azul el iPhone todavía no se habilita 🙏 pero te lo "
+                    "puedes llevar con *Cashea* en 3 cuotas.\n\n"
+                    "¿Tienes Cashea? Si es así, dime tu nivel: 1 Semilla, 2 Raíz, 3 Hoja, "
+                    "4 Tronco, 5 Árbol o 6 Araguaney.\n"
+                    "Si no lo tienes no hay problema: en la tienda te hacemos el registro "
+                    "en el momento 😊")
+
+
 def equipos_de_interes(modelo_interes):
     """Los equipos guardados en modelo_interes (nombres unidos con ' / ')."""
     from sheets_celulares import _cargar
@@ -2168,9 +2182,7 @@ def atender_celulares(from_number, numero_limpio, body):
         info += (f"\n\nLOS MISMOS EQUIPOS CON {canal_extra.upper()}:"
                  + bloque_equipo(equipos, canal_extra, perfil_extra))
 
-    if perfil.pop("_iphone_a_cashea", None):
-        info = ("CLIENTE KRECE AZUL QUE PIDIÓ iPHONE: por Krece no aplica. Aplica la "
-                "regla IPHONE CON KRECE AZUL (ofrecer Cashea).\n" + info)
+    iphone_a_cashea = perfil.pop("_iphone_a_cashea", None)
 
     print(f"INFO AL MODELO [{numero_limpio}] -> " + info[:2000].replace("\n", " / "))
 
@@ -2188,18 +2200,22 @@ def atender_celulares(from_number, numero_limpio, body):
     if len(historial) > 4:
         historial = historial[-4:]
 
-    respuesta = client.messages.create(
-        model=MODELO_CELULARES,
-        max_tokens=4000,
-        system=get_system_prompt_celulares(info, perfil, bloque_rangos(perfil),
-                                           bloque_lista_corta(canal, perfil)),
-        messages=historial,
-    )
-    reply = texto_respuesta(respuesta)
-    registrar_uso("celulares-respuesta", respuesta)
-    if not reply:
-        print("La respuesta al cliente llegó vacía")
-        reply = "Dame un momento y te confirmo"
+    if iphone_a_cashea:
+        # Respuesta fija, sin IA: Krece Azul no aplica para iPhone, se ofrece Cashea
+        reply = texto_iphone_cashea(equipos, tipo_resultado)
+    else:
+        respuesta = client.messages.create(
+            model=MODELO_CELULARES,
+            max_tokens=4000,
+            system=get_system_prompt_celulares(info, perfil, bloque_rangos(perfil),
+                                               bloque_lista_corta(canal, perfil)),
+            messages=historial,
+        )
+        reply = texto_respuesta(respuesta)
+        registrar_uso("celulares-respuesta", respuesta)
+        if not reply:
+            print("La respuesta al cliente llegó vacía")
+            reply = "Dame un momento y te confirmo"
 
     # ── Marcadores ────────────────────────────────────────────────────────────
     if "DERIVAR_TECNICO" in reply:
