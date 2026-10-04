@@ -624,6 +624,23 @@ def bloque_equipo(equipos, canal, perfil):
     return "\n".join(lineas)
 
 
+def es_no_corto(canal, perfil, body):
+    """'No', 'no tengo', 'todavía no' cuando se le preguntó si tiene Cashea."""
+    return bool(canal == "cashea" and not perfil.get("nivel_cliente")
+                and re.fullmatch(r"\s*(no|nop|no tengo|no lo tengo|no la tengo|"
+                                 r"todav[ií]a no|a[uú]n no)\s*[.!]*\s*", body.lower()))
+
+
+def equipos_de_interes(modelo_interes):
+    """Los equipos guardados en modelo_interes (nombres unidos con ' / ')."""
+    from sheets_celulares import _cargar
+    nombres = [n.strip() for n in str(modelo_interes).split(" / ")]
+    equipos = [eq for eq in _cargar()
+               if nombre_completo(eq) in nombres
+               and eq["precio_verificado"] and eq["precio_paralelo"]]
+    return ordenar_equipos(equipos) if equipos else []
+
+
 def sin_iphone(perfil):
     """True si al cliente no se le muestran iPhone: Krece Azul o CrediTienda."""
     if perfil.get("canal_pago") == "creditienda":
@@ -1562,8 +1579,9 @@ nivel Azul y pregunta por un iPhone (regla IPHONE CON KRECE AZUL): dile que con
 Krece Azul el iPhone todavía no se habilita, pero que se lo puede llevar con
 *Cashea* en 3 cuotas. Pregúntale si tiene Cashea y, si lo tiene, su nivel
 (1 Semilla, 2 Raíz, 3 Hoja, 4 Tronco, 5 Árbol o 6 Araguaney). Dile que si no lo
-tiene no hay problema: en la tienda le hacemos el registro en el momento. No le
-des montos todavía, no le ofrezcas otro equipo ni le hables de subir de nivel.
+tiene no hay problema: en la tienda le hacemos el registro en el momento (esa
+frase va SIEMPRE). Si EQUIPO CONSULTADO dice que ese modelo no lo tenemos, díselo
+primero y nombra las alternativas. No le hables de subir de nivel.
 Si el cliente llega hablando de Krece sin darte nivel ni línea (con el mensaje
 predefinido o con otras palabras), NO le preguntes nivel y línea (salvo que pida
 un iPhone: ahí sí pregúntaselos, porque el iPhone requiere Plata o superior): asume que es
@@ -2047,7 +2065,16 @@ def atender_celulares(from_number, numero_limpio, body):
                        f"una categoría (económico, intermedio, gama alta) o "
                        f"parte del nombre de una de ellas, elige ese equipo "
                        f"y marca tipo exacto.\n")
-    equipos, tipo_resultado, canal_ia = interpretar_pedido(body, contexto)
+    # "No", "no tengo", "no estoy registrado en cashea": sigue con los mismos
+    # equipos sin llamar a la IA (la IA lo tomaba como "no pide nada")
+    equipos = []
+    if (canal in ("krece", "cashea") and perfil.get("modelo_interes")
+            and len(body.split()) <= 6
+            and (detectar_sin_cuenta(body) or es_no_corto(canal, perfil, body))):
+        equipos = equipos_de_interes(perfil["modelo_interes"])
+        tipo_resultado, canal_ia = "exacto", None
+    if not equipos:
+        equipos, tipo_resultado, canal_ia = interpretar_pedido(body, contexto)
 
     # Si Python no reconoció el canal (mal escrito, como "caschea"),
     # se usa el que entendió la IA y se leen el nivel o la moneda
@@ -2082,10 +2109,8 @@ def atender_celulares(from_number, numero_limpio, body):
 
     # Cliente sin cuenta en Krece o Cashea: se cotiza con el nivel de entrada
     # (el registro se lo hacemos en la tienda con su cédula laminada)
-    no_corto = (canal == "cashea" and not perfil.get("nivel_cliente")
-                and re.fullmatch(r"\s*(no|nop|no tengo|no lo tengo|no la tengo|todav[ií]a no|"
-                                 r"a[uú]n no)\s*[.!]*\s*", body.lower()))
-    if canal in ("krece", "cashea") and (detectar_sin_cuenta(body) or no_corto):
+    if canal in ("krece", "cashea") and (detectar_sin_cuenta(body)
+                                         or es_no_corto(canal, perfil, body)):
         if canal == "krece":
             cambios.update(nivel_cliente="azul", linea_krece=300)
             perfil.update(nivel_cliente="azul", linea_krece=300)
