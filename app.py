@@ -541,7 +541,8 @@ def bloque_equipo(equipos, canal, perfil):
                                   "Azul: NO des cuotas de Krece; pregúntale su nivel y su línea.")
                 else:
                     lineas.append("  Los iPhone NO aplican con Krece Azul (requieren Plata o "
-                                  "superior). NO des cuotas de Krece para este equipo.")
+                                  "superior). NO des cuotas de Krece para este equipo: "
+                                  "para el iPhone ofrécele Cashea (regla IPHONE CON KRECE AZUL).")
                 continue
             hubo = False
             try:
@@ -1557,8 +1558,12 @@ NUNCA digas cuántas cuotas son antes de tener el cálculo: varía entre 3 y 10.
 Si el cliente te da nivel y línea pero todavía no dijo qué equipo quiere,
 pregúntaselo: "¿Qué modelo tienes en mente?"
 Los iPhone con Krece solo aplican de nivel Plata en adelante. Si el cliente es
-nivel Azul y pregunta por un iPhone, dile que ese equipo requiere Plata o
-superior, y pregúntale si quiere ver otra opción o subir de nivel.
+nivel Azul y pregunta por un iPhone (regla IPHONE CON KRECE AZUL): dile que con
+Krece Azul el iPhone todavía no se habilita, pero que se lo puede llevar con
+*Cashea* en 3 cuotas. Pregúntale si tiene Cashea y, si lo tiene, su nivel
+(1 Semilla, 2 Raíz, 3 Hoja, 4 Tronco, 5 Árbol o 6 Araguaney). Dile que si no lo
+tiene no hay problema: en la tienda le hacemos el registro en el momento. No le
+des montos todavía, no le ofrezcas otro equipo ni le hables de subir de nivel.
 Si el cliente llega hablando de Krece sin darte nivel ni línea (con el mensaje
 predefinido o con otras palabras), NO le preguntes nivel y línea (salvo que pida
 un iPhone: ahí sí pregúntaselos, porque el iPhone requiere Plata o superior): asume que es
@@ -1575,7 +1580,7 @@ diciendo SIEMPRE que son aproximados: el monto real lo da Krece cuando quede
 registrado.
 Si ese cliente sin cuenta pide un iPhone, NO le digas que "tiene" nivel Azul
 ni que "suba de nivel": dile que al registrarse empieza en nivel Azul y que el
-iPhone se habilita desde nivel Plata, y pregúntale si quiere ver otra opción.
+iPhone se habilita desde nivel Plata, y ofrécele Cashea como en la regla de abajo.
 
 CASHEA
 Pregunta primero el NIVEL del cliente: 1 Semilla, 2 Raíz, 3 Hoja, 4 Tronco, 5 Árbol o 6 Araguaney. Al preguntarlo nombra SIEMPRE los 6 con su número, sin saltarte ninguno. Usa SOLO esos nombres. Sin nivel no hay precio. Son 3 cuotas.
@@ -2077,7 +2082,10 @@ def atender_celulares(from_number, numero_limpio, body):
 
     # Cliente sin cuenta en Krece o Cashea: se cotiza con el nivel de entrada
     # (el registro se lo hacemos en la tienda con su cédula laminada)
-    if canal in ("krece", "cashea") and detectar_sin_cuenta(body):
+    no_corto = (canal == "cashea" and not perfil.get("nivel_cliente")
+                and re.fullmatch(r"\s*(no|nop|no tengo|no lo tengo|no la tengo|todav[ií]a no|"
+                                 r"a[uú]n no)\s*[.!]*\s*", body.lower()))
+    if canal in ("krece", "cashea") and (detectar_sin_cuenta(body) or no_corto):
         if canal == "krece":
             cambios.update(nivel_cliente="azul", linea_krece=300)
             perfil.update(nivel_cliente="azul", linea_krece=300)
@@ -2086,6 +2094,17 @@ def atender_celulares(from_number, numero_limpio, body):
         else:
             cambios["nivel_cliente"] = "1"
             perfil["nivel_cliente"] = "1"
+
+    # Krece Azul (dado por él, no supuesto) y pide iPhone: por Krece no aplica,
+    # se le ofrece Cashea (si no lo tiene, el registro se le hace en la tienda)
+    if (canal == "krece" and perfil.get("nivel_cliente") == "azul"
+            and not perfil.get("_krece_supuesto") and not perfil.get("canal_extra")
+            and equipos and tipo_resultado in ("exacto", "recomendacion")
+            and all(e["marca"].lower() == "iphone" for e in equipos)):
+        canal = "cashea"
+        cambios.update(canal_pago="cashea", nivel_cliente=None, linea_krece=None)
+        perfil.update(canal_pago="cashea", nivel_cliente=None, linea_krece=None)
+        perfil["_iphone_a_cashea"] = True   # solo para este mensaje
 
     if equipos:
         modelo = " / ".join(nombre_completo(e) for e in equipos)
@@ -2123,6 +2142,10 @@ def atender_celulares(from_number, numero_limpio, body):
         perfil_extra["nivel_cliente"] = None   # el nivel guardado es del primer canal
         info += (f"\n\nLOS MISMOS EQUIPOS CON {canal_extra.upper()}:"
                  + bloque_equipo(equipos, canal_extra, perfil_extra))
+
+    if perfil.pop("_iphone_a_cashea", None):
+        info = ("CLIENTE KRECE AZUL QUE PIDIÓ iPHONE: por Krece no aplica. Aplica la "
+                "regla IPHONE CON KRECE AZUL (ofrecer Cashea).\n" + info)
 
     print(f"INFO AL MODELO [{numero_limpio}] -> " + info[:2000].replace("\n", " / "))
 
