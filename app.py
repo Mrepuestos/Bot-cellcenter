@@ -1906,6 +1906,7 @@ Responde SOLO con JSON, sin explicaciones ni markdown:
         r = client.messages.create(
             model=MODELO_CELULARES,
             max_tokens=1500,
+            extra_body={"output_config": {"effort": "low"}},
             messages=[{"role": "user", "content": [
                 bloque_fijo,
                 {"type": "text", "text": parte_variable},
