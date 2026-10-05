@@ -2281,6 +2281,15 @@ def atender_celulares(from_number, numero_limpio, body):
     if quiere_foto:
         reply = reply.replace("[FOTO]", "").strip()
 
+    # Si mostró las tres opciones por rango, se guardan como modelo de interés
+    # para entender "el infinix" o "el más barato" en el próximo mensaje
+    if tipo_resultado == "ninguno" and not perfil.get("modelo_interes") and reply:
+        mostrados = [eq for eq in listar_por_rango(excluir_iphone=sin_iphone(perfil))
+                     if f"{eq['marca']} {eq['modelo']}".lower() in reply.lower()]
+        if mostrados:
+            guardar_perfil(numero_limpio,
+                           modelo_interes=" / ".join(nombre_completo(e) for e in mostrados))
+
     historial.append({"role": "assistant", "content": reply or "[enviado]"})
     guardar_historial(numero_limpio, historial)
 
