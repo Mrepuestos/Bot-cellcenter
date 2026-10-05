@@ -472,7 +472,7 @@ def detectar_linea(texto):
                   r"(?:linea|línea|cr[eé]dito|l[ií]mite)", texto.lower())
     if m:
         return float(m.group(1))
-    m = re.search(r"\$\s*(\d{2,5})", texto)
+    m = re.search(r"\$\s*(\d{2,5})", texto) or re.search(r"\b(\d{2,5})\s*\$", texto)
     return float(m.group(1)) if m else None
 
 
@@ -1720,7 +1720,7 @@ Si dice "llega en 24 a 48 horas", NO lo invites a verlo (no está en tienda):
 "Este equipo lo pedimos y llega a la tienda en 24 a 48 horas 📦 ¿Quieres que te
 lo apartemos? Un asesor te avisa apenas llegue para que pases a buscarlo."
 Si dice que sí, es INTENCION_COMPRA.
-Si pregunta dónde quedan, responde exactamente: ENVIAR_UBICACION
+Si pregunta dónde quedan, escribe ENVIAR_UBICACION. Si en ese mismo mensaje pregunta otra cosa (por ejemplo si aceptan Krece o Cashea), respóndela en una frase corta junto con ENVIAR_UBICACION.
 Cuando detectes intención de compra (dice que lo quiere, pregunta cómo apartarlo,
 o confirma que va a ir), responde exactamente: INTENCION_COMPRA
 Pero si todavía no le has dado el precio en el medio de pago que acaba de
