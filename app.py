@@ -534,10 +534,13 @@ def bloque_equipo(equipos, canal, perfil):
                     falta = "su nivel y su línea aprobada"
                 elif not nivel:
                     falta = f"su nivel (ya sabes que su línea es ${float(linea):.0f})"
+                elif perfil.get("_nivel_recien"):
+                    falta = (f"su línea aprobada. Te ACABA de decir su nivel: empieza con "
+                             f"'¡Perfecto, nivel {nivel.capitalize()}!' (nunca digas que ya "
+                             f"lo tenías anotado) y luego pídele la línea")
                 else:
                     falta = (f"su línea aprobada (su nivel {nivel} ya está anotado: no se lo "
-                             f"pidas ni digas que ya lo sabías; si te lo acaba de decir, "
-                             f"confírmalo natural, ej. '¡Perfecto, nivel {nivel.capitalize()}!')")
+                             f"pidas ni lo menciones)")
                 lineas.append(f"  El equipo SÍ tiene precio, pero para cotizar Krece falta "
                               f"{falta}. Pídeselo en una frase. NO respondas DERIVAR_PRECIO.")
                 continue
@@ -1527,7 +1530,8 @@ def get_system_prompt_celulares(info_equipo, perfil, rangos, lista_corta):
             datos.append("paga en bolívares" if perfil["nivel_cliente"] == "bs"
                          else "paga en divisas")
         else:
-            datos.append(f"nivel {perfil['nivel_cliente']}")
+            datos.append(f"nivel {perfil['nivel_cliente']}"
+                         + (" (te lo acaba de decir)" if perfil.get("_nivel_recien") else ""))
     if perfil.get("linea_krece"):
         datos.append(f"línea aprobada ${float(perfil['linea_krece']):.0f}")
     if perfil.get("modelo_interes"):
@@ -2045,6 +2049,7 @@ def atender_celulares(from_number, numero_limpio, body):
                 perfil["linea_krece"] = None
             cambios["nivel_cliente"] = nivel
             perfil["nivel_cliente"] = nivel
+            perfil["_nivel_recien"] = True   # lo dijo en este mensaje (solo en memoria)
         if linea:
             cambios["linea_krece"] = linea
             perfil["linea_krece"] = linea
