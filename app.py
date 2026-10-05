@@ -111,6 +111,11 @@ ASESOR_CEL_OTROS   = "584126093756"   # accesorios y todo lo demás
 NUMEROS_PRUEBA_CELULARES = ["573208112456"]
 modo_prueba_pantallas = set()   # números de prueba probando el flujo de pantallas
 krece_supuesto = set()          # clientes cotizados con Azul/$300 supuesto (solo en memoria)
+tecnico_celulares = {}   # técnico → hasta cuándo sigue en el flujo de celulares (30 min)
+confirmar_celular = {}   # técnico → (mensaje, hora) mientras confirma teléfono o pantalla
+PALABRAS_PANTALLA = ("pantalla", "display", "repuesto", "modulo", "módulo", "lcd", "oled",
+                     "incell", "tactil", "táctil", "flex", "pin de carga", "tapa")
+PALABRAS_TELEFONO = ("telefono", "teléfono", "celular", "equipo", "completo", "comprar")
 
 # ── Administradores: consultas de precios y comandos especiales ───────────────
 ADMINISTRADORES = ["584149202844", "584241369824"]
@@ -1448,7 +1453,7 @@ def get_system_prompt():
 La tienda está actualmente: {estado_tienda}
 Hoy es {dia_hoy}. El horario de HOY es {horario_hoy}. Usa SOLO este horario cuando te pregunten a qué hora cierran hoy.
 
-REGLA PRINCIPAL: Cuando el inventario muestre productos con stock mayor a 0, SIEMPRE da el precio. NUNCA digas que no está disponible si hay stock. NUNCA preguntes si es para pantalla o celular, asume que siempre es para pantalla.
+REGLA PRINCIPAL: Cuando el inventario muestre productos con stock mayor a 0, SIEMPRE da el precio. NUNCA digas que no está disponible si hay stock. Si solo nombra un modelo, asume que es para pantalla (ver regla 2 para celulares).
 
 1. PANTALLAS: Si el inventario muestra productos disponibles, responde con precio en USD y bolívares. Formato EXACTO:
 ✅ *Nombre producto*: $XX USD / Bs. XX,XXX
@@ -1475,7 +1480,7 @@ STOCK 1 o 2: da el precio y avisa que queda muy poco. Varía las frases:
 STOCK 3 o más: solo da el precio sin comentarios.
 STOCK 0: solo di que no está disponible. NUNCA sugieras contactar, reservar o esperar stock.
 
-2. CELULARES (comprar celular completo): responde exactamente: "DERIVAR_TECNICO"
+2. CELULARES: SOLO si dice claramente que quiere comprar un teléfono completo (ej. "quiero comprar un celular", "¿venden teléfonos?", "el Redmi 15C completo para mí") responde exactamente: "DERIVAR_CELULARES". Si dice pantalla, display o un repuesto, o solo nombra un modelo, es pantalla. Si menciona teléfono, celular o equipo pero no está claro si busca el teléfono o la pantalla, responde exactamente: "CONFIRMAR_CELULAR"
 3. SERVICIO TÉCNICO o reparaciones: responde exactamente: "DERIVAR_TECNICO"
 4. ACCESORIOS: responde exactamente: "DERIVAR_ACCESORIOS"
 
@@ -2218,7 +2223,9 @@ def atender_celulares(from_number, numero_limpio, body):
             reply = "Dame un momento y te confirmo"
 
     # ── Marcadores ────────────────────────────────────────────────────────────
-    if "DERIVAR_TECNICO" in reply:
+    if "DERIVAR_TECNICO" in reply and tecnico_celulares.pop(numero_limpio, None):
+        reply = "¡Claro! 🔧 Escríbeme el modelo de la pantalla o repuesto que buscas y te doy el precio."
+    elif "DERIVAR_TECNICO" in reply:
         reply = ("Para servicio técnico y reparaciones escríbenos a este número: "
                  "0422-039-2375 📲")
 
@@ -2719,6 +2726,8 @@ def webhook():
                     consultas_admin.pop(numero_limpio, None)
                     memoria_admin_ia.pop(numero_limpio, None)
                     krece_supuesto.discard(numero_limpio)
+                    tecnico_celulares.pop(numero_limpio, None)
+                    confirmar_celular.pop(numero_limpio, None)
                     send_whapi_message(from_number, "✅ Historial limpiado. Puedes empezar una conversación nueva.")
                 except Exception as e:
                     send_whapi_message(from_number, f"❌ Error limpiando historial: {e}")
@@ -2753,10 +2762,26 @@ def webhook():
                     send_whapi_message(from_number, f"❌ Error en la consulta: {e}")
                 continue
 
+            # ── Técnicos: cambio entre pantallas y celulares (Python, sin IA) ──
+            texto_min = body.lower()
+            pendiente = confirmar_celular.pop(numero_limpio, None)
+            if pendiente and time.time() - pendiente[1] < 600:
+                if any(p in texto_min for p in PALABRAS_PANTALLA):
+                    tecnico_celulares.pop(numero_limpio, None)
+                    if len(body.split()) <= 3:
+                        body = "pantalla " + pendiente[0]
+                elif any(p in texto_min for p in PALABRAS_TELEFONO):
+                    tecnico_celulares[numero_limpio] = time.time() + 1800
+                    agregar_al_buffer(from_number, numero_limpio, pendiente[0] + "\n" + body)
+                    continue
+            elif any(p in texto_min for p in PALABRAS_PANTALLA):
+                tecnico_celulares.pop(numero_limpio, None)
+
             # ── Determinar comportamiento según el número ──────────────────────
-            es_cliente_celulares = ((numero_limpio in NUMEROS_PRUEBA_CELULARES
-                                     or numero_limpio not in NUMEROS_AUTORIZADOS)
-                                    and numero_limpio not in modo_prueba_pantallas)
+            es_cliente_celulares = (((numero_limpio in NUMEROS_PRUEBA_CELULARES
+                                      or numero_limpio not in NUMEROS_AUTORIZADOS)
+                                     and numero_limpio not in modo_prueba_pantallas)
+                                    or tecnico_celulares.get(numero_limpio, 0) > time.time())
 
             # ── Flujo de celulares ────────────────────────────────────────────
             if es_cliente_celulares:
@@ -2849,6 +2874,14 @@ def webhook():
                 reply = texto_respuesta(response)
                 registrar_uso("repuestos", response)
 
+                if "DERIVAR_CELULARES" in reply:
+                    tecnico_celulares[numero_limpio] = time.time() + 1800
+                    agregar_al_buffer(from_number, numero_limpio, body)
+                    continue
+                if "CONFIRMAR_CELULAR" in reply:
+                    confirmar_celular[numero_limpio] = (body, time.time())
+                    send_whapi_message(from_number, "¿Buscas el *teléfono completo* para comprarlo 📱 o la *pantalla* 🔧?")
+                    continue
                 if "DERIVAR_TECNICO" in reply:
                     notificar_asesor(ASESOR_TECNICO, "celulares o servicio técnico", from_number)
                     reply = "Un momento, un asesor te atenderá enseguida 👋"
@@ -2907,6 +2940,14 @@ def webhook():
                 reply = texto_respuesta(response)
                 registrar_uso("repuestos-no-encontrado", response)
 
+                if "DERIVAR_CELULARES" in reply:
+                    tecnico_celulares[numero_limpio] = time.time() + 1800
+                    agregar_al_buffer(from_number, numero_limpio, body)
+                    continue
+                if "CONFIRMAR_CELULAR" in reply:
+                    confirmar_celular[numero_limpio] = (body, time.time())
+                    send_whapi_message(from_number, "¿Buscas el *teléfono completo* para comprarlo 📱 o la *pantalla* 🔧?")
+                    continue
                 if "DERIVAR_TECNICO" in reply:
                     notificar_asesor(ASESOR_TECNICO, "celulares o servicio técnico", from_number)
                     reply = "Un momento, un asesor te atenderá enseguida 👋"
