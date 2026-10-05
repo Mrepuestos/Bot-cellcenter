@@ -1725,6 +1725,7 @@ Si dice "llega en 24 a 48 horas", NO lo invites a verlo (no está en tienda):
 lo apartemos? Un asesor te avisa apenas llegue para que pases a buscarlo."
 Si dice que sí, es INTENCION_COMPRA.
 Si pregunta dónde quedan, escribe ENVIAR_UBICACION. Si en ese mismo mensaje pregunta otra cosa (por ejemplo si aceptan Krece o Cashea), respóndela en una frase corta junto con ENVIAR_UBICACION.
+Si EQUIPO CONSULTADO trae cuotas de varios equipos, NO preguntes cuál quiere antes de dar números: da de cada uno, en una línea, la inicial y la cuota del plazo más largo, y al final pregunta cuál le gusta. Una sola pregunta por mensaje.
 Cuando detectes intención de compra (dice que lo quiere, pregunta cómo apartarlo,
 o confirma que va a ir), responde exactamente: INTENCION_COMPRA
 Pero si todavía no le has dado el precio en el medio de pago que acaba de
@@ -2292,6 +2293,10 @@ def atender_celulares(from_number, numero_limpio, body):
     quiere_foto = "[FOTO]" in reply
     if quiere_foto:
         reply = reply.replace("[FOTO]", "").strip()
+
+    # Expresiones de otros países que a veces se escapan
+    for malo, bueno in (("¿qué te late?", "¿qué te parece?"), ("te late", "te gusta"), ("Te late", "Te gusta")):
+        reply = reply.replace(malo, bueno)
 
     # Si mostró las tres opciones por rango, se guardan como modelo de interés
     # para entender "el infinix" o "el más barato" en el próximo mensaje
