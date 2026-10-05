@@ -2096,6 +2096,12 @@ def atender_celulares(from_number, numero_limpio, body):
         tipo_resultado, canal_ia = "exacto", None
     if not equipos:
         equipos, tipo_resultado, canal_ia = interpretar_pedido(body, contexto)
+        # Solo dio su nivel o línea: sigue con los equipos que ya le interesaban
+        if (tipo_resultado == "ninguno" and perfil.get("modelo_interes")
+                and (cambios.get("linea_krece") or cambios.get("nivel_cliente"))):
+            interes = equipos_de_interes(perfil["modelo_interes"])
+            if interes:
+                equipos, tipo_resultado = interes, "exacto"
 
     # Si Python no reconoció el canal (mal escrito, como "caschea"),
     # se usa el que entendió la IA y se leen el nivel o la moneda
