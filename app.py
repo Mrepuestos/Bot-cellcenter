@@ -116,6 +116,7 @@ confirmar_celular = {}   # técnico → (mensaje, hora) mientras confirma teléf
 PALABRAS_PANTALLA = ("pantalla", "display", "repuesto", "modulo", "módulo", "lcd", "oled",
                      "incell", "tactil", "táctil", "flex", "pin de carga", "tapa")
 PALABRAS_TELEFONO = ("telefono", "teléfono", "celular", "equipo", "completo", "comprar")
+PALABRAS_COMPRA = ("comprar", "compro", "venden", "vendes", "para mi", "para mí")
 
 # ── Administradores: consultas de precios y comandos especiales ───────────────
 ADMINISTRADORES = ["584149202844", "584241369824"]
@@ -2794,6 +2795,19 @@ def webhook():
                     and numero_limpio not in modo_prueba_pantallas):
                 print("Número no autorizado: " + numero_limpio)
                 continue
+
+            # Técnico que habla de un teléfono (sin mencionar pantalla): se decide en Python
+            texto_tec = body.lower()
+            if not any(p in texto_tec for p in PALABRAS_PANTALLA):
+                pide_compra = any(p in texto_tec for p in PALABRAS_COMPRA)
+                if pide_compra and any(p in texto_tec for p in ("celular", "telefono", "teléfono", "equipo")):
+                    tecnico_celulares[numero_limpio] = time.time() + 1800
+                    agregar_al_buffer(from_number, numero_limpio, body)
+                    continue
+                if any(p in texto_tec for p in ("celular", "telefono", "teléfono")):
+                    confirmar_celular[numero_limpio] = (body, time.time())
+                    send_whapi_message(from_number, "¿Buscas el *teléfono completo* para comprarlo 📱 o la *pantalla* 🔧?")
+                    continue
 
             if from_number in stock_bajo_pendiente:
                 if any(palabra in body.lower() for palabra in PALABRAS_SI):
