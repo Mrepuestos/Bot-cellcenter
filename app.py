@@ -9,7 +9,8 @@ import threading
 import xmlrpc.client
 import json
 import re
-from datetime import datetime
+import random
+from datetime import datetime, timedelta
 import pytz
 from supabase import create_client
 
@@ -335,10 +336,11 @@ def guardar_historial(numero, historial):
 def cargar_perfil(numero):
     """canal_pago, canal_extra, nivel_cliente, linea_krece y modelo_interes."""
     vacio = {"canal_pago": None, "canal_extra": None, "nivel_cliente": None,
-             "linea_krece": None, "modelo_interes": None}
+             "linea_krece": None, "modelo_interes": None, "nombre": None,
+             "nombre_preguntado": None}
     try:
         r = supabase.table("Clientes").select(
-            "canal_pago,canal_extra,nivel_cliente,linea_krece,modelo_interes"
+            "canal_pago,canal_extra,nivel_cliente,linea_krece,modelo_interes,nombre,nombre_preguntado"
         ).eq("numero", numero).execute()
         if r.data:
             return {k: r.data[0].get(k) for k in vacio}
@@ -1535,10 +1537,14 @@ def get_system_prompt_celulares(info_equipo, perfil, rangos, lista_corta):
                          + (" (te lo acaba de decir)" if perfil.get("_nivel_recien") else ""))
     if perfil.get("linea_krece"):
         datos.append(f"línea aprobada ${float(perfil['linea_krece']):.0f}")
+    if perfil.get("nombre"):
+        datos.append(f"se llama {perfil['nombre']}")
     if perfil.get("modelo_interes"):
         datos.append(f"le interesa el {perfil['modelo_interes']}")
     conocidos = ("Ya sabes de él: " + ", ".join(datos) +
                  ". No se lo vuelvas a preguntar.") if datos else ""
+    if perfil.get("_pedir_nombre"):
+        conocidos += " No sabes su nombre (regla NOMBRE)."
     if perfil.get("_krece_supuesto"):
         conocidos += (" OJO: él NO te dio nivel ni línea; tú supusiste Azul con $300. "
                       "Cotiza con los montos de EQUIPO CONSULTADO sin pedirle esos datos. "
@@ -1561,6 +1567,8 @@ Habla como se habla en Venezuela. NUNCA uses expresiones de otros países como
 "vale" (a la española) o "bacano". En vez de "¿te late?" di "¿te gusta?",
 "¿qué te parece?" o "¿te interesa?".
 No repitas lo que ya dijiste en el mensaje anterior.
+Si sabes cómo se llama el cliente, úsalo con naturalidad al saludar, al cerrar o al dar una buena noticia; NO lo repitas en cada mensaje.
+Regla NOMBRE: si los datos dicen que no sabes su nombre, pregúntalo UNA sola vez, casual, en un mensaje donde no hagas otra pregunta (por ejemplo cuando agradece, dice "ok" o "lo voy a pensar"): "Por cierto, ¿con quién tengo el gusto? 😊", y agrega al final PREGUNTE_NOMBRE. Nunca insistas. Si el cliente te dice su nombre, agrega al final NOMBRE:<su nombre>.
 No menciones el horario ni si estamos abiertos o cerrados a menos que el cliente
 lo pregunte, o que quiera pasar hoy y ya esté cerrado. No lo digas al saludar.
 
@@ -1965,6 +1973,10 @@ Responde SOLO con JSON, sin explicaciones ni markdown:
 def atender_celulares(from_number, numero_limpio, body):
     """Atiende a un cliente de celulares de punta a punta."""
     perfil = cargar_perfil(numero_limpio)
+    nombre_dicho = detectar_nombre(body)
+    if nombre_dicho:
+        perfil["nombre"] = nombre_dicho
+        guardar_perfil(numero_limpio, nombre=nombre_dicho)
     cambios = {}
     if (numero_limpio in krece_supuesto and perfil.get("nivel_cliente") == "azul"
             and float(perfil.get("linea_krece") or 0) == 300):
@@ -2219,6 +2231,8 @@ def atender_celulares(from_number, numero_limpio, body):
     historial.append({"role": "user", "content": body})
     if len(historial) > 4:
         historial = historial[-4:]
+    if len(historial) > 1 and debe_pedir_nombre(perfil):
+        perfil["_pedir_nombre"] = True
 
     if iphone_a_cashea:
         # Respuesta fija, sin IA: Krece Azul no aplica para iPhone, se ofrece Cashea
@@ -2236,6 +2250,7 @@ def atender_celulares(from_number, numero_limpio, body):
         if not reply:
             print("La respuesta al cliente llegó vacía")
             reply = "Dame un momento y te confirmo"
+    reply = marcas_nombre(numero_limpio, reply)
 
     # ── Marcadores ────────────────────────────────────────────────────────────
     if "DERIVAR_TECNICO" in reply and tecnico_celulares.pop(numero_limpio, None):
@@ -2775,6 +2790,7 @@ def webhook():
 
             # ── Aviso de IA la primera vez que escribe ─────────────────────────
             if numero_limpio not in ADMINISTRADORES:
+                registrar_cliente(numero_limpio, msg.get("from_name", ""))
                 enviar_aviso_ia(from_number, numero_limpio)
 
             # ── Administradores: solo modo administrador ──────────────────────
@@ -3007,6 +3023,149 @@ def webhook():
         print(f"Error en webhook: {e}")
         print(traceback.format_exc())
         return jsonify({"status": "error", "detail": str(e)}), 200
+
+# ── Relación con clientes de celulares: nombre, bienvenida y contacto en Google ──
+HORA_BIENVENIDA = 10
+DIAS_PARA_REPREGUNTAR = 7
+NO_ES_NOMBRE = {"mama", "mamá", "papa", "papá", "mi", "el", "la", "de", "del", "dios",
+                "amor", "vida", "cell", "tienda", "celular", "telefono", "teléfono",
+                "movil", "móvil", "shop", "store", "servicio", "repuestos", "cliente"}
+
+
+def limpiar_nombre(texto):
+    """Primer nombre, solo si parece un nombre real."""
+    palabras = (texto or "").strip().split()
+    if not palabras:
+        return None
+    p = palabras[0].strip(".,!¡¿?")
+    if not p.isalpha() or not 2 <= len(p) <= 14 or p.lower() in NO_ES_NOMBRE:
+        return None
+    return p.capitalize()
+
+
+def detectar_nombre(texto):
+    """'me llamo Juan' o 'mi nombre es Juan' -> 'Juan' (Python, sin IA)."""
+    m = re.search(r"\b(?:me llamo|mi nombre es)\s+(\S+)", texto or "", re.IGNORECASE)
+    return limpiar_nombre(m.group(1)) if m else None
+
+
+def debe_pedir_nombre(perfil):
+    """Sin nombre y sin haberlo preguntado en los últimos 7 días."""
+    if perfil.get("nombre"):
+        return False
+    ultimo = perfil.get("nombre_preguntado")
+    if not ultimo:
+        return True
+    try:
+        fecha = datetime.fromisoformat(ultimo.replace("Z", "")[:19])
+        return (datetime.utcnow() - fecha).days >= DIAS_PARA_REPREGUNTAR
+    except Exception:
+        return False
+
+
+def marcas_nombre(numero_limpio, reply):
+    """Quita PREGUNTE_NOMBRE y NOMBRE:<x> de la respuesta y los guarda."""
+    if "PREGUNTE_NOMBRE" in reply or "con quién tengo el gusto" in reply.lower():
+        guardar_perfil(numero_limpio, nombre_preguntado=datetime.utcnow().isoformat() + "Z")
+        reply = reply.replace("PREGUNTE_NOMBRE", "")
+    m = re.search(r"NOMBRE:\s*<?([^\s>]*)>?", reply)
+    if m:
+        nombre = limpiar_nombre(m.group(1))
+        if nombre:
+            guardar_perfil(numero_limpio, nombre=nombre)
+        reply = reply.replace(m.group(0), "")
+    return reply.strip()
+
+
+def registrar_cliente(numero_limpio, from_name):
+    """Clientes de celulares: guarda nombre de WhatsApp y fecha de primer contacto."""
+    if numero_limpio in NUMEROS_AUTORIZADOS or numero_limpio in modo_prueba_pantallas:
+        return   # técnicos: por ahora sin nombre
+    try:
+        r = supabase.table("Clientes").select("nombre").eq("numero", numero_limpio).execute()
+        fila = r.data[0] if r.data else None
+        if fila is None:   # cliente totalmente nuevo
+            guardar_perfil(numero_limpio, nombre=limpiar_nombre(from_name),
+                           primer_contacto=datetime.utcnow().isoformat() + "Z")
+        elif not fila.get("nombre"):
+            guardar_perfil(numero_limpio, nombre=limpiar_nombre(from_name))
+    except Exception as e:
+        print(f"Error registrando cliente: {e}")
+
+
+def guardar_contacto_google(numero, nombre):
+    """Guarda al cliente en Google Contacts. Sin credenciales en Render, no hace nada."""
+    cid = os.environ.get("GOOGLE_CONTACTS_CLIENT_ID")
+    sec = os.environ.get("GOOGLE_CONTACTS_CLIENT_SECRET")
+    ref = os.environ.get("GOOGLE_CONTACTS_REFRESH_TOKEN")
+    if not (cid and sec and ref):
+        print("Google Contacts sin configurar: contacto no guardado")
+        return
+    try:
+        t = requests.post("https://oauth2.googleapis.com/token", timeout=10, data={
+            "client_id": cid, "client_secret": sec,
+            "refresh_token": ref, "grant_type": "refresh_token"})
+        t.raise_for_status()
+        requests.post("https://people.googleapis.com/v1/people:createContact", timeout=10,
+                      headers={"Authorization": "Bearer " + t.json()["access_token"]},
+                      json={"names": [{"givenName": nombre or "Cliente", "familyName": "Cell Center"}],
+                            "phoneNumbers": [{"value": "+" + numero}]}).raise_for_status()
+    except Exception as e:
+        print(f"Error guardando contacto en Google: {e}")
+
+
+def send_whapi_contacto(to):
+    """Envía la tarjeta de contacto de la tienda (un toque para guardarla)."""
+    vcard = ("BEGIN:VCARD\nVERSION:3.0\nFN:Cell Center 4620\nORG:Cell Center 4620\n"
+             "TEL;type=CELL;waid=584121889224:+58 412 1889224\nEND:VCARD")
+    try:
+        requests.post(f"{WHAPI_API_URL}/messages/contact",
+                      json={"to": to, "name": "Cell Center 4620", "vcard": vcard},
+                      headers={"Authorization": f"Bearer {WHAPI_TOKEN}"}, timeout=10).raise_for_status()
+    except Exception as e:
+        print(f"Error enviando contacto Whapi: {e}")
+
+
+def enviar_bienvenidas():
+    """Bienvenida a los clientes que escribieron por primera vez el día anterior."""
+    hoy0 = datetime.now(pytz.timezone("America/Caracas")).replace(hour=0, minute=0, second=0, microsecond=0)
+    fmt = "%Y-%m-%dT%H:%M:%SZ"
+    desde = (hoy0 - timedelta(days=2)).astimezone(pytz.utc).strftime(fmt)
+    hasta = hoy0.astimezone(pytz.utc).strftime(fmt)
+    r = (supabase.table("Clientes").select("numero,nombre")
+         .gte("primer_contacto", desde).lt("primer_contacto", hasta)
+         .is_("bienvenida_enviada", "null").execute())
+    for c in r.data or []:
+        numero, nombre = c["numero"], c.get("nombre")
+        # Se marca primero: así nunca se envía dos veces, aunque Render reinicie
+        marca = (supabase.table("Clientes").update({"bienvenida_enviada": True})
+                 .eq("numero", numero).is_("bienvenida_enviada", "null").execute())
+        if not marca.data:
+            continue
+        guardar_contacto_google(numero, nombre)
+        saludo = f"¡Hola, {nombre}! 😊" if nombre else "¡Hola! 😊"
+        send_whapi_message(numero, saludo + " Gracias por escribirnos a *Cell Center 4620* 🙌 "
+                           "Te dejo nuestro contacto para que nos guardes: así verás en nuestros "
+                           "estados las promociones y los equipos nuevos que van llegando a la tienda. "
+                           "¡Nosotros también te guardamos! 📲")
+        send_whapi_contacto(numero)
+        time.sleep(random.uniform(8, 15))   # pausa entre envíos para cuidar el número
+
+
+def _ciclo_bienvenidas():
+    ultimo_dia = None
+    while True:
+        time.sleep(60)
+        try:
+            ahora = datetime.now(pytz.timezone("America/Caracas"))
+            if HORA_BIENVENIDA <= ahora.hour < 20 and ultimo_dia != ahora.date():
+                ultimo_dia = ahora.date()
+                enviar_bienvenidas()
+        except Exception as e:
+            print(f"Error en el ciclo de bienvenidas: {e}")
+
+
+threading.Thread(target=_ciclo_bienvenidas, daemon=True).start()
 
 
 if __name__ == '__main__':
