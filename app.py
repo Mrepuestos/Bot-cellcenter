@@ -3049,6 +3049,18 @@ def webhook():
 # ── Relación con clientes de celulares: nombre, bienvenida y contacto en Google ──
 HORA_BIENVENIDA = 10
 DIAS_PARA_REPREGUNTAR = 7
+MAX_BIENVENIDAS_DIA = 20
+SALUDOS_BIENVENIDA = [
+    "{saludo} Gracias por escribirnos a *Cell Center 4620* 🙌 Te dejo nuestro contacto para que nos "
+    "guardes: así verás en nuestros estados las promociones y los equipos nuevos que van llegando. "
+    "¡Nosotros también te guardamos! 📲",
+    "{saludo} Fue un gusto atenderte en *Cell Center 4620* 📱 Guarda nuestro número y no te pierdas "
+    "las ofertas y novedades que publicamos en los estados. ¡Ya te tenemos agendado! ✅",
+    "{saludo} Gracias por tu mensaje 🙏 Aquí tienes el contacto de *Cell Center 4620*: guárdalo y "
+    "verás en nuestros estados los equipos que van llegando y las promociones del día 🔥",
+    "{saludo} Te escribimos de *Cell Center 4620* 😊 Agrega este número a tus contactos para ver en "
+    "los estados nuestras promociones y novedades. ¡Nosotros ya te guardamos! 📲",
+]
 NO_ES_NOMBRE = {"mama", "mamá", "papa", "papá", "mi", "el", "la", "de", "del", "dios",
                 "amor", "vida", "cell", "tienda", "celular", "telefono", "teléfono",
                 "movil", "móvil", "shop", "store", "servicio", "repuestos", "cliente"}
@@ -3148,17 +3160,31 @@ def send_whapi_contacto(to):
         print(f"Error enviando contacto Whapi: {e}")
 
 
+def tuvo_conversacion(historial_json):
+    """True si el cliente escribió al menos 2 mensajes (no un simple 'hola')."""
+    try:
+        historial = json.loads(historial_json or "[]")
+    except Exception:
+        return False
+    return sum(1 for m in historial if m.get("role") == "user") >= 2
+
+
 def enviar_bienvenidas():
     """Bienvenida a los clientes que escribieron por primera vez el día anterior."""
     hoy0 = datetime.now(pytz.timezone("America/Caracas")).replace(hour=0, minute=0, second=0, microsecond=0)
     fmt = "%Y-%m-%dT%H:%M:%SZ"
     desde = (hoy0 - timedelta(days=2)).astimezone(pytz.utc).strftime(fmt)
     hasta = hoy0.astimezone(pytz.utc).strftime(fmt)
-    r = (supabase.table("Clientes").select("numero,nombre")
+    r = (supabase.table("Clientes").select("numero,nombre,historial")
          .gte("primer_contacto", desde).lt("primer_contacto", hasta)
          .is_("bienvenida_enviada", "null").execute())
+    enviados = 0
     for c in r.data or []:
         numero, nombre = c["numero"], c.get("nombre")
+        if enviados >= MAX_BIENVENIDAS_DIA:
+            break   # tope diario: el resto queda para mañana
+        if not tuvo_conversacion(c.get("historial")):
+            continue   # solo escribió un "hola": no se le envía
         # Se marca primero: así nunca se envía dos veces, aunque Render reinicie
         marca = (supabase.table("Clientes").update({"bienvenida_enviada": True})
                  .eq("numero", numero).is_("bienvenida_enviada", "null").execute())
@@ -3166,12 +3192,10 @@ def enviar_bienvenidas():
             continue
         guardar_contacto_google(numero, nombre)
         saludo = f"¡Hola, {nombre}! 😊" if nombre else "¡Hola! 😊"
-        send_whapi_message(numero, saludo + " Gracias por escribirnos a *Cell Center 4620* 🙌 "
-                           "Te dejo nuestro contacto para que nos guardes: así verás en nuestros "
-                           "estados las promociones y los equipos nuevos que van llegando a la tienda. "
-                           "¡Nosotros también te guardamos! 📲")
+        send_whapi_message(numero, random.choice(SALUDOS_BIENVENIDA).format(saludo=saludo))
         send_whapi_contacto(numero)
         time.sleep(random.uniform(8, 15))   # pausa entre envíos para cuidar el número
+        enviados += 1
 
 
 def _ciclo_bienvenidas():
