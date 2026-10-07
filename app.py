@@ -2312,7 +2312,7 @@ def atender_celulares(from_number, numero_limpio, body):
 
     enviar_ubicacion = "ENVIAR_UBICACION" in reply
     if enviar_ubicacion:
-        reply = reply.replace("ENVIAR_UBICACION", "").strip()
+        reply = re.sub(r"\n\s*\n", "\n\n", reply.replace("ENVIAR_UBICACION", "")).strip()
         if not reply:
             reply = ("¿Te ayudo con algo más del equipo que viste? 😊" if perfil.get("modelo_interes")
                      else "¿Qué equipo estás buscando? Te ayudo a escoger 😊")
