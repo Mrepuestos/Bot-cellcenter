@@ -133,7 +133,7 @@ TIENDA_LAT = 10.2325
 TIENDA_LNG = -66.664972
 TIENDA_NOMBRE = "Cell Center 4620"
 TIENDA_DIRECCION = ("Centro, Av San Rafael entre calle El Carmen y Sucre, "
-                    "frente a La Asunción, a 30 mtrs")
+                    "frente al CC La Asunción, a 30 mtrs de la parada de Mopia")
 FOTO_FACHADA_URL = "https://i.postimg.cc/rwZJRKzD/Whats-App-Image-2026-10-07-at-9-08-11-AM.jpg"
 
 # ── Modelo que atiende el flujo de celulares ──────────────────────────────────
