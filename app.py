@@ -134,6 +134,7 @@ TIENDA_LNG = -66.664972
 TIENDA_NOMBRE = "Cell Center 4620"
 TIENDA_DIRECCION = ("Centro, Av San Rafael entre calle El Carmen y Sucre, "
                     "frente a La Asunción, a 30 mtrs")
+FOTO_FACHADA_URL = "https://i.postimg.cc/rwZJRKzD/Whats-App-Image-2026-10-07-at-9-08-11-AM.jpg"
 
 # ── Modelo que atiende el flujo de celulares ──────────────────────────────────
 MODELO_CELULARES = "claude-sonnet-5"
@@ -1315,20 +1316,29 @@ def notificar_stock_bajo(numero_cliente: str, producto: str, stock: int):
 
 
 def send_whapi_ubicacion(to: str):
-    url = f"{WHAPI_API_URL}/messages/location"
+    # 1) Foto de la fachada con la dirección escrita en el mismo mensaje
+    texto = f"📍 *{TIENDA_NOMBRE}*\n{TIENDA_DIRECCION}\nSanta Teresa del Tuy"
     headers = {"Authorization": f"Bearer {WHAPI_TOKEN}", "Content-Type": "application/json"}
-    payload = {
-        "to": to,
-        "latitude": TIENDA_LAT,
-        "longitude": TIENDA_LNG,
-        "name": TIENDA_NOMBRE,
-        "address": TIENDA_DIRECCION,
-    }
+    foto_ok = False
+    if FOTO_FACHADA_URL:
+        try:
+            media = _descargar_foto(FOTO_FACHADA_URL)
+            requests.post(f"{WHAPI_API_URL}/messages/image", headers=headers, timeout=60,
+                          json={"to": to, "media": media, "caption": texto}).raise_for_status()
+            foto_ok = True
+        except requests.exceptions.Timeout:
+            foto_ok = True   # puede llegar tarde, pero llega
+        except Exception as e:
+            print(f"Error enviando foto fachada: {e}")
+    if not foto_ok:
+        send_whapi_message(to, texto)   # sin foto, al menos la dirección escrita
+    # 2) Pin de ubicación
     try:
-        requests.post(url, json=payload, headers=headers, timeout=10).raise_for_status()
+        requests.post(f"{WHAPI_API_URL}/messages/location", headers=headers, timeout=10,
+                      json={"to": to, "latitude": TIENDA_LAT, "longitude": TIENDA_LNG,
+                            "name": TIENDA_NOMBRE, "address": TIENDA_DIRECCION}).raise_for_status()
     except Exception as e:
         print(f"Error enviando ubicación Whapi: {e}")
-        send_whapi_message(to, f"📍 *{TIENDA_NOMBRE}*\n{TIENDA_DIRECCION}")
 
 
 def asesor_disponible():
@@ -1733,7 +1743,7 @@ Si dice "llega en 24 a 48 horas", NO lo invites a verlo (no está en tienda):
 "Este equipo lo pedimos y llega a la tienda en 24 a 48 horas 📦 ¿Quieres que te
 lo apartemos? Un asesor te avisa apenas llegue para que pases a buscarlo."
 Si dice que sí, es INTENCION_COMPRA.
-Si pregunta dónde quedan, escribe ENVIAR_UBICACION. Si en ese mismo mensaje pregunta otra cosa (por ejemplo si aceptan Krece o Cashea), respóndela en una frase corta junto con ENVIAR_UBICACION.
+Si pregunta dónde quedan o si son de algún lugar (ej. "¿son de Santa Teresa?"), escribe ENVIAR_UBICACION (el sistema le manda la foto de la tienda, la dirección y el mapa) y una frase corta que responda ("¡Sí, estamos en Santa Teresa del Tuy! 😊"). Termina con UNA pregunta para seguir la conversación (qué equipo busca o, si ya vio uno, algo de ese equipo). No digas que un vendedor lo espera ni te despidas: solo quería saber dónde quedan. Si en ese mismo mensaje pregunta otra cosa (por ejemplo si aceptan Krece o Cashea), respóndela en una frase corta junto con ENVIAR_UBICACION.
 Si EQUIPO CONSULTADO trae cuotas de varios equipos, NO preguntes cuál quiere antes de dar números: da de cada uno, en una línea, la inicial y la cuota del plazo más largo, y al final pregunta cuál le gusta. Una sola pregunta por mensaje.
 Cuando detectes intención de compra (dice que lo quiere, pregunta cómo apartarlo,
 o confirma que va a ir), responde exactamente: INTENCION_COMPRA
@@ -2304,7 +2314,8 @@ def atender_celulares(from_number, numero_limpio, body):
     if enviar_ubicacion:
         reply = reply.replace("ENVIAR_UBICACION", "").strip()
         if not reply:
-            reply = "Aquí te dejo la ubicación. Te esperamos, un vendedor te atenderá en la tienda"
+            reply = ("¿Te ayudo con algo más del equipo que viste? 😊" if perfil.get("modelo_interes")
+                     else "¿Qué equipo estás buscando? Te ayudo a escoger 😊")
 
     quiere_foto = "[FOTO]" in reply
     if quiere_foto:
@@ -2326,6 +2337,10 @@ def atender_celulares(from_number, numero_limpio, body):
     historial.append({"role": "assistant", "content": reply or "[enviado]"})
     guardar_historial(numero_limpio, historial)
 
+    # Foto de la fachada + dirección + mapa primero; la pregunta queda de última
+    if enviar_ubicacion:
+        send_whapi_ubicacion(from_number)
+
     if reply:
         send_whapi_message(from_number, reply)
 
@@ -2339,9 +2354,6 @@ def atender_celulares(from_number, numero_limpio, body):
             send_whapi_message(from_number,
                 "Por ahora no tengo la foto de ese modelo, pero puedes pasar "
                 "por la tienda a verlo en persona 😊")
-
-    if enviar_ubicacion:
-        send_whapi_ubicacion(from_number)
 
 
 # ── Modo administrador: cotizaciones rápidas con cálculo exacto ───────────────
