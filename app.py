@@ -468,6 +468,10 @@ def detectar_sin_cuenta(texto):
 
 def detectar_linea(texto):
     """Busca un monto que parezca la línea aprobada de Krece."""
+    # "mi monto era 300$ y ahora me aparece 40$": vale el ÚLTIMO monto
+    montos = re.findall(r"\$\s*(\d{2,5})|\b(\d{2,5})\s*(?:\$|d[oó]lares\b|usd\b)", texto.lower())
+    if len(montos) >= 2:
+        return float(next(n for n in montos[-1] if n))
     m = re.search(r"(?:linea|l\u00ednea|aprobad[oa]|credito|cr\u00e9dito|limite|l\u00edmite)"
                   r"[^\d]{0,15}(\d{2,5})", texto.lower())
     if m:
@@ -2325,14 +2329,20 @@ def atender_celulares(from_number, numero_limpio, body):
     for malo, bueno in (("¿qué te late?", "¿qué te parece?"), ("te late", "te gusta"), ("Te late", "Te gusta")):
         reply = reply.replace(malo, bueno)
 
-    # Si mostró las tres opciones por rango, se guardan como modelo de interés
-    # para entender "el infinix" o "el más barato" en el próximo mensaje
-    if tipo_resultado == "ninguno" and not perfil.get("modelo_interes") and reply:
-        mostrados = [eq for eq in listar_por_rango(excluir_iphone=sin_iphone(perfil))
-                     if f"{eq['marca']} {eq['modelo']}".lower() in reply.lower()]
-        if mostrados:
-            guardar_perfil(numero_limpio,
-                           modelo_interes=" / ".join(nombre_completo(e) for e in mostrados))
+    # Equipos que el bot nombró por su cuenta (tres opciones o LISTA CORTA) se
+    # suman al modelo de interés, para entender "sí", "ese" o "el más barato"
+    if reply:
+        previo = perfil.get("modelo_interes") or ""
+        excluir = sin_iphone(perfil)
+        nuevos = []
+        for eq in listar_por_rango(excluir_iphone=excluir) + listar_mas_baratos(12, excluir_iphone=excluir):
+            nombre = nombre_completo(eq)
+            if (f"{eq['marca']} {eq['modelo']}".lower() in reply.lower()
+                    and nombre.lower() not in previo.lower() and nombre not in nuevos):
+                nuevos.append(nombre)
+        if nuevos:
+            todos = ([n for n in previo.split(" / ") if n] + nuevos)[-4:]
+            guardar_perfil(numero_limpio, modelo_interes=" / ".join(todos))
 
     historial.append({"role": "assistant", "content": reply or "[enviado]"})
     guardar_historial(numero_limpio, historial)
