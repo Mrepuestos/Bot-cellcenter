@@ -2213,6 +2213,11 @@ def atender_celulares(from_number, numero_limpio, body):
     elif tipo_resultado == "mas_opciones":
         info = ("El cliente pregunta si hay más opciones. SÍ hay más: mándale "
                 "la LISTA CORTA tal cual y pregúntale si busca alguna marca o presupuesto.")
+    elif tipo_resultado == "ninguno" and "anuncio de variedad" in body.lower():
+        info = ("El cliente viene del anuncio de variedad de equipos: quiere ver "
+                "qué tenemos disponible. Mándale la LISTA CORTA tal cual, una línea "
+                "por equipo, y pregúntale cuál le llama la atención. Si además "
+                "pregunta otra cosa (ubicación, formas de pago), respóndela también.")
     elif tipo_resultado == "ninguno":
         info = ("El cliente no está preguntando por un equipo concreto, o pidió "
                 "algo que no tenemos ni se parece a nada del catálogo. "
