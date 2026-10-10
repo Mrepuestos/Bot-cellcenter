@@ -54,6 +54,13 @@ KRECE_LINEA_DEFECTO = {
     "oro": Decimal("260"), "platino": Decimal("310"),
 }
 KRECE_INICIAL_MAXIMA = Decimal("0.50")   # tope: nunca se pide más del 50%
+# Krece "Otros" (iPhone y todo lo que no es Android): va por la Línea disponible.
+# Verificado en el simulador del portal (oct 2026). Si la inicial pasa del 50% se cotiza igual.
+KRECE_FACTORES_OTROS = {
+    "plata":   {3: "1.20", 4: "1.35", 6: "1.50"},
+    "oro":     {3: "1.20", 4: "1.30", 6: "1.45"},
+    "platino": {3: "1.20", 4: "1.30", 6: "1.40"},
+}
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -147,7 +154,7 @@ def cashea(paralelo, nivel):
 #  Krece
 # ══════════════════════════════════════════════════════════════════════════
 
-def krece(paralelo, nivel, plazo=6, linea=None, inicial_pct=None):
+def krece(paralelo, nivel, plazo=6, linea=None, inicial_pct=None, tipo="celular"):
     """
     Fórmula verificada contra 416 simulaciones del portal:
         financiado = precio × (1 - %inicial)      <- SIN redondear
@@ -158,10 +165,11 @@ def krece(paralelo, nivel, plazo=6, linea=None, inicial_pct=None):
     Krece sube la inicial hasta que quepa.
     """
     clave = _normalizar(nivel)
-    if clave not in KRECE_INICIAL:
+    tabla = KRECE_FACTORES_OTROS if tipo == "otros" else KRECE_FACTORES
+    if clave not in KRECE_INICIAL or clave not in tabla:
         raise ValueError(f"Nivel de Krece no reconocido: {nivel}")
-    if plazo not in KRECE_FACTORES[clave]:
-        disponibles = sorted(KRECE_FACTORES[clave])
+    if plazo not in tabla[clave]:
+        disponibles = sorted(tabla[clave])
         raise ValueError(
             f"Nivel {clave} no maneja {plazo} cuotas. Disponibles: {disponibles}")
 
@@ -177,13 +185,14 @@ def krece(paralelo, nivel, plazo=6, linea=None, inicial_pct=None):
         financiado = precio * (1 - pct)
         tope = True
 
-    if pct > KRECE_INICIAL_MAXIMA:
+    # Celulares: tope de 50%. Otros (iPhone): se cotiza igual, salvo sin línea libre
+    if (pct > KRECE_INICIAL_MAXIMA and tipo != "otros") or pct >= 1:
         return {
             "canal": "Krece", "nivel": clave, "aplica": False,
             "motivo": "El equipo excede la línea aprobada del cliente",
         }
 
-    factor = _d(KRECE_FACTORES[clave][plazo])
+    factor = _d(tabla[clave][plazo])
     cuota = _redondear(financiado * factor / plazo)
     inicial = _redondear(precio * pct)
     return {
@@ -199,9 +208,10 @@ def krece(paralelo, nivel, plazo=6, linea=None, inicial_pct=None):
     }
 
 
-def plazos_krece(nivel):
+def plazos_krece(nivel, tipo="celular"):
     """Plazos que maneja un nivel."""
-    return sorted(KRECE_FACTORES[_normalizar(nivel)])
+    tabla = KRECE_FACTORES_OTROS if tipo == "otros" else KRECE_FACTORES
+    return sorted(tabla[_normalizar(nivel)])
 
 
 # ══════════════════════════════════════════════════════════════════════════
