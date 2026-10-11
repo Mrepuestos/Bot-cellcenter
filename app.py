@@ -2017,6 +2017,10 @@ REGLAS:
 - Si pide un criterio en vez de un modelo (fotos, juegos, batería, RAM,
   almacenamiento, presupuesto), elige hasta 3 que cumplan de TODO el
   catálogo, aunque antes le interesara otro modelo, y marca tipo "exacto".
+- PERO si está comparando o eligiendo ENTRE los que ya le interesaban
+  ("el que tenga más capacidad", "cuál de los dos tiene mejor batería",
+  "el más barato", "el de 6 de RAM"), elige solo entre esos, con tipo
+  "exacto". Si empatan en lo que pide, devuelve los empatados.
 - Si pregunta si hay MÁS opciones ("¿solo esos?", "¿no tienes más?",
   "¿otras marcas?"), NO está eligiendo los que vio: lista vacía y tipo
   "mas_opciones". Si nombra una marca, es tipo "exacto".
@@ -2238,7 +2242,7 @@ def atender_celulares(from_number, numero_limpio, body):
     if perfil.get("modelo_interes"):
         contexto = (f"\nEn mensajes anteriores le interesaba el "
                     f"{perfil['modelo_interes']}. Si ahora no menciona otro "
-                    f"modelo ni pide una característica, se refiere a ese o esos.\n")
+                    f"modelo, se refiere a ese o esos (también si los compara).\n")
     else:
         rango_ctx = listar_por_rango(excluir_iphone=sin_iphone(perfil))
         if rango_ctx:
