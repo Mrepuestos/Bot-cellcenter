@@ -2119,6 +2119,11 @@ def atender_celulares(from_number, numero_limpio, body):
     if (detectado == "contado" and canal_previo and canal_previo != "contado"
             and not any(p in body.lower() for p in PALABRAS_CONTADO_EXPLICITO)):
         detectado = None
+        # "precio en divisa" sin hablar de inicial ni cuotas: quiere ver también
+        # el precio de contado. Se le muestran los dos (su financiamiento y contado).
+        if not re.search(r"inicial|cuota", body.lower()):
+            perfil["canal_extra"] = "contado"
+            cambios["canal_extra"] = "contado"
     canal = detectado or perfil.get("canal_pago")
     canal_anterior = perfil.get("canal_pago")
 
