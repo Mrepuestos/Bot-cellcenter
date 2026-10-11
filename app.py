@@ -2020,7 +2020,8 @@ REGLAS:
 - PERO si está comparando o eligiendo ENTRE los que ya le interesaban
   ("el que tenga más capacidad", "cuál de los dos tiene mejor batería",
   "el más barato", "el de 6 de RAM"), elige solo entre esos, con tipo
-  "exacto". Si empatan en lo que pide, devuelve los empatados.
+  "exacto". Devuelve UNO solo: si empatan en lo que pide, desempata por
+  más RAM y luego por más almacenamiento.
 - Si pregunta si hay MÁS opciones ("¿solo esos?", "¿no tienes más?",
   "¿otras marcas?"), NO está eligiendo los que vio: lista vacía y tipo
   "mas_opciones". Si nombra una marca, es tipo "exacto".
