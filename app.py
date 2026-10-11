@@ -3210,23 +3210,46 @@ SALUDOS_BIENVENIDA = [
 ]
 NO_ES_NOMBRE = {"mama", "mamá", "papa", "papá", "mi", "el", "la", "de", "del", "dios",
                 "amor", "vida", "cell", "tienda", "celular", "telefono", "teléfono",
-                "movil", "móvil", "shop", "store", "servicio", "repuestos", "cliente"}
+                "movil", "móvil", "shop", "store", "servicio", "repuestos", "cliente",
+                # apodos y formas de cariño
+                "negro", "negra", "negrito", "negrita", "gordo", "gorda", "gordito",
+                "gordita", "flaco", "flaca", "flaquito", "flaquita", "bebe", "bebé",
+                "beba", "baby", "bby", "princesa", "reina", "rey", "chamo", "chama",
+                "pana", "mami", "papi", "nena", "nene", "bella", "bello", "linda",
+                "lindo", "guapa", "guapo", "morena", "moreno", "catira", "catire",
+                "chiquita", "chiquito", "tia", "tía", "tio", "tío", "abuela", "abuelo",
+                "hermano", "hermana", "primo", "prima", "jefe", "jefa", "señor",
+                "señora", "familia", "bendecido", "bendecida", "feliz", "hola", "yo",
+                "soy", "usuario", "user", "whatsapp", "desconocido",
+                # negocios
+                "variedades", "inversiones", "multiservicios", "comercial",
+                "comercializadora", "distribuidora", "bodega", "bodegon", "bodegón",
+                "ventas", "accesorios", "importadora", "tech", "store", "market",
+                "licoreria", "licorería", "ferreteria", "ferretería", "farmacia",
+                "panaderia", "panadería", "peluqueria", "peluquería", "barberia",
+                "barbería", "taller", "motos", "autos", "ca"}
+TITULOS_NOMBRE = {"dr", "dra", "doctor", "doctora", "lic", "licdo", "licda", "ing",
+                  "sr", "sra", "srta", "prof", "profe", "don", "doña", "abg", "tsu"}
 
 
 def limpiar_nombre(texto):
     """Primer nombre, solo si parece un nombre real."""
-    palabras = (texto or "").strip().split()
+    # Emojis, símbolos y números pegados se vuelven espacios: "💕Ángeles💕" -> "Ángeles"
+    limpio = re.sub(r"[^\w\s]|_|\d", " ", texto or "")
+    palabras = [w for w in limpio.split() if len(w) >= 2]   # "J.Carlos" -> "Carlos"
+    while palabras and palabras[0].lower() in TITULOS_NOMBRE:   # "Dra. María" -> "María"
+        palabras = palabras[1:]
     if not palabras:
         return None
-    p = palabras[0].strip(".,!¡¿?")
-    if not p.isalpha() or not 2 <= len(p) <= 14 or p.lower() in NO_ES_NOMBRE:
+    p = palabras[0]
+    if not p.isalpha() or len(p) > 14 or p.lower() in NO_ES_NOMBRE:
         return None
     return p.capitalize()
 
 
 def detectar_nombre(texto):
     """'me llamo Juan' o 'mi nombre es Juan' -> 'Juan' (Python, sin IA)."""
-    m = re.search(r"\b(?:me llamo|mi nombre es)\s+(\S+)", texto or "", re.IGNORECASE)
+    m = re.search(r"\b(?:me llamo|mi nombre es)\s+(.{1,40})", texto or "", re.IGNORECASE)
     return limpiar_nombre(m.group(1)) if m else None
 
 
