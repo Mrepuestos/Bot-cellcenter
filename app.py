@@ -1612,6 +1612,17 @@ def get_system_prompt_celulares(info_equipo, perfil, rangos, lista_corta):
     horario_hoy = "9:00am a 2:00pm" if es_domingo else "8:30am a 5:30pm"
     dia_hoy = "domingo" if es_domingo else "lunes a sábado"
     estado_tienda = "ABIERTA" if esta_abierto() else "CERRADA"
+    linea_apertura = ""
+    if estado_tienda == "CERRADA":
+        hora = ahora.hour + ahora.minute / 60
+        if hora < (9 if es_domingo else 8.5):
+            proxima = "HOY a las " + ("9:00am" if es_domingo else "8:30am")
+        elif ahora.weekday() == 5:
+            proxima = "MAÑANA domingo de 9:00am a 2:00pm"
+        else:
+            proxima = "MAÑANA de 8:30am a 5:30pm"
+        linea_apertura = (f"\nPróxima apertura: {proxima}. Si lo invitas a venir, "
+                          f"usa SOLO esto (nunca digas 'hoy abrimos' si es mañana).")
 
     canal = perfil.get("canal_pago")
     canal_extra = perfil.get("canal_extra")
@@ -1887,7 +1898,7 @@ tiene. Si todavía no tiene canal, pregúntale cuál aplicación usa.
 
 TIENDA
 La tienda está ahora: {estado_tienda}
-Hoy es {dia_hoy}. El horario de HOY es {horario_hoy}.
+Hoy es {dia_hoy}. El horario de HOY es {horario_hoy}.{linea_apertura}
 
 CLIENTE
 {recordatorio}
@@ -2338,8 +2349,9 @@ def atender_celulares(from_number, numero_limpio, body):
                 "la LISTA CORTA tal cual y pregúntale si busca alguna marca o presupuesto.")
     elif tipo_resultado == "ninguno" and "anuncio de variedad" in body.lower():
         info = ("El cliente viene del anuncio de variedad de equipos: quiere ver "
-                "qué tenemos disponible. Mándale la LISTA CORTA tal cual, una línea "
-                "por equipo, y pregúntale cuál le llama la atención. Si además "
+                "qué tenemos disponible. Mándale las TRES OPCIONES tal cual (económico, "
+                "intermedio y gama alta), una línea por equipo, y pregúntale cuál le "
+                "llama la atención o qué presupuesto tiene. Si además "
                 "pregunta otra cosa (ubicación, formas de pago), respóndela también.")
     elif tipo_resultado == "ninguno":
         info = ("El cliente no está preguntando por un equipo concreto, o pidió "
