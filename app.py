@@ -2270,6 +2270,7 @@ def atender_celulares(from_number, numero_limpio, body):
         # Solo dio su nivel o línea: sigue con los equipos que ya le interesaban
         if (tipo_resultado == "ninguno" and perfil.get("modelo_interes")
                 and (cambios.get("linea_krece") or cambios.get("nivel_cliente")
+                     or detectado
                      or perfil.get("_disponible_recien")
                      or body == "Aquí está mi captura de Krece")):
             interes = equipos_de_interes(perfil["modelo_interes"])
