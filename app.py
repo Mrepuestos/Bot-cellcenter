@@ -340,10 +340,10 @@ def cargar_perfil(numero):
     """canal_pago, canal_extra, nivel_cliente, linea_krece y modelo_interes."""
     vacio = {"canal_pago": None, "canal_extra": None, "nivel_cliente": None,
              "linea_krece": None, "modelo_interes": None, "nombre": None,
-             "nombre_preguntado": None}
+             "nombre_preguntado": None, "respondio": None}
     try:
         r = supabase.table("Clientes").select(
-            "canal_pago,canal_extra,nivel_cliente,linea_krece,modelo_interes,nombre,nombre_preguntado"
+            "canal_pago,canal_extra,nivel_cliente,linea_krece,modelo_interes,nombre,nombre_preguntado,respondio"
         ).eq("numero", numero).execute()
         if r.data:
             return {k: r.data[0].get(k) for k in vacio}
@@ -2109,6 +2109,9 @@ Responde SOLO con JSON, sin explicaciones ni markdown:
 def atender_celulares(from_number, numero_limpio, body):
     """Atiende a un cliente de celulares de punta a punta."""
     perfil = cargar_perfil(numero_limpio)
+    # Volvió a escribir después de ver equipos o precios: conversación real
+    if perfil.get("modelo_interes") and not perfil.get("respondio"):
+        guardar_perfil(numero_limpio, respondio=True)
     nombre_dicho = detectar_nombre(body)
     if nombre_dicho:
         perfil["nombre"] = nombre_dicho
@@ -3366,7 +3369,7 @@ def enviar_bienvenidas():
     fmt = "%Y-%m-%dT%H:%M:%SZ"
     desde = (hoy0 - timedelta(days=2)).astimezone(pytz.utc).strftime(fmt)
     hasta = hoy0.astimezone(pytz.utc).strftime(fmt)
-    r = (supabase.table("Clientes").select("numero,nombre,historial")
+    r = (supabase.table("Clientes").select("numero,nombre,respondio")
          .gte("primer_contacto", desde).lt("primer_contacto", hasta)
          .is_("bienvenida_enviada", "null").execute())
     enviados = 0
@@ -3374,8 +3377,8 @@ def enviar_bienvenidas():
         numero, nombre = c["numero"], c.get("nombre")
         if enviados >= MAX_BIENVENIDAS_DIA:
             break   # tope diario: el resto queda para mañana
-        if not tuvo_conversacion(c.get("historial")):
-            continue   # solo escribió un "hola": no se le envía
+        if not c.get("respondio"):
+            continue   # no volvió a escribir después de ver equipos o precios
         # Se marca primero: así nunca se envía dos veces, aunque Render reinicie
         marca = (supabase.table("Clientes").update({"bienvenida_enviada": True})
                  .eq("numero", numero).is_("bienvenida_enviada", "null").execute())
