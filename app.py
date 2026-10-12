@@ -713,6 +713,14 @@ def bloque_equipo(equipos, canal, perfil):
     return "\n".join(lineas)
 
 
+def pide_ambas(texto):
+    """'Ambas', 'anbas', 'los dos', 'cualquiera': responde a '¿contado o financiamiento?'"""
+    t = "".join(c for c in unicodedata.normalize("NFD", texto.lower())
+                if unicodedata.category(c) != "Mn")
+    return (len(t.split()) <= 4 and re.search(
+        r"\ba[mn]b[ao]s\b|\b(los|las) (dos|2)\b|\bcualquiera\b", t) is not None)
+
+
 def es_no_corto(canal, perfil, body):
     """'No', 'no tengo', 'todavía no' cuando se le preguntó si tiene Cashea."""
     return bool(canal == "cashea" and not perfil.get("nivel_cliente")
@@ -2287,6 +2295,7 @@ def atender_celulares(from_number, numero_limpio, body):
                 and (cambios.get("linea_krece") or cambios.get("nivel_cliente")
                      or detectado
                      or perfil.get("_disponible_recien")
+                     or pide_ambas(body)
                      or body == "Aquí está mi captura de Krece")):
             interes = equipos_de_interes(perfil["modelo_interes"])
             if interes:
