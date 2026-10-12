@@ -2991,6 +2991,8 @@ def webhook():
             # Cotizaciones → cálculo exacto en Python. Nunca van al flujo de clientes.
             if numero_limpio in ADMINISTRADORES:
                 try:
+                    if marcar_compra(from_number, body):
+                        continue
                     if (es_pregunta_inventario(body)
                             or not atender_admin(from_number, numero_limpio, body)):
                         atender_admin_ia(from_number, numero_limpio, body)
@@ -3232,6 +3234,15 @@ SALUDOS_BIENVENIDA = [
     "{saludo} Te escribimos de *Cell Center 4620* 😊 Agrega este número a tus contactos para ver en "
     "los estados nuestras promociones y novedades. ¡Nosotros ya te guardamos! 📲",
 ]
+# Seguimiento de venta: va en lugar de la bienvenida si el cliente preguntó por un
+# equipo. A quien ya compró, Omar lo marca con "compró <número>" y no le llega nada.
+SEGUIMIENTOS = [
+    "{saludo} Te escribimos de *Cell Center 4620*. ¿Te animas con el *{equipo}*? Si quieres "
+    "te lo apartamos hoy y pasas a buscarlo 📲 Cualquier duda con el pago, aquí estamos. "
+    "¡Te dejo nuestro contacto para que nos guardes!",
+    "{saludo} Soy de *Cell Center 4620* 📱 ¿Pudiste decidirte por el *{equipo}*? Todavía lo "
+    "tenemos y te lo podemos apartar para hoy. Te dejo nuestro contacto para cualquier duda 🙌",
+]
 NO_ES_NOMBRE = {"mama", "mamá", "papa", "papá", "mi", "el", "la", "de", "del", "dios",
                 "amor", "vida", "cell", "tienda", "celular", "telefono", "teléfono",
                 "movil", "móvil", "shop", "store", "servicio", "repuestos", "cliente",
@@ -3363,13 +3374,36 @@ def tuvo_conversacion(historial_json):
     return sum(1 for m in historial if m.get("role") == "user") >= 2
 
 
+def marcar_compra(from_number, body):
+    """Admin: 'compró 0414-210-8150' -> ese cliente ya no recibe bienvenida ni seguimiento."""
+    m = re.match(r"\s*compr[oó]\s+(.+)", body or "", re.IGNORECASE)
+    if not m:
+        return False
+    digitos = re.sub(r"\D", "", m.group(1))
+    if len(digitos) < 10:   # "compro un iPhone 13…" no es un número: sigue normal
+        return False
+    if digitos.startswith("0"):
+        digitos = "58" + digitos[1:]
+    elif len(digitos) == 10:
+        digitos = "58" + digitos
+    r = (supabase.table("Clientes").update({"bienvenida_enviada": True})
+         .eq("numero", digitos).execute())
+    if r.data:
+        send_whapi_message(from_number, f"✅ Marcado como cliente que compró: +{digitos}. "
+                                        f"No le llegará el seguimiento.")
+    else:
+        send_whapi_message(from_number, f"No encontré a +{digitos} entre los clientes del bot. "
+                                        f"Revisa el número.")
+    return True
+
+
 def enviar_bienvenidas():
     """Bienvenida a los clientes que escribieron por primera vez el día anterior."""
     hoy0 = datetime.now(pytz.timezone("America/Caracas")).replace(hour=0, minute=0, second=0, microsecond=0)
     fmt = "%Y-%m-%dT%H:%M:%SZ"
     desde = (hoy0 - timedelta(days=2)).astimezone(pytz.utc).strftime(fmt)
     hasta = hoy0.astimezone(pytz.utc).strftime(fmt)
-    r = (supabase.table("Clientes").select("numero,nombre,respondio")
+    r = (supabase.table("Clientes").select("numero,nombre,respondio,modelo_interes")
          .gte("primer_contacto", desde).lt("primer_contacto", hasta)
          .is_("bienvenida_enviada", "null").execute())
     enviados = 0
@@ -3386,7 +3420,12 @@ def enviar_bienvenidas():
             continue
         guardar_contacto_google(numero, nombre)
         saludo = f"¡Hola, {nombre}! 😊" if nombre else "¡Hola! 😊"
-        send_whapi_message(numero, random.choice(SALUDOS_BIENVENIDA).format(saludo=saludo))
+        equipo = (c.get("modelo_interes") or "").split(" / ")[-1].strip()
+        if equipo:   # preguntó por un equipo: seguimiento de venta
+            texto = random.choice(SEGUIMIENTOS).format(saludo=saludo, equipo=equipo)
+        else:
+            texto = random.choice(SALUDOS_BIENVENIDA).format(saludo=saludo)
+        send_whapi_message(numero, texto)
         send_whapi_contacto(numero)
         time.sleep(random.uniform(8, 15))   # pausa entre envíos para cuidar el número
         enviados += 1
