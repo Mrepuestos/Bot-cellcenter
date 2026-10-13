@@ -139,7 +139,9 @@ TIENDA_DIRECCION = ("Centro, Av San Rafael entre calle El Carmen y Sucre, "
 FOTO_FACHADA_URL = "https://i.postimg.cc/rwZJRKzD/Whats-App-Image-2026-10-07-at-9-08-11-AM.jpg"
 
 # ── Modelo que atiende el flujo de celulares ──────────────────────────────────
-MODELO_CELULARES = "claude-sonnet-5"
+MODELO_CELULARES = "claude-haiku-5-5"
+# Respaldo: la IA rescata un dato que Python no entendió (deja la marca RESPALDO en el log)
+MODELO_RESPALDO = "claude-haiku-5-5"
 
 # ── Mensaje predefinido con el que llegan los clientes de Krece ───────────────
 MENSAJE_KRECE = "quiero comprar con krece"
@@ -483,9 +485,9 @@ def detectar_linea(texto):
     if m:
         return float(m.group(1))
     # "mi monto era 300$ y ahora me aparece 40$": vale el ÚLTIMO monto
-    montos = re.findall(r"\$\s*(\d{2,5})|\b(\d{2,5})\s*(?:\$|d[oó]lares\b|usd\b)", texto.lower())
+    montos = re.findall(r"\$\s*(\d{2,5}(?:[.,]\d{1,2})?)|(?<![\d.,])(\d{2,5}(?:[.,]\d{1,2})?)\s*(?:\$|d[oó]lares\b|usd\b)", texto.lower())
     if len(montos) >= 2:
-        return float(next(n for n in montos[-1] if n))
+        return float(next(n for n in montos[-1] if n).replace(",", "."))
     m = re.search(r"(?:linea|l\u00ednea|aprobad[oa]|credito|cr\u00e9dito|limite|l\u00edmite)"
                   r"[^\d]{0,15}(\d{2,5})", texto.lower())
     if m:
@@ -494,14 +496,17 @@ def detectar_linea(texto):
                   r"(?:linea|línea|cr[eé]dito|l[ií]mite)", texto.lower())
     if m:
         return float(m.group(1))
-    m = re.search(r"\$\s*(\d{2,5})", texto) or re.search(r"\b(\d{2,5})\s*\$", texto)
-    return float(m.group(1)) if m else None
+    # Con decimales: "83.11$" es 83.11 (antes se leía 11)
+    m = (re.search(r"\$\s*(\d{2,5}(?:[.,]\d{1,2})?)", texto)
+         or re.search(r"(?<![\d.,])(\d{2,5}(?:[.,]\d{1,2})?)\s*\$", texto))
+    return float(m.group(1).replace(",", ".")) if m else None
 
 
 RELLENO_LINEA = {"y", "mi", "es", "de", "la", "linea", "línea", "tengo", "son", "me",
                  "aprobaron", "aprobado", "aprobada", "limite", "límite", "dolares",
                  "dólares", "usd", "oro", "plata", "azul", "platino", "nivel", "ok",
-                 "si", "sí", "con", "krece", "soy", "como"}
+                 "si", "sí", "con", "krece", "soy", "como",
+                 "ah", "aja", "ajá", "dice", "bueno", "pues", "oye", "listo"}
 
 
 def detectar_linea_suelta(texto):
@@ -509,13 +514,43 @@ def detectar_linea_suelta(texto):
     Solo si en ese renglón no hay nada más (ni modelo ni GB)."""
     for renglon in texto.lower().split("\n"):
         t = re.sub(r"nivel\s+\w+", " ", renglon)
-        t = re.sub(r"[^\w\s]", " ", t)
+        # Quita signos, pero deja el punto o la coma de un decimal ("83.11")
+        t = re.sub(r"[^\w\s.,]|(?<!\d)[.,]|[.,](?!\d)", " ", t)
         palabras = [p for p in t.split() if p not in RELLENO_LINEA]
-        if len(palabras) == 1 and palabras[0].isdigit():
-            n = int(palabras[0])
+        if len(palabras) == 1 and re.fullmatch(r"\d+(?:[.,]\d{1,2})?", palabras[0]):
+            n = float(palabras[0].replace(",", "."))
             if 50 <= n <= 5000 and n not in (64, 128, 256, 512):
-                return float(n)
+                return n
     return None
+
+
+def linea_por_ia(numero_limpio, texto):
+    """Respaldo: la IA lee la línea de Krece cuando Python no la entendió.
+    Siempre deja la marca RESPALDO en el log para la revisión diaria."""
+    crudo, valor = "", None
+    try:
+        r = client.messages.create(
+            model=MODELO_RESPALDO, max_tokens=20,
+            extra_body={"output_config": {"effort": "low"}},
+            messages=[{"role": "user", "content":
+                "Un cliente de una tienda de celulares en Venezuela respondió cuánto tiene "
+                "de línea aprobada en Krece para Celulares (en dólares). Si su mensaje trae "
+                "ese monto, responde SOLO el número (ej. 800 o 83.11). Si el número son "
+                "puntos, GB, un modelo de teléfono, cuotas o no es la línea, responde SOLO: nada.\n"
+                f'Mensaje: "{texto}"'}],
+        )
+        registrar_uso("respaldo-linea", r)
+        crudo = texto_respuesta(r).strip().lower()
+        m = re.fullmatch(r"\$?\s*(\d{1,5}(?:[.,]\d{1,2})?)\s*\$?", crudo)
+        valor = float(m.group(1).replace(",", ".")) if m else None
+        if valor is not None and not (10 <= valor <= 5000):
+            valor = None
+    except Exception as e:
+        print(f"Error en respaldo IA de línea: {e}")
+        crudo = "error"
+    print(f'🛟 RESPALDO IA [linea] | cliente: {numero_limpio} | '
+          f'mensaje: "{texto[:120]}" | resultado: {valor if valor is not None else (crudo or "nada")}')
+    return valor
 
 
 def linea_celulares_dudosa(numero_limpio, linea, texto):
@@ -1144,7 +1179,7 @@ REGLAS ESTRICTAS:
 
     try:
         response = client.messages.create(
-            model="claude-haiku-4-5-20251001",
+            model="claude-haiku-5-5",
             max_tokens=50,
             messages=[{"role": "user", "content": prompt}],
         )
@@ -1819,6 +1854,11 @@ CUÁNDO ENTREGAS
 Si el equipo dice "disponible ya", dilo. Si dice "llega en 24 a 48 horas", dilo también con naturalidad.
 Nunca prometas entrega inmediata de algo que no la tiene.
 
+SI FALTA UN DATO
+Si EQUIPO CONSULTADO dice que falta un dato del cliente (nivel o línea), pídeselo
+en una frase. Nunca digas que ya tienes todo ni inventes cómo se reparten la
+inicial o las cuotas: esos números solo salen de EQUIPO CONSULTADO.
+
 ESPECIFICACIONES Y FOTOS
 Solo hablas de cámara, batería o RAM si el cliente pregunta. No las enumeres de entrada.
 Si pide ver el equipo, mira el campo "Foto" en EQUIPO CONSULTADO:
@@ -2220,6 +2260,10 @@ def atender_celulares(from_number, numero_limpio, body):
         linea = detectar_linea(body)
         if not linea:
             linea = detectar_linea_suelta(body)
+        # Respaldo con IA: ya tiene nivel, espera la línea y Python no encontró el monto
+        if (not linea and not pide_iphone and re.search(r"\d", body) and len(body) <= 80
+                and (nivel or perfil.get("nivel_cliente")) and not perfil.get("linea_krece")):
+            linea = linea_por_ia(numero_limpio, body)
         # Línea disponible (tope del iPhone): dicha con la palabra "disponible", o un
         # monto suelto cuando le interesa un iPhone y no habla de "celulares"
         disponible = detectar_linea_disponible(body)
@@ -3139,7 +3183,7 @@ def webhook():
                     historial = historial[-4:]
 
                 response = client.messages.create(
-                    model="claude-haiku-4-5-20251001",
+                    model="claude-haiku-5-5",
                     max_tokens=300,
                     system=get_system_prompt(),
                     messages=historial
@@ -3205,7 +3249,7 @@ def webhook():
                 # Registrar producto no encontrado
                 registrar_producto_no_encontrado(numero_limpio, body)
                 response = client.messages.create(
-                    model="claude-haiku-4-5-20251001",
+                    model="claude-haiku-5-5",
                     max_tokens=300,
                     system=get_system_prompt(),
                     messages=[{"role": "user", "content": body + "\n\nINFORMACIÓN DEL INVENTARIO:\nEste producto NO existe en el inventario. Stock: 0. No inventes productos ni precios."}]
