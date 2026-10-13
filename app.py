@@ -3349,6 +3349,7 @@ def limpiar_nombre(texto):
     p = palabras[0]
     if not p.isalpha() or len(p) > 14 or p.lower() in NO_ES_NOMBRE:
         return None
+    if p.islower() and len(p) >= 10: return None   # "pedromarquez" parece usuario, no nombre
     return p.capitalize()
 
 
