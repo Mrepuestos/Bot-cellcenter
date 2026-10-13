@@ -2336,11 +2336,14 @@ def atender_celulares(from_number, numero_limpio, body):
                        f"parte del nombre de una de ellas, elige ese equipo "
                        f"y marca tipo exacto.\n")
     # "No", "no tengo", "no estoy registrado en cashea": sigue con los mismos
-    # equipos sin llamar a la IA (la IA lo tomaba como "no pide nada")
+    # equipos sin llamar a la IA (la IA lo tomaba como "no pide nada").
+    # Igual si solo da el monto de su línea de Krece ("Ah 800"): la IA lo tomaba
+    # como presupuesto y cambiaba de equipo.
     equipos = []
     if (canal in ("krece", "cashea") and perfil.get("modelo_interes")
             and len(body.split()) <= 6
-            and (detectar_sin_cuenta(body) or es_no_corto(canal, perfil, body))):
+            and (detectar_sin_cuenta(body) or es_no_corto(canal, perfil, body)
+                 or (canal == "krece" and detectar_linea_suelta(body) is not None))):
         equipos = equipos_de_interes(perfil["modelo_interes"])
         tipo_resultado, canal_ia = "exacto", None
     if not equipos:
