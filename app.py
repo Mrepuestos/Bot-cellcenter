@@ -3330,9 +3330,10 @@ NO_ES_NOMBRE = {"mama", "mamá", "papa", "papá", "mi", "el", "la", "de", "del",
                 "ventas", "accesorios", "importadora", "tech", "store", "market",
                 "licoreria", "licorería", "ferreteria", "ferretería", "farmacia",
                 "panaderia", "panadería", "peluqueria", "peluquería", "barberia",
-                "barbería", "taller", "motos", "autos", "ca"}
+                "barbería", "taller", "motos", "autos", "ca", "cristo", "jesucristo", "jehova", "jehová", "yahveh", "amen", "amén", "aleluya", "bendiciones"}
 TITULOS_NOMBRE = {"dr", "dra", "doctor", "doctora", "lic", "licdo", "licda", "ing",
                   "sr", "sra", "srta", "prof", "profe", "don", "doña", "abg", "tsu"}
+FRASE_RELIGIOSA = {"es", "te", "ama", "vive", "reina", "salva", "mi", "su", "nos", "guia", "guía", "cuida", "bendice", "protege"}
 
 
 def limpiar_nombre(texto):
@@ -3344,6 +3345,7 @@ def limpiar_nombre(texto):
         palabras = palabras[1:]
     if not palabras:
         return None
+    if len(palabras) > 1 and palabras[0].lower() in ("jesus", "jesús") and palabras[1].lower() in FRASE_RELIGIOSA: return None
     p = palabras[0]
     if not p.isalpha() or len(p) > 14 or p.lower() in NO_ES_NOMBRE:
         return None
