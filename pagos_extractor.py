@@ -26,7 +26,7 @@ GOOGLE_PRIVATE_KEY  = os.environ.get("GOOGLE_PRIVATE_KEY", "").replace("\\n", "\
 GOOGLE_PROJECT_ID   = os.environ.get("GOOGLE_PROJECT_ID", "controlpagos-497014")
 
 ALERTA_NUMERO = "584149202844"
-CLAUDE_MODEL  = "claude-opus-4-8"
+CLAUDE_MODEL  = "claude-haiku-5-5"
 TZ_VE = pytz.timezone("America/Caracas")  # Render corre en UTC
 
 logger = logging.getLogger("pagos_extractor")
