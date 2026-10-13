@@ -227,7 +227,8 @@ REGLAS:
 
     response = client.messages.create(
         model=CLAUDE_MODEL,
-        max_tokens=50,
+        max_tokens=300,
+        extra_body={"output_config": {"effort": "low"}},
         messages=[{
             "role": "user",
             "content": [
@@ -236,7 +237,7 @@ REGLAS:
             ],
         }],
     )
-    texto = response.content[0].text.strip()
+    texto = _texto_claude(response)
     print(f"💰 TOKENS [pagos-nombre] entrada={response.usage.input_tokens} salida={response.usage.output_tokens}")
     lineas = [l.strip() for l in texto.split("\n") if l.strip()]
     if lineas:
@@ -250,6 +251,12 @@ REGLAS:
     return texto
 
 
+def _texto_claude(response):
+    """Texto de la respuesta. Haiku 5.5 puede traer antes un bloque de razonamiento
+    (ThinkingBlock) sin .text: se toman solo los bloques de texto."""
+    return "".join(b.text for b in response.content if getattr(b, "type", None) == "text").strip()
+
+
 def _extraer_identificacion_con_claude(image_b64, mime_type):
     client = _get_anthropic()
     prompt = """Extrae SOLO el valor del campo "IDENTIFICACIÓN RECEPTOR" de este comprobante.
@@ -257,7 +264,8 @@ Ejemplo: "V-11691262" → responde: V-11691262
 Responde ÚNICAMENTE con el valor. Si no existe responde: No encontrado"""
     response = client.messages.create(
         model=CLAUDE_MODEL,
-        max_tokens=50,
+        max_tokens=300,
+        extra_body={"output_config": {"effort": "low"}},
         messages=[{
             "role": "user",
             "content": [
@@ -266,7 +274,7 @@ Responde ÚNICAMENTE con el valor. Si no existe responde: No encontrado"""
             ],
         }],
     )
-    identificacion = response.content[0].text.strip()
+    identificacion = _texto_claude(response)
     print(f"💰 TOKENS [pagos-identificacion] entrada={response.usage.input_tokens} salida={response.usage.output_tokens}")
     print(f"Identificación receptor: '{identificacion}'")
     return identificacion
