@@ -713,6 +713,17 @@ def bloque_equipo(equipos, canal, perfil):
     return "\n".join(lineas)
 
 
+def pide_foto(texto):
+    """'Puedes enviarme una foto', 'cómo se ve', 'me lo muestras': pide ver el equipo."""
+    t = "".join(c for c in unicodedata.normalize("NFD", texto.lower())
+                if unicodedata.category(c) != "Mn")
+    if re.search(r"\b(para|de|buenas?|mejores?) (tomar |sacar |hacer )?fotos?\b", t):
+        return False   # habla de la cámara, no pide ver el equipo
+    return re.search(r"\bfotos?\b|\bfotito|\bimagen|\bimagenes\b|\bpics?\b|\bfotografia"
+                     r"|como se ve|me lo (muestras|mandas|envias|pasas)"
+                     r"|lo puedo ver|puedo verlo|quiero verlo", t) is not None
+
+
 def pide_ambas(texto):
     """'Ambas', 'anbas', 'los dos', 'cualquiera': responde a '¿contado o financiamiento?'"""
     t = "".join(c for c in unicodedata.normalize("NFD", texto.lower())
@@ -2296,6 +2307,7 @@ def atender_celulares(from_number, numero_limpio, body):
                      or detectado
                      or perfil.get("_disponible_recien")
                      or pide_ambas(body)
+                     or pide_foto(body)
                      or body == "Aquí está mi captura de Krece")):
             interes = equipos_de_interes(perfil["modelo_interes"])
             if interes:
