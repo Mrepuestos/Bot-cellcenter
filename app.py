@@ -774,6 +774,24 @@ def es_no_corto(canal, perfil, body):
                                  r"todav[ií]a no|a[uú]n no)\s*[.!]*\s*", body.lower()))
 
 
+SIN_EQUIPO_PALABRAS = {
+    "gracias", "grax", "graciass", "muchas", "mil", "ok", "okay", "oki", "okey",
+    "listo", "perfecto", "dale", "vale", "excelente", "bueno", "bien", "genial",
+    "claro", "ah", "aja", "ya", "entiendo", "entendido", "buenos", "buenas", "dias",
+    "tardes", "noches", "saludos", "cordiales", "hola", "amigo", "amiga", "pana",
+    "estan", "ubicado", "ubicados", "ubicada", "ubicadas", "donde", "y"}
+
+
+def es_mensaje_sin_equipo(texto):
+    """'Gracias', 'buenos días', 'ok están ubicados': no nombra ningún equipo.
+    Solo da True si TODAS las palabras son de cortesía, saludo o ubicación."""
+    t = "".join(c for c in unicodedata.normalize("NFD", texto.lower())
+                if unicodedata.category(c) != "Mn")
+    palabras = re.sub(r"[^a-zñ ]", " ", t).split()
+    return (bool(palabras) and len(palabras) <= 8
+            and all(p in SIN_EQUIPO_PALABRAS for p in palabras))
+
+
 def texto_iphone_cashea(equipos, tipo):
     """Respuesta fija al cliente Krece Azul que pide iPhone: se le ofrece Cashea."""
     texto = ""
@@ -2346,7 +2364,12 @@ def atender_celulares(from_number, numero_limpio, body):
                  or (canal == "krece" and detectar_linea_suelta(body) is not None))):
         equipos = equipos_de_interes(perfil["modelo_interes"])
         tipo_resultado, canal_ia = "exacto", None
-    if not equipos:
+    # Gracias, ok, saludo o "ubicados": no nombra equipo, no hace falta la IA
+    sin_equipo = bool(perfil.get("modelo_interes") and es_mensaje_sin_equipo(body))
+    if not equipos and sin_equipo:
+        tipo_resultado, canal_ia = "ninguno", None
+        print(f"Mensaje sin equipo ({numero_limpio}): no se llama a la IA")
+    elif not equipos:
         equipos, tipo_resultado, canal_ia = interpretar_pedido(body, contexto)
         # Solo dio su nivel o línea: sigue con los equipos que ya le interesaban
         if (tipo_resultado == "ninguno" and perfil.get("modelo_interes")
