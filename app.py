@@ -2450,6 +2450,10 @@ def atender_celulares(from_number, numero_limpio, body):
         info = ("El cliente no está preguntando por un equipo concreto, o pidió "
                 "algo que no tenemos ni se parece a nada del catálogo. "
                 "No inventes modelos ni precios.")
+        if perfil.get("modelo_interes"):
+            info += (f" Antes le interesaba el {perfil['modelo_interes']}: lo que ya "
+                     "le dijiste de ese equipo sigue siendo válido, NO lo corrijas "
+                     "ni lo retires. Responde solo lo que pregunta ahora.")
     else:
         info = bloque_equipo(equipos, canal, perfil)
 
