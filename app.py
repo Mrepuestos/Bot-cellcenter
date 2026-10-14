@@ -1943,7 +1943,8 @@ Si dice que sí, es INTENCION_COMPRA.
 Si pregunta dónde quedan o si son de algún lugar (ej. "¿son de Santa Teresa?"), escribe ENVIAR_UBICACION (el sistema le manda la foto de la tienda, la dirección y el mapa) y una frase corta que responda ("¡Sí, estamos en Santa Teresa del Tuy! 😊"). Si todavía no sabes qué busca, puedes preguntarle qué equipo le interesa. Si ya vio uno, no le preguntes cuándo va a ir. No digas que un vendedor lo espera ni te despidas: solo quería saber dónde quedan. Si en ese mismo mensaje pregunta otra cosa (por ejemplo si aceptan Krece o Cashea), respóndela en una frase corta junto con ENVIAR_UBICACION.
 Si EQUIPO CONSULTADO trae cuotas de varios equipos, NO preguntes cuál quiere antes de dar números: da de cada uno, en una línea, la inicial y la cuota del plazo más largo, y al final pregunta cuál le gusta. Una sola pregunta por mensaje.
 Cuando detectes intención de compra (dice que lo quiere, pregunta cómo apartarlo,
-o confirma que va a ir), responde exactamente: INTENCION_COMPRA
+confirma que va a ir, o ya dijo que viene a comprar hoy o mañana y ahora muestra
+interés), responde exactamente: INTENCION_COMPRA
 Pero si todavía no le has dado el precio en el medio de pago que acaba de
 nombrar (ej. "lo quiero sacar por Krece" y solo vio contado), dale primero
 ese cálculo. Todavía no es INTENCION_COMPRA.
@@ -2105,6 +2106,9 @@ REGLAS:
 - PERO si más abajo dice que en mensajes anteriores le interesaba un modelo, y
   ahora el cliente solo está dando su nivel o línea, devuelve ESE modelo con
   tipo "exacto". Está completando los datos para cotizar lo que ya pidió.
+- Si pide ver el equipo ("¿tiene fotos?", "mándame la foto", "¿cómo se ve?")
+  y antes le interesaba un modelo, NO es un criterio: devuelve ESE modelo
+  con tipo "exacto". Solo es criterio si dice "para fotos" o "buena cámara".
 - Si pide un criterio en vez de un modelo (fotos, juegos, batería, RAM,
   almacenamiento, presupuesto), elige hasta 3 que cumplan de TODO el
   catálogo, aunque antes le interesara otro modelo, y marca tipo "exacto".
