@@ -113,6 +113,7 @@ ASESOR_CEL_OTROS   = "584126093756"   # accesorios y todo lo demás
 NUMEROS_PRUEBA_CELULARES = ["573208112456"]
 modo_prueba_pantallas = set()   # números de prueba probando el flujo de pantallas
 krece_supuesto = set()          # clientes cotizados con Azul/$300 supuesto (solo en memoria)
+nivel1_pendiente = set()        # clientes que dijeron "nivel 1" sin decir Cashea o Krece (solo en memoria)
 krece_linea_dudosa = {}         # cliente → monto chico que parecía la "Línea disponible"
 krece_linea_disponible = {}     # cliente → su "Línea disponible" (tope del iPhone, solo en memoria)
 tecnico_celulares = {}   # técnico → hasta cuándo sigue en el flujo de celulares (30 min)
@@ -403,6 +404,8 @@ def detectar_canal(texto):
                             "pago de una vez", "pagar de una vez",
                             "pagarlo de una vez", "un solo pago", "pago completo")):
         return "contado"
+    if re.search(r"\bnivel\s*[2-6]\b", t):
+        return "cashea"
     return None
 
 
@@ -448,7 +451,8 @@ def detectar_nivel_cashea(texto):
         return palabras[m.group(1)]
     if t.strip() in palabras:
         return palabras[t.strip()]
-    m = re.search(r"\bnivel\s*([1-6])\b", t) or re.search(r"\b([1-6])\b", t)
+    m = re.search(r"\bnivel\s*([1-6])\b", t) or re.search(
+        r"\b([1-6])\b(?!\s*(?:cuotas?|pagos?|meses|veces|x\b|\$|d[oó]lares))", t)
     return m.group(1) if m else None
 
 
@@ -1728,6 +1732,11 @@ def get_system_prompt_celulares(info_equipo, perfil, rangos, lista_corta):
                  ". No se lo vuelvas a preguntar.") if datos else ""
     if perfil.get("_pedir_nombre"):
         conocidos += " No sabes su nombre (regla NOMBRE)."
+    if perfil.get("_nivel_sin_canal"):
+        conocidos += (" OJO: te dijo 'nivel 1' pero no si es de Cashea o de Krece "
+                      "(los dos tienen nivel 1). Pregúntale solo eso, con naturalidad: "
+                      "'¿Ese nivel es de Cashea o de Krece? 😊'. No des precios todavía "
+                      "y no respondas DERIVAR_PRECIO.")
     if perfil.get("_krece_supuesto"):
         conocidos += (" OJO: él NO te dio nivel ni línea; tú supusiste Azul con $300 en Celulares. "
                       "Cotiza con los montos de EQUIPO CONSULTADO sin pedirle esos datos. "
@@ -2236,6 +2245,9 @@ def atender_celulares(from_number, numero_limpio, body):
             cambios["canal_extra"] = "contado"
     canal = detectado or perfil.get("canal_pago")
     canal_anterior = perfil.get("canal_pago")
+    if not canal and re.search(r"\bnivel\s*(1|uno)\b", body.lower()):
+        perfil["_nivel_sin_canal"] = True   # solo en memoria
+        nivel1_pendiente.add(numero_limpio)
 
     # Dos canales a la vez ("con krece y creditienda"): se guardan los dos
     nombrados = detectar_canales(body)
@@ -2288,6 +2300,7 @@ def atender_celulares(from_number, numero_limpio, body):
 
     # Nivel y línea, según el canal
     if canal == "krece":
+        nivel1_pendiente.discard(numero_limpio)
         nivel = detectar_nivel_krece(body)
         linea = detectar_linea(body)
         if not linea:
@@ -2335,6 +2348,9 @@ def atender_celulares(from_number, numero_limpio, body):
             krece_supuesto.discard(numero_limpio)
     elif canal == "cashea":
         nivel = detectar_nivel_cashea(body)
+        if not nivel and numero_limpio in nivel1_pendiente:
+            nivel = "1"
+        nivel1_pendiente.discard(numero_limpio)
         if nivel:
             cambios["nivel_cliente"] = nivel
             perfil["nivel_cliente"] = nivel
