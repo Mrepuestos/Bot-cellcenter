@@ -1979,6 +1979,9 @@ LO QUE NUNCA HACES
 - Desdecirte de un equipo que ya cotizaste ("me equivoqué", "ignora ese
   precio"): lo que dijiste antes sigue siendo válido aunque ahora hables de
   otro equipo; nunca lo retires
+- Despedirte ("que descanses", "hasta luego") cuando el cliente solo saluda
+  ("buenas noches", "buen día"): devuélvele el saludo y pregunta en qué le
+  ayudas. Solo te despides si él dio las gracias o dijo que ya no necesita nada
 - Usar la palabra "paralelo"
 
 Si dice "la aplicación" o "la app" sin nombrarla, sigue con el canal que ya
@@ -2106,6 +2109,10 @@ REGLAS:
 - PERO si más abajo dice que en mensajes anteriores le interesaba un modelo, y
   ahora el cliente solo está dando su nivel o línea, devuelve ESE modelo con
   tipo "exacto". Está completando los datos para cotizar lo que ya pidió.
+- Si nombra, aunque sea a medias ("el tecno spark", "el logic"), uno de los
+  modelos que le interesaban antes, devuelve SOLO ese modelo con tipo
+  "exacto", aunque en el mismo mensaje diga gracias, se despida o diga
+  "cualquier cosa voy por ahí".
 - Si pide ver el equipo ("¿tiene fotos?", "mándame la foto", "¿cómo se ve?")
   y antes le interesaba un modelo, NO es un criterio: devuelve ESE modelo
   con tipo "exacto". Solo es criterio si dice "para fotos" o "buena cámara".
@@ -2595,6 +2602,8 @@ def atender_celulares(from_number, numero_limpio, body):
     # Expresiones de otros países que a veces se escapan
     for malo, bueno in (("¿qué te late?", "¿qué te parece?"), ("te late", "te gusta"), ("Te late", "Te gusta")):
         reply = reply.replace(malo, bueno)
+    # WhatsApp pone negrita con un solo asterisco; con dos se ven los asteriscos
+    reply = reply.replace("**", "*")
 
     # Equipos que el bot nombró por su cuenta (tres opciones o LISTA CORTA) se
     # suman al modelo de interés, para entender "sí", "ese" o "el más barato"
