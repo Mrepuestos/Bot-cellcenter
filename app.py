@@ -404,6 +404,10 @@ def detectar_canal(texto):
                             "pago de una vez", "pagar de una vez",
                             "pagarlo de una vez", "un solo pago", "pago completo")):
         return "contado"
+    if (re.search(r"\bnivel\s*(azul|plata|oro|platino)\b", t)
+            or re.search(r"\b\d{2,4}\s*(?:pts?|puntos)\b", t)
+            or re.search(r"\blinea\s+(aprobada|de\s+celulares)\b", t)):
+        return "krece"
     if re.search(r"\bnivel\s*[2-6]\b", t):
         return "cashea"
     return None
@@ -1732,6 +1736,11 @@ def get_system_prompt_celulares(info_equipo, perfil, rangos, lista_corta):
                  ". No se lo vuelvas a preguntar.") if datos else ""
     if perfil.get("_pedir_nombre"):
         conocidos += " No sabes su nombre (regla NOMBRE)."
+    if perfil.get("_nivel1_krece"):
+        conocidos += (" OJO: antes te dijo 'nivel 1' y ahora eligió Krece: su nivel de Krece es AZUL. "
+                      "Cotiza con los montos de EQUIPO CONSULTADO (calculados con Azul y $300) "
+                      "sin pedirle el nivel; al final dile que si la línea de Celulares es distinta, "
+                      "te lo diga y recalculas.")
     if perfil.get("_nivel_sin_canal"):
         conocidos += (" OJO: te dijo 'nivel 1' pero no si es de Cashea o de Krece "
                       "(los dos tienen nivel 1). Pregúntale solo eso, con naturalidad: "
@@ -2300,6 +2309,8 @@ def atender_celulares(from_number, numero_limpio, body):
 
     # Nivel y línea, según el canal
     if canal == "krece":
+        if numero_limpio in nivel1_pendiente:
+            perfil["_nivel1_krece"] = True   # solo en memoria
         nivel1_pendiente.discard(numero_limpio)
         nivel = detectar_nivel_krece(body)
         linea = detectar_linea(body)
