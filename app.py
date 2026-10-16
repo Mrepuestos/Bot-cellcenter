@@ -24,7 +24,7 @@ from repertorio import CORRECCIONES_MARCAS, MODELOS_ABREVIADOS, PALABRAS_IGNORAR
 from sheets_celulares import (
     catalogo_para_ia, obtener_por_clave, existe_clave,
     ordenar_equipos, listar_por_rango, listar_mas_baratos, buscar_foto, nombre_completo,
-    inventario_admin,
+    inventario_admin, promo_krece, equipos_en_promo,
 )
 
 # ── Motor de precios de celulares ─────────────────────────────────────────────
@@ -146,6 +146,9 @@ MODELO_RESPALDO = "claude-haiku-5-5"
 
 # ── Mensaje predefinido con el que llegan los clientes de Krece ───────────────
 MENSAJE_KRECE = "quiero comprar con krece"
+
+# ── Marcas que Krece no aprueba (no les puede instalar su seguridad) ──────────
+MARCAS_NO_KRECE = {"logic", "zte"}
 
 WHAPI_TOKEN = os.environ.get("WHAPI_TOKEN", "")
 WHAPI_API_URL = os.environ.get("WHAPI_API_URL", "https://gate.whapi.cloud")
@@ -648,6 +651,12 @@ def bloque_equipo(equipos, canal, perfil):
         if canal == "krece":
             nivel = perfil.get("nivel_cliente")
             linea = perfil.get("linea_krece")
+            if eq["marca"].lower() in MARCAS_NO_KRECE:
+                lineas.append("  Esta marca NO se vende por Krece por ahora (Krece no la "
+                              "aprueba). NO des cuotas de Krece: díselo con amabilidad en una "
+                              "frase y ofrécele otra marca de la LISTA CORTA por Krece; si "
+                              "prefiere este equipo, se lo puede llevar de contado o con Cashea.")
+                continue
             if eq["marca"].lower() == "iphone" and nivel != "azul":
                 lineas.extend(lineas_iphone_krece(p, nivel, perfil.get("_linea_disponible")))
                 continue
@@ -677,19 +686,25 @@ def bloque_equipo(equipos, canal, perfil):
                                   "para el iPhone ofrécele Cashea (regla IPHONE CON KRECE AZUL).")
                 continue
             hubo = False
+            promo = promo_krece(eq, nivel)
             try:
-                plazos = precios.plazos_krece(nivel)
+                plazos = precios.plazos_krece(nivel, promo=promo)
+                precios.plazos_krece(nivel)   # valida el nivel también con promo
             except (ValueError, KeyError):
                 lineas.append(f"  El nivel '{nivel}' de Krece no es válido. "
                               f"Pídele que confirme: Azul, Plata, Oro o Platino.")
                 continue
+            if promo:
+                lineas.append(f"  🔥 PROMO KRECE hasta el {promo['hasta']:%d/%m} "
+                              f"(dilo como dato, sin presionar)")
             for plazo in plazos:
-                k = precios.krece(p, nivel, plazo, linea=linea)
+                k = precios.krece(p, nivel, plazo, linea=linea, promo=promo)
                 if not k.get("aplica"):
                     continue
                 hubo = True
                 extra = " (inicial ajustada a su línea)" if k["topado_por_linea"] else ""
-                lineas.append(f"  Krece {plazo} cuotas: inicial ${k['inicial']} "
+                inicial = "sin inicial" if k["inicial"] == 0 else f"inicial ${k['inicial']}"
+                lineas.append(f"  Krece {plazo} cuotas: {inicial} "
                               f"+ {plazo} x ${k['monto_cuota']}{extra}")
             if not hubo:
                 lineas.append("  Este equipo supera la línea aprobada del cliente. "
@@ -832,11 +847,54 @@ def sin_iphone(perfil):
             and perfil.get("nivel_cliente") == "azul")
 
 
+def es_krece(perfil):
+    return (perfil or {}).get("canal_pago") == "krece"
+
+
+def filtros_listas(perfil):
+    """Lo que no se le muestra al cliente en las listas: iPhone (Krece Azul o
+    CrediTienda) y las marcas que Krece no aprueba (Logic y ZTE)."""
+    perfil = perfil or {}
+    return {"excluir_iphone": sin_iphone(perfil),
+            "excluir_marcas": MARCAS_NO_KRECE if es_krece(perfil) else ()}
+
+
+PIDE_PROMO = re.compile(r"promo|oferta|descuento", re.IGNORECASE)
+
+
+def bloque_promos(perfil, texto=""):
+    """Promos de Krece vigentes con entrega inmediata. Solo se arma si el
+    cliente es Krece o pregunta por promos (así no se gastan tokens de más)."""
+    if not es_krece(perfil) and not PIDE_PROMO.search(texto or ""):
+        return ""
+    equipos = equipos_en_promo(MARCAS_NO_KRECE)
+    if not equipos:
+        return "  No hay promociones activas ahora."
+    nivel = perfil.get("nivel_cliente") if es_krece(perfil) else None
+    grupos = {}
+    for eq in equipos:
+        p = promo_krece(eq)
+        grupos.setdefault(p["nombre"], (p, []))[1].append(eq)
+    salida = []
+    for p, eqs in grupos.values():
+        nombres = ", ".join(f"{nombre_completo(e)} (${int(e['precio_paralelo'])})" for e in eqs)
+        condiciones = []
+        for niv in ("azul", "plata", "oro", "platino"):
+            c = p["niveles"].get(niv)
+            if c and (not nivel or niv == nivel):
+                ini = "sin inicial" if c["inicial"] == 0 else f"{c['inicial'] * 100:.0f}% de inicial"
+                condiciones.append(f"{niv.capitalize()}: {ini}, hasta {max(c['factores'])} cuotas")
+        salida.append(f"  🔥 Hasta el {p['hasta']:%d/%m}: {nombres}. " + "; ".join(condiciones))
+    return "\n".join(salida)
+
+
 def inicial_corta(eq, canal, perfil):
     """Una línea corta con lo que paga de entrada. None si no aplica."""
     p = eq["precio_paralelo"]
     try:
         if canal == "krece":
+            if eq["marca"].lower() in MARCAS_NO_KRECE:
+                return None
             nivel, linea = perfil.get("nivel_cliente"), perfil.get("linea_krece")
             tipo = "celular"
             if eq["marca"].lower() == "iphone":   # iPhone: va por la Línea disponible
@@ -845,11 +903,16 @@ def inicial_corta(eq, canal, perfil):
                     return None
             if not nivel or not linea:
                 return f"de contado ${int(p)}"
-            plazo = precios.plazos_krece(nivel, tipo)[-1]   # el plazo más largo = cuota más baja
-            k = precios.krece(p, nivel, plazo, linea=linea, tipo=tipo)
+            promo = promo_krece(eq, nivel) if tipo == "celular" else None
+            plazo = precios.plazos_krece(nivel, tipo, promo)[-1]   # el plazo más largo = cuota más baja
+            k = precios.krece(p, nivel, plazo, linea=linea, tipo=tipo, promo=promo)
             if not k.get("aplica"):
                 return None
-            return f"Krece: inicial ${k['inicial']} + {plazo} x ${k['monto_cuota']}"
+            inicial = "sin inicial" if k["inicial"] == 0 else f"inicial ${k['inicial']}"
+            texto = f"Krece: {inicial} + {plazo} x ${k['monto_cuota']}"
+            if promo:
+                texto = f"🔥 promo Krece hasta el {promo['hasta']:%d/%m} — {texto}"
+            return texto
         if canal == "cashea":
             nivel = perfil.get("nivel_cliente")
             if not nivel:
@@ -867,7 +930,7 @@ def inicial_corta(eq, canal, perfil):
 def bloque_lista_corta(canal, perfil, cantidad=8):
     """Los equipos más baratos, una línea cada uno, en el canal del cliente."""
     salida = []
-    for eq in listar_mas_baratos(cantidad + 4, excluir_iphone=sin_iphone(perfil)):
+    for eq in listar_mas_baratos(cantidad + 4, **filtros_listas(perfil)):
         texto = inicial_corta(eq, canal, perfil)
         if texto:
             salida.append(f"  • {nombre_completo(eq)} — {texto}")
@@ -878,7 +941,7 @@ def bloque_lista_corta(canal, perfil, cantidad=8):
 
 def bloque_rangos(perfil=None):
     """Tres equipos por rango de precio, para cuando no dice modelo."""
-    equipos = listar_por_rango(excluir_iphone=sin_iphone(perfil or {}))
+    equipos = listar_por_rango(**filtros_listas(perfil), con_promo=es_krece(perfil))
     if not equipos:
         return "  No hay equipos disponibles en este momento."
     etiquetas = ["Económico", "Intermedio", "Gama alta"]
@@ -1683,7 +1746,7 @@ Responde siempre corto y directo. Muestra el nombre exacto del producto como apa
 
 8. PAGO o datos bancarios: Si el cliente pregunta cómo pagar, pide datos de pago, menciona pago móvil, transferencia o cualquier intención de pagar, responde exactamente: "DATOS_PAGO"""
 
-def get_system_prompt_celulares(info_equipo, perfil, rangos, lista_corta):
+def get_system_prompt_celulares(info_equipo, perfil, rangos, lista_corta, promos=""):
     """Prompt del vendedor de celulares. Recibe solo el equipo consultado,
     nunca el catálogo completo."""
     tz = pytz.timezone("America/Caracas")
@@ -1818,11 +1881,13 @@ En la app nueva el nivel lo ve tocando sus puntos (arriba a la derecha), y su l�
 para celulares es el monto debajo del ícono "Celulares". El monto grande de "Línea
 disponible" es otra cosa (iPhone, recargas y préstamos): no es su línea para celulares.
 Sin esos datos no das ningún número, ni aproximado.
-SIEMPRE hay cuota inicial, sin excepción. La línea aprobada es solo un techo:
+SIEMPRE hay cuota inicial. Única excepción: una promo de Krece donde EQUIPO
+CONSULTADO dice "sin inicial". La línea aprobada es solo un techo:
 si el equipo la supera, la inicial sube — nunca la elimina. Usa EXACTAMENTE
-los montos de inicial y cuota que aparecen en EQUIPO CONSULTADO. NUNCA digas
-que "no hace falta inicial" ni que el cliente "no necesita poner inicial".
-NUNCA digas cuántas cuotas son antes de tener el cálculo: varía entre 3 y 10.
+los montos de inicial y cuota que aparecen en EQUIPO CONSULTADO. Salvo ese
+"sin inicial", NUNCA digas que "no hace falta inicial" ni que el cliente
+"no necesita poner inicial".
+NUNCA digas cuántas cuotas son antes de tener el cálculo: varía entre 3 y 12.
 Si el cliente te da nivel y línea pero todavía no dijo qué equipo quiere,
 pregúntaselo: "¿Qué modelo tienes en mente?"
 Los iPhone con Krece solo aplican de nivel Plata en adelante y se pagan con su
@@ -1844,6 +1909,21 @@ Al final, deja abierta la corrección: "Si tu nivel o el monto de *Celulares*
 en tu app es distinto, dímelo y te recalculo."
 Nunca ofrezcas ni sugieras un iPhone a un cliente Azul, ni siquiera como
 opción a mostrar. Si él mismo lo pide, ahí sí explícale la restricción.
+Logic y ZTE NO se venden por Krece (Krece no los aprueba): nunca los ofrezcas
+a un cliente Krece. Si él los pide, sigue lo que dice EQUIPO CONSULTADO.
+
+PROMOS DE KRECE
+Solo existen las que aparecen en PROMOS KRECE (DATOS DE ESTA CONVERSACIÓN).
+Nunca inventes una promo ni llames promo a un equipo que no esté ahí.
+Si un equipo de las TRES OPCIONES, la LISTA CORTA o EQUIPO CONSULTADO trae 🔥,
+dile que está en promo de Krece y hasta qué fecha, como dato y sin presionar.
+Si dice "sin inicial", dilo así: es la única vez que no hay inicial.
+Si es cliente Krece y pidió un equipo que NO está en promo, cotízalo normal y,
+UNA sola vez en toda la conversación, menciona en una frase el equipo de PROMOS
+KRECE de precio más parecido. Si ya lo mencionaste antes, no lo repitas.
+Si pregunta si hay promociones u ofertas: cuéntale las de PROMOS KRECE (son
+solo por Krece) y, si no sabes si tiene Krece, pregúntaselo. Si no hay
+PROMOS KRECE, dile que por ahora no hay promociones activas.
 Si el cliente dice que no tiene Krece o nunca lo ha usado, NO es un obstáculo:
 dile que en la tienda le hacemos el registro en el momento, y que debe ser
 mayor de edad y traer su cédula laminada. Dale los montos de EQUIPO CONSULTADO
@@ -2007,6 +2087,8 @@ tiene. Si todavía no tiene canal, pregúntale cuál aplicación usa.
 
 """
 
+    texto_promos = (f"\nPROMOS KRECE (solo por Krece y con entrega inmediata)\n{promos}\n"
+                    if promos else "")
     variable = f"""DATOS DE ESTA CONVERSACIÓN
 
 TIENDA
@@ -2022,7 +2104,7 @@ TRES OPCIONES (para cuando no sabe qué quiere)
 
 LISTA CORTA
 {lista_corta}
-
+{texto_promos}
 EQUIPO CONSULTADO
 {info_equipo}
 """
@@ -2381,7 +2463,7 @@ def atender_celulares(from_number, numero_limpio, body):
                     f"{perfil['modelo_interes']}. Si ahora no menciona otro "
                     f"modelo, se refiere a ese o esos (también si los compara).\n")
     else:
-        rango_ctx = listar_por_rango(excluir_iphone=sin_iphone(perfil))
+        rango_ctx = listar_por_rango(**filtros_listas(perfil), con_promo=es_krece(perfil))
         if rango_ctx:
             etiquetas = ["económico", "intermedio", "gama alta"]
             desc = ", ".join(
@@ -2557,7 +2639,8 @@ def atender_celulares(from_number, numero_limpio, body):
             model=MODELO_CELULARES,
             max_tokens=4000,
             system=get_system_prompt_celulares(info, perfil, bloque_rangos(perfil),
-                                               bloque_lista_corta(canal, perfil)),
+                                               bloque_lista_corta(canal, perfil),
+                                               bloque_promos(perfil, body)),
             messages=historial,
         )
         reply = texto_respuesta(respuesta)
@@ -2636,9 +2719,10 @@ def atender_celulares(from_number, numero_limpio, body):
     # suman al modelo de interés, para entender "sí", "ese" o "el más barato"
     if reply:
         previo = perfil.get("modelo_interes") or ""
-        excluir = sin_iphone(perfil)
+        filtros = filtros_listas(perfil)
         nuevos = []
-        for eq in listar_por_rango(excluir_iphone=excluir) + listar_mas_baratos(12, excluir_iphone=excluir):
+        for eq in (listar_por_rango(**filtros, con_promo=es_krece(perfil))
+                   + listar_mas_baratos(12, **filtros)):
             nombre = nombre_completo(eq)
             if (f"{eq['marca']} {eq['modelo']}".lower() in reply.lower()
                     and nombre.lower() not in previo.lower() and nombre not in nuevos):
