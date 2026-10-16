@@ -2618,6 +2618,11 @@ def atender_celulares(from_number, numero_limpio, body):
             info += (f" Antes le interesaba el {perfil['modelo_interes']}: lo que ya "
                      "le dijiste de ese equipo sigue siendo válido, NO lo corrijas "
                      "ni lo retires. Responde solo lo que pregunta ahora.")
+            if sin_equipo:
+                interes = equipos_de_interes(perfil["modelo_interes"])
+                if interes:
+                    info += ("\nDatos vigentes de ese equipo (lo que ya dijiste es "
+                             "correcto):" + bloque_equipo(interes, canal, perfil))
     else:
         info = bloque_equipo(equipos, canal, perfil)
 
