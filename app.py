@@ -407,7 +407,7 @@ def detectar_canal(texto):
                             "pago de una vez", "pagar de una vez",
                             "pagarlo de una vez", "un solo pago", "pago completo")):
         return "contado"
-    if (re.search(r"\bnivel\s*(azul|plata|oro|platino)\b", t)
+    if (re.search(r"\bnivel\s*(azul|plata|oro|platino)\b|\bsoy\s+(?:nivel\s+)?(?:azul|plata|oro|platino)\b|\b(?:azul|plata|oro|platino)\s+con\s+\$?\s*\d{2,5}\b", t)
             or re.search(r"\b\d{2,4}\s*(?:pts?|puntos)\b", t)
             or re.search(r"\blinea\s+(aprobada|de\s+celulares)\b", t)):
         return "krece"
