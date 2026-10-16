@@ -154,7 +154,7 @@ def cashea(paralelo, nivel):
 #  Krece
 # ══════════════════════════════════════════════════════════════════════════
 
-def krece(paralelo, nivel, plazo=6, linea=None, inicial_pct=None, tipo="celular"):
+def krece(paralelo, nivel, plazo=6, linea=None, inicial_pct=None, tipo="celular", promo=None):
     """
     Fórmula verificada contra 416 simulaciones del portal:
         financiado = precio × (1 - %inicial)      <- SIN redondear
@@ -163,18 +163,28 @@ def krece(paralelo, nivel, plazo=6, linea=None, inicial_pct=None, tipo="celular"
 
     La línea aprobada es un techo: si el financiado la supera,
     Krece sube la inicial hasta que quepa.
+
+    promo: {"inicial": 0.20, "factores": {8: "1.60"}} sacado de la pestaña
+    PromosKrece (misma fórmula, con la inicial y los recargos de la promo).
     """
     clave = _normalizar(nivel)
     tabla = KRECE_FACTORES_OTROS if tipo == "otros" else KRECE_FACTORES
     if clave not in KRECE_INICIAL or clave not in tabla:
         raise ValueError(f"Nivel de Krece no reconocido: {nivel}")
-    if plazo not in tabla[clave]:
-        disponibles = sorted(tabla[clave])
+    factores = ({int(p): f for p, f in promo["factores"].items()} if promo
+                else tabla[clave])
+    if plazo not in factores:
+        disponibles = sorted(factores)
         raise ValueError(
             f"Nivel {clave} no maneja {plazo} cuotas. Disponibles: {disponibles}")
 
     precio = _d(precio_bcv(paralelo))
-    pct = _d(inicial_pct) if inicial_pct is not None else KRECE_INICIAL[clave]
+    if inicial_pct is not None:
+        pct = _d(inicial_pct)
+    elif promo:
+        pct = _d(promo["inicial"])
+    else:
+        pct = KRECE_INICIAL[clave]
     linea = _d(linea) if linea is not None else KRECE_LINEA_DEFECTO[clave]
 
     # La línea topa el monto financiado: si no cabe, sube la inicial
@@ -192,13 +202,14 @@ def krece(paralelo, nivel, plazo=6, linea=None, inicial_pct=None, tipo="celular"
             "motivo": "El equipo excede la línea aprobada del cliente",
         }
 
-    factor = _d(tabla[clave][plazo])
+    factor = _d(factores[plazo])
     cuota = _redondear(financiado * factor / plazo)
     inicial = _redondear(precio * pct)
     return {
         "canal": "Krece",
         "nivel": clave,
         "aplica": True,
+        "promo": bool(promo),
         "inicial": inicial,
         "inicial_pct": round(float(pct) * 100, 1),
         "cuotas": plazo,
@@ -208,8 +219,10 @@ def krece(paralelo, nivel, plazo=6, linea=None, inicial_pct=None, tipo="celular"
     }
 
 
-def plazos_krece(nivel, tipo="celular"):
-    """Plazos que maneja un nivel."""
+def plazos_krece(nivel, tipo="celular", promo=None):
+    """Plazos que maneja un nivel. Con promo, los plazos de la promo."""
+    if promo:
+        return sorted(int(p) for p in promo["factores"])
     tabla = KRECE_FACTORES_OTROS if tipo == "otros" else KRECE_FACTORES
     return sorted(tabla[_normalizar(nivel)])
 
