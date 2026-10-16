@@ -706,6 +706,23 @@ def bloque_equipo(equipos, canal, perfil):
                 inicial = "sin inicial" if k["inicial"] == 0 else f"inicial ${k['inicial']}"
                 lineas.append(f"  Krece {plazo} cuotas: {inicial} "
                               f"+ {plazo} x ${k['monto_cuota']}{extra}")
+            if promo and hubo:
+                # Para responder "¿y después de la promo?" sin DERIVAR_PRECIO falso
+                try:
+                    cuotas_n, inicial_n = [], None
+                    for pz in precios.plazos_krece(nivel):
+                        kn = precios.krece(p, nivel, pz, linea=linea)
+                        if kn.get("aplica"):
+                            inicial_n = kn["inicial"]
+                            cuotas_n.append(f"{pz} x ${kn['monto_cuota']}")
+                    if cuotas_n:
+                        lineas.append(
+                            f"  Después de la promo (desde el "
+                            f"{promo['hasta'] + timedelta(days=1):%d/%m}): inicial "
+                            f"${inicial_n} + " + " / ".join(cuotas_n)
+                            + " (dilo solo si pregunta por el precio sin promo)")
+                except (ValueError, KeyError):
+                    pass
             if not hubo:
                 lineas.append("  Este equipo supera la línea aprobada del cliente. "
                               "No aplica para Krece.")
@@ -802,7 +819,8 @@ SIN_EQUIPO_PALABRAS = {
     "listo", "perfecto", "dale", "vale", "excelente", "bueno", "bien", "genial",
     "claro", "ah", "aja", "ya", "entiendo", "entendido", "buenos", "buenas", "dias",
     "tardes", "noches", "saludos", "cordiales", "hola", "amigo", "amiga", "pana",
-    "estan", "ubicado", "ubicados", "ubicada", "ubicadas", "donde", "y"}
+    "estan", "ubicado", "ubicados", "ubicada", "ubicadas", "donde", "y",
+    "esta", "todo"}
 
 
 def es_mensaje_sin_equipo(texto):
