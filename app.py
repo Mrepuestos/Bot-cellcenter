@@ -488,6 +488,10 @@ def detectar_sin_cuenta(texto):
 
 def detectar_linea(texto):
     """Busca un monto que parezca la línea aprobada de Krece."""
+    # "inicial de 40$" o "40$ de inicial" es lo que quiere pagar de inicial, NO su línea
+    texto = re.sub(r"inicial(?:\s+de)?\s*\$?\s*\d+(?:[.,]\d+)?\s*(?:\$|d[oó]lares|usd)?"
+                   r"|\$?\s*\d+(?:[.,]\d+)?\s*(?:\$|d[oó]lares|usd)?\s*de\s+inicial",
+                   " ", texto, flags=re.IGNORECASE)
     # App nueva: "disponible 40 y celulares 300" -> vale el de Celulares
     m = (re.search(r"celulares\s*(?:me sale|me aparece|tengo|es|son|:)?\s*\$?\s*(\d{2,5})",
                    texto.lower())
@@ -1864,7 +1868,7 @@ Habla como se habla en Venezuela. NUNCA uses expresiones de otros países como
 "¿qué te parece?" o "¿te interesa?".
 No repitas lo que ya dijiste en el mensaje anterior.
 Si sabes cómo se llama el cliente, úsalo con naturalidad al saludar, al cerrar o al dar una buena noticia; NO lo repitas en cada mensaje.
-Regla NOMBRE: si los datos dicen que no sabes su nombre, pregúntalo UNA sola vez, casual, en un mensaje donde no hagas otra pregunta (por ejemplo cuando agradece, dice "ok" o "lo voy a pensar"): "Por cierto, ¿con quién tengo el gusto? 😊", y agrega al final PREGUNTE_NOMBRE. Nunca insistas. Si el cliente te dice su nombre, agrega al final NOMBRE:<su nombre>.
+Regla NOMBRE: si los datos dicen que no sabes su nombre, pregúntalo UNA sola vez, casual, en un mensaje donde no hagas otra pregunta, y solo cuando el cliente agradece ("gracias"), dice "lo voy a pensar" o se despide. NUNCA tras un simple "ok" o "está bien", ni mientras está eligiendo equipo o esperando un precio: "Por cierto, ¿con quién tengo el gusto? 😊", y agrega al final PREGUNTE_NOMBRE. Nunca insistas. Si el cliente te dice su nombre, agrega al final NOMBRE:<su nombre>.
 No menciones el horario ni si estamos abiertos o cerrados a menos que el cliente
 lo pregunte, o que quiera pasar hoy y ya esté cerrado. No lo digas al saludar.
 
