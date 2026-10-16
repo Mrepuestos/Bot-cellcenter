@@ -244,14 +244,18 @@ def ordenar_equipos(equipos):
                                           e["precio_paralelo"] or 0))
 
 
-def listar_por_rango(excluir_iphone=False):
+def listar_por_rango(excluir_iphone=False, excluir_marcas=(), con_promo=False):
     """
     Tres equipos de entrega inmediata: económico, intermedio y gama alta.
     Para cuando el cliente pregunta qué hay sin decir modelo.
     excluir_iphone=True para clientes Krece Azul.
+    excluir_marcas: marcas que no se muestran (Logic y ZTE para Krece).
+    con_promo=True (clientes Krece): en cada rango, si hay un equipo en promo
+    de Krece, va ese en lugar del elegido.
     """
     equipos = [e for e in _cargar()
-               if e["inmediato"] and e["precio_verificado"] and e["precio_paralelo"]]
+               if e["inmediato"] and e["precio_verificado"] and e["precio_paralelo"]
+               and e["marca"].lower() not in excluir_marcas]
     if excluir_iphone:
         equipos = [e for e in equipos if e["marca"].lower() != "iphone"]
     if not equipos:
@@ -260,15 +264,27 @@ def listar_por_rango(excluir_iphone=False):
     n = len(equipos)
     if n <= 3:
         return equipos
-    return [equipos[n // 6], equipos[n // 2], equipos[-(n // 6) - 1]]
+    elegidos = [equipos[n // 6], equipos[n // 2], equipos[-(n // 6) - 1]]
+    if con_promo:
+        tercios = [equipos[:n // 3], equipos[n // 3:2 * n // 3], equipos[2 * n // 3:]]
+        usados = set()   # no repetir el mismo modelo en dos rangos (64GB y 128GB)
+        for i, tercio in enumerate(tercios):
+            en_promo = [e for e in tercio if promo_krece(e)
+                        and (e["marca"], e["modelo"]) not in usados]
+            if en_promo:
+                base = elegidos[i]["precio_paralelo"]
+                elegidos[i] = min(en_promo, key=lambda e: abs(e["precio_paralelo"] - base))
+            usados.add((elegidos[i]["marca"], elegidos[i]["modelo"]))
+    return elegidos
 
-def listar_mas_baratos(cantidad=8, excluir_iphone=False):
+def listar_mas_baratos(cantidad=8, excluir_iphone=False, excluir_marcas=()):
     """
     Los equipos más baratos de entrega inmediata y con precio verificado.
     Para la lista corta y para cuando el cliente dice que está caro.
     """
     equipos = [e for e in _cargar()
-               if e["inmediato"] and e["precio_verificado"] and e["precio_paralelo"]]
+               if e["inmediato"] and e["precio_verificado"] and e["precio_paralelo"]
+               and e["marca"].lower() not in excluir_marcas]
     if excluir_iphone:
         equipos = [e for e in equipos if e["marca"].lower() != "iphone"]
     equipos.sort(key=lambda e: e["precio_paralelo"])
@@ -300,6 +316,7 @@ def refrescar():
     """Fuerza recarga en la próxima consulta."""
     _cache["timestamp"] = None
     _cache_admin["timestamp"] = None
+    _cache_promos["timestamp"] = None
 
 
 # ─── Inventario completo para los administradores ────────────────────────────
@@ -375,3 +392,105 @@ def inventario_admin():
     except Exception as e:
         print(f"❌ Error leyendo inventario admin: {e}")
         return _cache_admin["texto"] or ""
+
+
+# ─── Promos de Krece (pestaña PromosKrece) ───────────────────────────────────
+# Una fila por promo y nivel. Columnas:
+#   Promo | Marca | Modelos (separados por coma; vacío = toda la marca) |
+#   Desde | Hasta (dd/mm/aaaa) | Nivel | Inicial % | Plazos ("3:1.20, 8:1.60")
+# Cuando pasa la fecha "Hasta" la promo se apaga sola.
+
+_cache_promos = {"promos": None, "timestamp": None}
+
+
+def _hoy_venezuela():
+    return (datetime.utcnow() - timedelta(hours=4)).date()
+
+
+def _fecha(texto):
+    for formato in ("%d/%m/%Y", "%d/%m/%y", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(str(texto).strip(), formato).date()
+        except ValueError:
+            pass
+    return None
+
+
+def _cargar_promos():
+    """Lee la pestaña PromosKrece. Usa caché."""
+    ahora = datetime.now()
+    if (_cache_promos["promos"] is not None
+            and _cache_promos["timestamp"] is not None
+            and ahora - _cache_promos["timestamp"] < timedelta(minutes=CACHE_MINUTOS)):
+        return _cache_promos["promos"]
+    try:
+        filas = (_get_sheet().open_by_key(GOOGLE_SHEET_ID_CELULARES)
+                 .worksheet("PromosKrece").get_all_values())
+        promos = {}
+        for fila in filas:
+            fila = fila + [""] * (8 - len(fila))
+            nombre, marca, modelos, desde, hasta, nivel, inicial, plazos = (
+                x.strip() for x in fila[0:8])
+            fin = _fecha(hasta)
+            if not nombre or not marca or not fin:
+                continue   # encabezados, notas o filas incompletas
+            factores = {}
+            for parte in plazos.split(","):
+                if ":" in parte:
+                    n, f = parte.split(":", 1)
+                    try:
+                        factores[int(n.strip())] = f.strip().replace(" ", "")
+                    except ValueError:
+                        pass
+            pct = _num(inicial)
+            if pct is None or not factores:
+                continue
+            p = promos.setdefault(nombre, {
+                "nombre": nombre, "marca": normalizar(marca),
+                "modelos": {normalizar(m) for m in modelos.split(",") if m.strip()},
+                "desde": _fecha(desde), "hasta": fin, "niveles": {}})
+            p["niveles"][normalizar(nivel)] = {
+                "inicial": pct / 100 if pct > 1 else pct, "factores": factores}
+        lista = list(promos.values())
+        _cache_promos["promos"] = lista
+        _cache_promos["timestamp"] = ahora
+        print(f"✅ Promos Krece cargadas: {len(lista)}")
+        return lista
+    except Exception as e:
+        print(f"❌ Error leyendo PromosKrece: {e}")
+        return _cache_promos["promos"] or []
+
+
+def promos_vigentes():
+    hoy = _hoy_venezuela()
+    return [p for p in _cargar_promos()
+            if (not p["desde"] or p["desde"] <= hoy) and hoy <= p["hasta"]]
+
+
+def promo_krece(eq, nivel=None):
+    """
+    Promo vigente de Krece para este equipo, o None.
+    Solo cuenta si el equipo tiene entrega inmediata (tienda o aliada).
+    Sin nivel devuelve la promo; con nivel, las condiciones de ese nivel:
+      {"inicial": 0.2, "factores": {8: "1.60"}, "nombre": ..., "hasta": date}
+    """
+    if not eq.get("inmediato"):
+        return None
+    marca, modelo = normalizar(eq["marca"]), normalizar(eq["modelo"])
+    for p in promos_vigentes():
+        if p["marca"] != marca or (p["modelos"] and modelo not in p["modelos"]):
+            continue
+        if nivel is None:
+            return p
+        cond = p["niveles"].get(normalizar(nivel))
+        if cond:
+            return {**cond, "nombre": p["nombre"], "hasta": p["hasta"]}
+    return None
+
+
+def equipos_en_promo(excluir_marcas=()):
+    """Equipos con promo vigente y entrega inmediata, del más barato al más caro."""
+    return sorted((e for e in _cargar()
+                   if e["precio_verificado"] and e["precio_paralelo"]
+                   and e["marca"].lower() not in excluir_marcas and promo_krece(e)),
+                  key=lambda e: e["precio_paralelo"])
