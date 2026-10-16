@@ -877,7 +877,7 @@ def bloque_promos(perfil, texto=""):
         grupos.setdefault(p["nombre"], (p, []))[1].append(eq)
     salida = []
     for p, eqs in grupos.values():
-        nombres = ", ".join(f"{nombre_completo(e)} (${int(e['precio_paralelo'])})" for e in eqs)
+        nombres = ", ".join(nombre_completo(e) for e in eqs)   # sin precio de contado: confunde
         condiciones = []
         for niv in ("azul", "plata", "oro", "platino"):
             c = p["niveles"].get(niv)
