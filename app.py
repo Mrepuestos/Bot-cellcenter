@@ -1945,7 +1945,7 @@ Solo existen las que aparecen en PROMOS KRECE (DATOS DE ESTA CONVERSACIÓN).
 Nunca inventes una promo ni llames promo a un equipo que no esté ahí.
 Si un equipo de las TRES OPCIONES, la LISTA CORTA o EQUIPO CONSULTADO trae 🔥,
 dile que está en promo de Krece y hasta qué fecha, como dato y sin presionar.
-Si dice "sin inicial", dilo así: es la única vez que no hay inicial.
+Si dice "sin inicial", dilo así: "sin inicial mientras la promo esté vigente (hasta el dd/mm)". No digas "la única vez".
 Si es cliente Krece y pidió un equipo que NO está en promo, cotízalo normal y,
 UNA sola vez en toda la conversación, menciona en una frase el equipo de PROMOS
 KRECE de precio más parecido. Si ya lo mencionaste antes, no lo repitas.
