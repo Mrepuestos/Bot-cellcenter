@@ -488,6 +488,7 @@ def detectar_sin_cuenta(texto):
 
 def detectar_linea(texto):
     """Busca un monto que parezca la línea aprobada de Krece."""
+    texto = texto.replace("@", "")   # "800@$" es 800$
     # "inicial de 40$" o "40$ de inicial" es lo que quiere pagar de inicial, NO su línea
     texto = re.sub(r"inicial(?:\s+de)?\s*\$?\s*\d+(?:[.,]\d+)?\s*(?:\$|d[oó]lares|usd)?"
                    r"|\$?\s*\d+(?:[.,]\d+)?\s*(?:\$|d[oó]lares|usd)?\s*de\s+inicial",
@@ -2518,6 +2519,13 @@ def atender_celulares(from_number, numero_limpio, body):
                  or (canal == "krece" and detectar_linea_suelta(body) is not None))):
         equipos = equipos_de_interes(perfil["modelo_interes"])
         tipo_resultado, canal_ia = "exacto", None
+    # "Mándame las fotos de esos tres": pide ver varios de los que ya vio
+    if (not equipos and perfil.get("modelo_interes") and pide_foto(body)
+            and re.search(r"\b(fotos|imagenes|esos|esas|ambos|ambas|todos|todas|tres|dos)\b",
+                          body.lower())):
+        equipos = equipos_de_interes(perfil["modelo_interes"])
+        if equipos:
+            tipo_resultado, canal_ia = "exacto", None
     # Gracias, ok, saludo o "ubicados": no nombra equipo, no hace falta la IA
     sin_equipo = bool(perfil.get("modelo_interes") and es_mensaje_sin_equipo(body))
     if not equipos and sin_equipo:
@@ -2535,6 +2543,19 @@ def atender_celulares(from_number, numero_limpio, body):
                      or body == "Aquí está mi captura de Krece")):
             interes = equipos_de_interes(perfil["modelo_interes"])
             if interes:
+                equipos, tipo_resultado = interes, "exacto"
+        # Dio su línea y la IA lo tomó por presupuesto: trajo equipos que no nombró
+        # y que no le interesaban. Se sigue con los que ya le interesaban.
+        elif (tipo_resultado in ("exacto", "recomendacion") and equipos
+              and perfil.get("modelo_interes") and cambios.get("linea_krece")):
+            interes = equipos_de_interes(perfil["modelo_interes"])
+            nombres_interes = {nombre_completo(e) for e in interes}
+            b = body.lower()
+            nombro = any(p in b for e in equipos
+                         for p in (str(e["marca"]).lower(), *str(e["modelo"]).lower().split())
+                         if len(p) >= 2)
+            if (interes and not nombro
+                    and not all(nombre_completo(e) in nombres_interes for e in equipos)):
                 equipos, tipo_resultado = interes, "exacto"
 
     # Si Python no reconoció el canal (mal escrito, como "caschea"),
@@ -2778,12 +2799,20 @@ def atender_celulares(from_number, numero_limpio, body):
         send_whapi_message(from_number, reply)
 
     if quiere_foto and equipos:
-        url_foto = buscar_foto(equipos[0]["marca"], equipos[0]["modelo"],
-                               equipos[0]["almacenamiento"])
-        if url_foto:
-            send_whapi_image(from_number, url_foto, nombre_completo(equipos[0]))
-        else:
-            print(f"Sin foto para {nombre_completo(equipos[0])}")
+        # Hasta 3 fotos, una por modelo (sin repetir el mismo modelo con otra memoria)
+        vistos, enviadas = set(), 0
+        for eq in equipos:
+            clave_foto = (eq["marca"].lower(), eq["modelo"].lower())
+            if clave_foto in vistos or enviadas >= 3:
+                continue
+            vistos.add(clave_foto)
+            url_foto = buscar_foto(eq["marca"], eq["modelo"], eq["almacenamiento"])
+            if url_foto:
+                send_whapi_image(from_number, url_foto, nombre_completo(eq))
+                enviadas += 1
+            else:
+                print(f"Sin foto para {nombre_completo(eq)}")
+        if not enviadas:
             send_whapi_message(from_number,
                 "Por ahora no tengo la foto de ese modelo, pero puedes pasar "
                 "por la tienda a verlo en persona 😊")
