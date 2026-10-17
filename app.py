@@ -492,6 +492,11 @@ def detectar_linea(texto):
     texto = re.sub(r"inicial(?:\s+de)?\s*\$?\s*\d+(?:[.,]\d+)?\s*(?:\$|d[oó]lares|usd)?"
                    r"|\$?\s*\d+(?:[.,]\d+)?\s*(?:\$|d[oó]lares|usd)?\s*de\s+inicial",
                    " ", texto, flags=re.IGNORECASE)
+    # "75$ al mes", "cuota de 75$", "75 cada 15 días" es una cuota, NO su línea
+    texto = re.sub(r"\$?\s*\d+(?:[.,]\d+)?\s*(?:\$|d[oó]lares|usd)?\s*"
+                   r"(?:al mes|por mes|mensual\w*|quincenal\w*|cada\b|por cuota|de cuota|la cuota|x cuota)"
+                   r"|cuotas?\s+(?:de\s+)?\$?\s*\d+(?:[.,]\d+)?\s*(?:\$|d[oó]lares|usd)?",
+                   " ", texto, flags=re.IGNORECASE)
     # App nueva: "disponible 40 y celulares 300" -> vale el de Celulares
     m = (re.search(r"celulares\s*(?:me sale|me aparece|tengo|es|son|:)?\s*\$?\s*(\d{2,5})",
                    texto.lower())
@@ -521,7 +526,8 @@ RELLENO_LINEA = {"y", "mi", "es", "de", "la", "linea", "línea", "tengo", "son",
                  "aprobaron", "aprobado", "aprobada", "limite", "límite", "dolares",
                  "dólares", "usd", "oro", "plata", "azul", "platino", "nivel", "ok",
                  "si", "sí", "con", "krece", "soy", "como",
-                 "ah", "aja", "ajá", "dice", "bueno", "pues", "oye", "listo"}
+                 "ah", "aja", "ajá", "dice", "bueno", "pues", "oye", "listo", "aparece", "aparecen",
+                 "sale", "salen", "monto", "ahora", "ahorita"}
 
 
 def detectar_linea_suelta(texto):
@@ -2062,6 +2068,7 @@ lo apartemos? Un asesor te avisa apenas llegue para que pases a buscarlo."
 Si dice que sí, es INTENCION_COMPRA.
 Si pregunta dónde quedan o si son de algún lugar (ej. "¿son de Santa Teresa?"), escribe ENVIAR_UBICACION (el sistema le manda la foto de la tienda, la dirección y el mapa) y una frase corta que responda ("¡Sí, estamos en Santa Teresa del Tuy! 😊"). Si todavía no sabes qué busca, puedes preguntarle qué equipo le interesa. Si ya vio uno, no le preguntes cuándo va a ir. No digas que un vendedor lo espera ni te despidas: solo quería saber dónde quedan. Si en ese mismo mensaje pregunta otra cosa (por ejemplo si aceptan Krece o Cashea), respóndela en una frase corta junto con ENVIAR_UBICACION.
 Si EQUIPO CONSULTADO trae cuotas de varios equipos, NO preguntes cuál quiere antes de dar números: da de cada uno, en una línea, la inicial y la cuota del plazo más largo, y al final pregunta cuál le gusta. Una sola pregunta por mensaje.
+Las cuotas de Krece y CrediTienda se pagan cada 15 días, y las de Cashea cada 2 semanas (14 días). Si preguntan cada cuánto se paga, díselo así; nunca digas "al mes", "mensual" ni "mensualmente".
 Cuando detectes intención de compra (dice que lo quiere, pregunta cómo apartarlo,
 confirma que va a ir, o ya dijo que viene a comprar hoy o mañana y ahora muestra
 interés), responde exactamente: INTENCION_COMPRA
