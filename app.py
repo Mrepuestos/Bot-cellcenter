@@ -3521,7 +3521,7 @@ def limpiar_nombre(texto):
     """Primer nombre, solo si parece un nombre real."""
     # Emojis, símbolos y números pegados se vuelven espacios: "💕Ángeles💕" -> "Ángeles"
     limpio = re.sub(r"[^\w\s]|_|\d", " ", texto or "")
-    palabras = [w for w in limpio.split() if len(w) >= 2]   # "J.Carlos" -> "Carlos"
+    palabras = [w for w in limpio.split() if len(w) >= 3]   # "J.Carlos" -> "Carlos"
     while palabras and palabras[0].lower() in TITULOS_NOMBRE:   # "Dra. María" -> "María"
         palabras = palabras[1:]
     if not palabras:
@@ -3531,6 +3531,7 @@ def limpiar_nombre(texto):
     if not p.isalpha() or len(p) > 14 or p.lower() in NO_ES_NOMBRE:
         return None
     if p.islower() and len(p) >= 10: return None   # "pedromarquez" parece usuario, no nombre
+    if not re.search(r"[aeiouáéíóú]", p.lower()) or len(set(p.lower())) == 1: return None   # "Mrs", "Hhh" no son nombres
     return p.capitalize()
 
 
