@@ -1603,10 +1603,31 @@ def msg_asesor(de_dia, de_noche):
     return de_dia if asesor_disponible() else de_noche
 
 
+def equipos_aviso(modelo_interes):
+    """modelo_interes sin repetir el modelo: 'Tecno Spark Go 3 64GB/128GB · 4GB RAM'."""
+    eqs = equipos_de_interes(modelo_interes)
+    if not eqs:
+        return modelo_interes
+    grupos = {}
+    for eq in eqs:
+        grupos.setdefault((eq["marca"], eq["modelo"]), []).append(eq)
+    lineas = []
+    for (marca, modelo), lista in grupos.items():
+        alm = "/".join(dict.fromkeys(e["almacenamiento"] for e in lista if e["almacenamiento"]))
+        ram = "/".join(dict.fromkeys(str(e["ram"]) for e in lista if e["ram"]))
+        t = f"{marca} {modelo} {alm}".strip()
+        if ram:
+            t += f" · {ram}GB RAM"
+        lineas.append(t)
+    return " / ".join(lineas)
+
+
 def notificar_intencion_compra(numero_cliente, perfil, equipos, online=False):
     numero = "+" + numero_cliente.replace("@s.whatsapp.net", "")
     modelo = perfil.get("modelo_interes") or (
         nombre_completo(equipos[0]) if equipos else "sin especificar")
+    if perfil.get("modelo_interes"):
+        modelo = equipos_aviso(perfil["modelo_interes"])
     partes = ["🟢 *INTENCIÓN DE COMPRA*", f"Cliente: {numero}", f"Equipo: {modelo}"]
     if perfil.get("canal_pago"):
         partes.append(f"Paga con: {perfil['canal_pago']}")
@@ -2682,6 +2703,16 @@ def atender_celulares(from_number, numero_limpio, body):
         return
 
     historial = cargar_historial(numero_limpio)
+    # Segundo "ok / perfecto / listo" seguido: el bot ya respondió al anterior (sin
+    # pregunta pendiente), no se contesta otra vez. "Gracias" y saludos sí se contestan.
+    if (sin_equipo and len(historial) >= 2
+            and historial[-1].get("role") == "assistant"
+            and historial[-2].get("role") == "user"
+            and es_mensaje_sin_equipo(str(historial[-2].get("content", "")))
+            and not re.search(r"gracias|grax|hola|buen|saludos", body.lower())
+            and "?" not in str(historial[-1].get("content", ""))):
+        print(f"Segundo acuse seguido ({numero_limpio}): no se responde")
+        return
     historial.append({"role": "user", "content": body})
     if len(historial) > 4:
         historial = historial[-4:]
