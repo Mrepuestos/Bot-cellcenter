@@ -234,11 +234,11 @@ def existe_clave(clave):
     return obtener_por_clave(clave, solo_con_precio=False) is not None
 
 
-def ordenar_equipos(equipos):
+def ordenar_equipos(equipos, ocultar_demorados=True):
     """Primero tienda, luego aliada, luego proveedor. Si hay entrega
     inmediata, oculta lo que tarda 24-48h."""
     inmediatos = [e for e in equipos if e["inmediato"]]
-    if inmediatos:
+    if inmediatos and ocultar_demorados:
         equipos = inmediatos
     return sorted(equipos, key=lambda e: (PRIORIDAD_ORIGEN[e["origen"]],
                                           e["precio_paralelo"] or 0))
