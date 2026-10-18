@@ -499,8 +499,11 @@ def detectar_linea(texto):
                    r"|cuotas?\s+(?:de\s+)?\$?\s*\d+(?:[.,]\d+)?\s*(?:\$|d[oó]lares|usd)?",
                    " ", texto, flags=re.IGNORECASE)
     # App nueva: "disponible 40 y celulares 300" -> vale el de Celulares
-    m = (re.search(r"celulares\s*(?:me sale|me aparece|tengo|es|son|:)?\s*\$?\s*(\d{2,5})",
+    # "celulares es de 400", "línea de celulares de 500" (no "celulares de 128gb")
+    m = (re.search(r"celulares\s*(?:(?:me sale|me aparece|tengo|es|son)(?:\s+de)?|:)?\s*\$?\s*(\d{2,5})(?!\d|\s*(?:gb|g\b|tb))",
                    texto.lower())
+         or re.search(r"l[ií]nea\s+(?:de|para)\s+(?:los\s+)?celulares\s+de\s+\$?\s*(\d{2,5})(?!\d|\s*(?:gb|g\b|tb))",
+                      texto.lower())
          or re.search(r"\b(\d{2,5})\s*\$?\s*(?:(?:en|de|para)\s+)?(?:los\s+)?celulares",
                       texto.lower()))
     if m:
