@@ -2289,8 +2289,11 @@ CrediTienda, aunque lo escriba mal ("caschea", "kashea", "kreze",
 "credi tieda"), pon ese canal en "canal": "krece", "cashea" o "creditienda".
 Si no nombra ninguno de los tres, pon "canal": null.
 
+En "nombrados" pon true solo cuando devuelves los modelos que el cliente nombró
+(2 o más); en cualquier otro caso, false.
+
 Responde SOLO con JSON, sin explicaciones ni markdown:
-{{"claves": ["clave1", "clave2"], "tipo": "exacto", "canal": null}}"""
+{{"claves": ["clave1", "clave2"], "tipo": "exacto", "canal": null, "nombrados": false}}"""
 
     # Parte variable: cambia en cada mensaje, va después de la caché.
     parte_variable = f'{historial_texto}\nMensaje del cliente por WhatsApp:\n"{mensaje}"'
@@ -2320,6 +2323,7 @@ Responde SOLO con JSON, sin explicaciones ni markdown:
         claves = datos.get("claves") or []
         tipo = datos.get("tipo") or "ninguno"
         canal_ia = datos.get("canal")
+        nombrados = bool(datos.get("nombrados"))
         if canal_ia not in ("krece", "cashea", "creditienda"):
             canal_ia = None
         print(f"IA CRUDO -> claves={claves} tipo={tipo} canal={canal_ia}")
@@ -2349,7 +2353,7 @@ Responde SOLO con JSON, sin explicaciones ni markdown:
 
     if tipo not in ("exacto", "recomendacion", "mas_opciones"):
         tipo = "exacto"
-    return ordenar_equipos(equipos), tipo, canal_ia
+    return ordenar_equipos(equipos, ocultar_demorados=not nombrados), tipo, canal_ia
 
 
 # ── Flujo de celulares ────────────────────────────────────────────────────────
