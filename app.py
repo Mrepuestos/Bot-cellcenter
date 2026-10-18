@@ -2231,7 +2231,7 @@ La clave es marca|modelo|almacenamiento|RAM en GB.
 
 {catalogo}
 
-Tu tarea: entender QUÉ QUIERE el cliente y elegir hasta 3 equipos del catálogo.
+Tu tarea: entender QUÉ QUIERE el cliente y elegir hasta 3 equipos del catálogo (hasta 4 si el cliente nombra 4 modelos).
 
 Interpreta libremente. El cliente escribe rápido, con errores, abreviado o
 sin saber el nombre exacto. Ejemplos de lo que debes entender:
@@ -2262,8 +2262,8 @@ REGLAS:
 - PERO si más abajo dice que en mensajes anteriores le interesaba un modelo, y
   ahora el cliente solo está dando su nivel o línea, devuelve ESE modelo con
   tipo "exacto". Está completando los datos para cotizar lo que ya pidió.
-- Si nombra, aunque sea a medias ("el tecno spark", "el logic"), uno de los
-  modelos que le interesaban antes, devuelve SOLO ese modelo con tipo
+- Si nombra UN solo modelo, aunque sea a medias ("el tecno spark", "el logic"), de los
+  que le interesaban antes, devuelve SOLO ese modelo con tipo
   "exacto", aunque en el mismo mensaje diga gracias, se despida o diga
   "cualquier cosa voy por ahí".
 - Si pide ver el equipo ("¿tiene fotos?", "mándame la foto", "¿cómo se ve?")
@@ -2277,6 +2277,10 @@ REGLAS:
   "el más barato", "el de 6 de RAM"), elige solo entre esos, con tipo
   "exacto". Devuelve UNO solo: si empatan en lo que pide, desempata por
   más RAM y luego por más almacenamiento.
+- Si nombra DOS O MÁS modelos concretos en este mensaje (para compararlos o
+  pedir que le recomienden uno), devuelve TODOS los que nombró (máximo 4) con
+  tipo "exacto", aunque antes le interesaran otros. Esta regla manda sobre la
+  de devolver UNO solo.
 - Si pregunta si hay MÁS opciones ("¿solo esos?", "¿no tienes más?",
   "¿otras marcas?"), NO está eligiendo los que vio: lista vacía y tipo
   "mas_opciones". Si nombra una marca, es tipo "exacto".
@@ -2330,7 +2334,7 @@ Responde SOLO con JSON, sin explicaciones ni markdown:
 
     # Validación dura: solo claves que existan de verdad
     equipos, hay_sin_precio = [], False
-    for clave in claves[:3]:
+    for clave in claves[:4]:
         eq = obtener_por_clave(clave)
         if eq:
             equipos.append(eq)
