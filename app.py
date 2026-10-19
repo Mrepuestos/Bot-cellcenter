@@ -761,10 +761,10 @@ def bloque_equipo(equipos, canal, perfil):
 
         elif canal == "creditienda":
             moneda = perfil.get("nivel_cliente")
-            variantes = [moneda] if moneda in ("divisas", "bs") else ["divisas", "bs"]
+            variantes = ["divisas", "bs"]
             for m in variantes:
                 c = precios.creditienda(p, m)
-                etiqueta = "en divisas" if m == "divisas" else "en bolívares"
+                etiqueta = "pagando en divisas" if m == "divisas" else "pagando en bolívares (el monto en $ se paga en Bs a tasa BCV)"
                 lineas.append(f"  CrediTienda {etiqueta}: inicial ${c['inicial']} "
                               f"+ 4 x ${c['monto_cuota']}")
                 if m == "bs":
@@ -2422,7 +2422,7 @@ def atender_celulares(from_number, numero_limpio, body):
     # Comparando Krece y Cashea: si da su nivel de Cashea, ya eligió Cashea
     nivel_c = detectar_nivel_cashea_claro(body)
     if (perfil.get("canal_extra") == "cashea" and canal != "cashea"
-            and len(nombrados) < 2 and nivel_c):
+            and nivel_c):
         canal = "cashea"
         cambios["canal_extra"] = None
         perfil["canal_extra"] = None
@@ -2513,7 +2513,11 @@ def atender_celulares(from_number, numero_limpio, body):
             perfil["nivel_cliente"] = nivel
     elif canal == "creditienda":
         t = body.lower()
-        if re.search(r"\b(bs|bolivares|bolívares)\b", t):
+        if (re.search(r"\b(bs|bolivares|bolívares)\b", t)
+                and re.search(r"\b(divisas?|dolares|dólares)\b", t)):
+            cambios["nivel_cliente"] = None   # nombra las dos: se le muestran las dos
+            perfil["nivel_cliente"] = None
+        elif re.search(r"\b(bs|bolivares|bolívares)\b", t):
             cambios["nivel_cliente"] = "bs"
             perfil["nivel_cliente"] = "bs"
         elif re.search(r"\b(divisas?|dolares|dólares|efectivo)\b", t):
@@ -2696,7 +2700,7 @@ def atender_celulares(from_number, numero_limpio, body):
             info += (f" Antes le interesaba el {perfil['modelo_interes']}: lo que ya "
                      "le dijiste de ese equipo sigue siendo válido, NO lo corrijas "
                      "ni lo retires. Responde solo lo que pregunta ahora.")
-            if sin_equipo:
+            if perfil.get("modelo_interes"):
                 interes = equipos_de_interes(perfil["modelo_interes"])
                 if interes:
                     info += ("\nDatos vigentes de ese equipo (lo que ya dijiste es "
