@@ -204,7 +204,8 @@ def catalogo_para_ia(texto_cliente=""):
     # Pide varios equipos y alguno no nombra marca ("iPhone 13 y Note 60 Pro"): puede ser de otra marca, va el catálogo completo
     if filtrados:
         trozos = re.split(r"\s(?:y|e|o|vs)\s|[,/+&]", " " + str(texto_cliente).lower() + " ")
-        if len(trozos) > 1 and any(not (set(normalizar(t).split()) & marcas_pedidas) for t in trozos if normalizar(t)):
+        marcas_catalogo = {normalizar(eq["marca"]) for eq in todos}
+        if len(trozos) > 1 and any(not (set(normalizar(t).split()) & marcas_pedidas & marcas_catalogo) for t in trozos if normalizar(t)):
             filtrados = []
             equipos = todos
             completo = True
