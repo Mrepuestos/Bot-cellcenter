@@ -1645,13 +1645,14 @@ def notificar_intencion_compra(numero_cliente, perfil, equipos, online=False):
     send_whapi_message(ASESOR_CELULARES, "\n".join(partes))
 
 
-def notificar_precio_sin_verificar(numero_cliente, texto_cliente):
+def notificar_precio_sin_verificar(numero_cliente, texto_cliente, faltante=None):
     numero = "+" + numero_cliente.replace("@s.whatsapp.net", "")
     send_whapi_message(
         ASESOR_CELULARES,
         f"🟡 *Equipo sin precio verificado*\nCliente: {numero}\n"
         f"Preguntó: {texto_cliente[:120]}\n\n"
-        f"El bot no cotizó. Responde tú o actualiza el precio en el catálogo."
+        + (f"Falta el precio de: {faltante}. El bot cotizó los demás. " if faltante else "El bot no cotizó. ")
+        + "Responde tú o actualiza el precio en el catálogo."
     )
 def leer_captura_krece(image_data):
     """Descarga la imagen y le pide a Claude que extraiga nivel y línea aprobada."""
@@ -2210,7 +2211,7 @@ def registrar_uso(etiqueta, respuesta):
 
 # ── Interpretación del pedido con IA ──────────────────────────────────────────
 
-def interpretar_pedido(mensaje, historial_texto=""):
+def interpretar_pedido(mensaje, historial_texto="", faltantes=None):
     """
     Única regla de búsqueda de celulares: Sonnet lee lo que escribió el
     cliente y elige del catálogo real. Nunca inventa un modelo.
@@ -2281,6 +2282,10 @@ REGLAS:
   "el más barato", "el de 6 de RAM"), elige solo entre esos, con tipo
   "exacto". Devuelve UNO solo: si empatan en lo que pide, desempata por
   más RAM y luego por más almacenamiento.
+- Si nombra DOS O MÁS modelos y alguno NO está en el catálogo, devuelve solo los
+  que sí están, con tipo "exacto", y pon en "no_hay" el nombre de los que faltan
+  tal como los escribió el cliente. Esta regla manda sobre la de "recomendacion".
+  En cualquier otro caso "no_hay" va vacío.
 - Si nombra DOS O MÁS modelos concretos en este mensaje (para compararlos o
   pedir que le recomienden uno), devuelve TODOS los que nombró (máximo 4) con
   tipo "exacto", aunque antes le interesaran otros. Esta regla manda sobre la
@@ -2297,7 +2302,7 @@ En "nombrados" pon true solo cuando devuelves los modelos que el cliente nombró
 (2 o más); en cualquier otro caso, false.
 
 Responde SOLO con JSON, sin explicaciones ni markdown:
-{{"claves": ["clave1", "clave2"], "tipo": "exacto", "canal": null, "nombrados": false}}"""
+{{"claves": ["clave1", "clave2"], "tipo": "exacto", "canal": null, "nombrados": false, "no_hay": []}}"""
 
     # Parte variable: cambia en cada mensaje, va después de la caché.
     parte_variable = f'{historial_texto}\nMensaje del cliente por WhatsApp:\n"{mensaje}"'
@@ -2328,6 +2333,7 @@ Responde SOLO con JSON, sin explicaciones ni markdown:
         tipo = datos.get("tipo") or "ninguno"
         canal_ia = datos.get("canal")
         nombrados = bool(datos.get("nombrados"))
+        no_hay_ia = [str(x).strip()[:40] for x in (datos.get("no_hay") or []) if str(x).strip()][:3]
         if canal_ia not in ("krece", "cashea", "creditienda"):
             canal_ia = None
         print(f"IA CRUDO -> claves={claves} tipo={tipo} canal={canal_ia}")
@@ -2342,12 +2348,14 @@ Responde SOLO con JSON, sin explicaciones ni markdown:
 
     # Validación dura: solo claves que existan de verdad
     equipos, hay_sin_precio = [], False
+    sin_precio_nombres = []
     for clave in claves[:4]:
         eq = obtener_por_clave(clave)
         if eq:
             equipos.append(eq)
         elif existe_clave(clave):
             hay_sin_precio = True
+            sin_precio_nombres.append(nombre_completo(obtener_por_clave(clave, solo_con_precio=False)))
             print(f"Clave marcada sin_precio pero el equipo debería tener precio: '{clave}'")
         else:
             print(f"IA devolvió una clave inexistente, descartada: '{clave}'")
@@ -2357,6 +2365,9 @@ Responde SOLO con JSON, sin explicaciones ni markdown:
 
     if tipo not in ("exacto", "recomendacion", "mas_opciones"):
         tipo = "exacto"
+    if faltantes is not None and tipo == "exacto":
+        faltantes["no_hay"] = no_hay_ia
+        faltantes["sin_precio"] = sin_precio_nombres
     return ordenar_equipos(equipos, ocultar_demorados=not nombrados), tipo, canal_ia
 
 
@@ -2564,12 +2575,13 @@ def atender_celulares(from_number, numero_limpio, body):
         if equipos:
             tipo_resultado, canal_ia = "exacto", None
     # Gracias, ok, saludo o "ubicados": no nombra equipo, no hace falta la IA
+    faltan = {"no_hay": [], "sin_precio": []}   # los llena interpretar_pedido
     sin_equipo = bool(perfil.get("modelo_interes") and es_mensaje_sin_equipo(body))
     if not equipos and sin_equipo:
         tipo_resultado, canal_ia = "ninguno", None
         print(f"Mensaje sin equipo ({numero_limpio}): no se llama a la IA")
     elif not equipos:
-        equipos, tipo_resultado, canal_ia = interpretar_pedido(body, contexto)
+        equipos, tipo_resultado, canal_ia = interpretar_pedido(body, contexto, faltan)
         # Solo dio su nivel o línea: sigue con los equipos que ya le interesaban
         if (tipo_resultado == "ninguno" and perfil.get("modelo_interes")
                 and (cambios.get("linea_krece") or cambios.get("nivel_cliente")
@@ -2717,6 +2729,16 @@ def atender_celulares(from_number, numero_limpio, body):
         info += (f"\n\nLOS MISMOS EQUIPOS CON {canal_extra.upper()}:"
                  + bloque_equipo(equipos, canal_extra, perfil_extra))
 
+    if equipos and tipo_resultado == "exacto" and faltan["no_hay"]:
+        info += ("\n\nEl cliente TAMBIÉN pidió: " + ", ".join(faltan["no_hay"]) + ", que NO tenemos. "
+                 "Cotiza los equipos de arriba y dile en una frase que ese otro no lo manejas "
+                 "por ahora y que si quiere le muestras opciones parecidas "
+                 "(NO respondas DERIVAR_PRECIO y no retires lo ya cotizado).")
+    if equipos and tipo_resultado == "exacto" and faltan["sin_precio"]:
+        info += ("\n\nEl cliente TAMBIÉN pidió " + ", ".join(faltan["sin_precio"]) + ", que existe pero "
+                 "aún no tiene precio verificado. Cotiza solo los equipos de arriba, NO menciones ese otro "
+                 "equipo y termina tu mensaje con DERIVAR_PRECIO_PARCIAL.")
+
     iphone_a_cashea = perfil.pop("_iphone_a_cashea", None)
 
     print(f"INFO AL MODELO [{numero_limpio}] -> " + info[:2000].replace("\n", " / "))
@@ -2777,6 +2799,12 @@ def atender_celulares(from_number, numero_limpio, body):
         reply = ("Para accesorios y otras consultas escríbenos a este número: "
                  "0412-609-3756 📲")
 
+    elif "DERIVAR_PRECIO_PARCIAL" in reply and faltan["sin_precio"]:
+        nombres_sp = ", ".join(faltan["sin_precio"])
+        notificar_precio_sin_verificar(from_number, body, faltante=nombres_sp)
+        reply = (reply.replace("DERIVAR_PRECIO_PARCIAL", "").strip() + "\n\n" + msg_asesor(
+            f"Del {nombres_sp} déjame confirmarte el precio y te escribo en un momento",
+            f"Del {nombres_sp} déjame confirmarte el precio, te escribo mañana a partir de las 6:00 am"))
     elif "DERIVAR_PRECIO" in reply and equipos and dato_faltante(canal, perfil):
         # El equipo SÍ tiene precio: lo que falta es un dato del cliente.
         # Se le pide el dato y no se manda la alerta falsa.
