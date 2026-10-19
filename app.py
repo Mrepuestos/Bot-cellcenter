@@ -520,6 +520,10 @@ def detectar_linea(texto):
                   r"(?:linea|línea|cr[eé]dito|l[ií]mite)", texto.lower())
     if m:
         return float(m.group(1))
+    # "el nivel es de 700": un número grande después de "nivel" es el monto, no los puntos
+    m = re.search(r"\bnivel\s+(?:es|son)?\s*(?:de\s+)?\$?\s*(\d{2,5})(?!\d|\s*(?:pts?|puntos|gb|g\b|tb))", texto.lower())
+    if m:
+        return float(m.group(1))
     # Con decimales: "83.11$" es 83.11 (antes se leía 11)
     m = (re.search(r"\$\s*(\d{2,5}(?:[.,]\d{1,2})?)", texto)
          or re.search(r"(?<![\d.,])(\d{2,5}(?:[.,]\d{1,2})?)\s*\$", texto))
@@ -3309,7 +3313,7 @@ def webhook():
                         continue
                     if es_krece:
                         send_whapi_message(from_number,
-                            "No pude leer bien la captura. ¿Me confirmas por escrito tu nivel y el monto que te aparece en *Celulares*?")
+                            "No pude leer bien la captura. ¿Me confirmas por escrito tu nivel y el monto que te aparece en *" + ("Línea disponible" if "iphone" in (perfil_img.get("modelo_interes") or "").lower() else "Celulares") + "*?")
                         continue
                     # No es una captura de Krece: sigue abajo como cualquier otra foto
 
