@@ -2676,6 +2676,18 @@ def atender_celulares(from_number, numero_limpio, body):
                 "intermedio y gama alta), una línea por equipo, y pregúntale cuál le "
                 "llama la atención o qué presupuesto tiene. Si además "
                 "pregunta otra cosa (ubicación, formas de pago), respóndela también.")
+    elif tipo_resultado == "ninguno" and "anuncio de mi celular" in body.lower():
+        info = ("El cliente viene del anuncio de celular dañado: su celular actual ya "
+                "le falla (se traba o no aguanta la carga) y quiere cambiarlo. Dile en "
+                "una línea que lo ayudamos a estrenar, mándale las TRES OPCIONES tal cual "
+                "y pregúntale si lo prefiere de contado o con Cashea o Krece. Si además "
+                "pregunta otra cosa, respóndela también.")
+    elif tipo_resultado == "ninguno" and "anuncio de compra segura" in body.lower():
+        info = ("El cliente viene del anuncio de compra segura: le preocupa que lo "
+                "estafen comprando por internet. Dile en una línea que somos tienda "
+                "física en Santa Teresa del Tuy y que puede venir a ver el equipo antes "
+                "de llevárselo, mándale las TRES OPCIONES tal cual y pregúntale cuál le "
+                "llama la atención. Si además pregunta otra cosa, respóndela también.")
     elif tipo_resultado == "ninguno":
         info = ("El cliente no está preguntando por un equipo concreto, o pidió "
                 "algo que no tenemos ni se parece a nada del catálogo. "
