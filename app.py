@@ -2727,7 +2727,9 @@ def atender_celulares(from_number, numero_limpio, body):
     canal_extra = perfil.get("canal_extra")
     if canal_extra and equipos and tipo_resultado in ("exacto", "recomendacion"):
         perfil_extra = dict(perfil)
-        perfil_extra["nivel_cliente"] = None   # el nivel guardado es del primer canal
+        # el nivel guardado es del primer canal; si en este mensaje dio claro su nivel
+        # de Cashea ("krece azul y cashea nivel 2"), se cotiza con ese
+        perfil_extra["nivel_cliente"] = nivel_c if canal_extra == "cashea" else None
         info += (f"\n\nLOS MISMOS EQUIPOS CON {canal_extra.upper()}:"
                  + bloque_equipo(equipos, canal_extra, perfil_extra))
 
