@@ -3585,7 +3585,7 @@ SEGUIMIENTOS = [
     "tenemos y te lo podemos apartar para hoy. Te dejo nuestro contacto para cualquier duda 🙌",
 ]
 NO_ES_NOMBRE = {"mama", "mamá", "papa", "papá", "mi", "el", "la", "de", "del", "dios",
-                "amor", "vida", "cell", "tienda", "celular", "telefono", "teléfono",
+                "amor", "vida", "cielo", "corazon", "corazón", "tesoro", "cariño", "mor", "cell", "tienda", "celular", "telefono", "teléfono",
                 "movil", "móvil", "shop", "store", "servicio", "repuestos", "cliente",
                 # apodos y formas de cariño
                 "negro", "negra", "negrito", "negrita", "gordo", "gorda", "gordito",
@@ -3620,7 +3620,7 @@ def limpiar_nombre(texto):
         return None
     if len(palabras) > 1 and palabras[0].lower() in ("jesus", "jesús") and palabras[1].lower() in FRASE_RELIGIOSA: return None
     p = palabras[0]
-    if not p.isalpha() or len(p) > 14 or p.lower() in NO_ES_NOMBRE:
+    if not p.isalpha() or len(p) > 14 or p.lower() in NO_ES_NOMBRE or p.lower().startswith("amor"):
         return None
     if p.islower() and len(p) >= 10: return None   # "pedromarquez" parece usuario, no nombre
     if not re.search(r"[aeiouáéíóú]", p.lower()) or len(set(p.lower())) == 1: return None   # "Mrs", "Hhh" no son nombres
