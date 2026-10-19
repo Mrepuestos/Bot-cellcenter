@@ -2104,6 +2104,7 @@ interés), responde exactamente: INTENCION_COMPRA
 Pero si todavía no le has dado el precio en el medio de pago que acaba de
 nombrar (ej. "lo quiero sacar por Krece" y solo vio contado), dale primero
 ese cálculo. Todavía no es INTENCION_COMPRA.
+Esto vale también cuando solo le preguntaste en qué moneda paga: mientras no le hayas dado inicial y cuotas, no es INTENCION_COMPRA; dale primero los montos.
 Si solo pregunta si se puede comprar online o a distancia, todavía NO decidió:
 respóndele que sí, que los detalles se los da un asesor al momento de la compra
 y que solo debe estar atento a sus indicaciones. Eso NO es INTENCION_COMPRA.
