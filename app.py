@@ -869,6 +869,19 @@ def texto_iphone_cashea(equipos, tipo):
                     "en el momento 😊")
 
 
+def nombrado_en(eq, texto):
+    """True si el texto nombra ESTE equipo: no otro de nombre parecido
+    ("Redmi A7" dentro de "Redmi A7 Pro") ni otra capacidad (64GB vs 128GB)."""
+    base = re.escape(f"{eq['marca']} {eq['modelo']}".lower())
+    alm = str(eq.get("almacenamiento") or "").lower().replace(" ", "")
+    for m in re.finditer(rf"\b{base}\b(?!\s*(?:pro|plus|max|ultra|lite|mini|5g|prime|neo|turbo|\+)(?:\W|$))(.{{0,25}})",
+                         texto.lower()):
+        cap = re.search(r"\d+\s*(?:gb|tb)", m.group(1))
+        if not cap or not alm or cap.group(0).replace(" ", "") == alm:
+            return True
+    return False
+
+
 def equipos_de_interes(modelo_interes):
     """Los equipos guardados en modelo_interes (nombres unidos con ' / ')."""
     from sheets_celulares import _cargar
@@ -2887,7 +2900,7 @@ def atender_celulares(from_number, numero_limpio, body):
         for eq in (listar_por_rango(**filtros, con_promo=es_krece(perfil))
                    + listar_mas_baratos(12, **filtros)):
             nombre = nombre_completo(eq)
-            if (f"{eq['marca']} {eq['modelo']}".lower() in reply.lower()
+            if (nombrado_en(eq, reply)
                     and nombre.lower() not in previo.lower() and nombre not in nuevos):
                 nuevos.append(nombre)
         if nuevos:
