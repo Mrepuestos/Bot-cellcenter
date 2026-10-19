@@ -603,6 +603,14 @@ def detectar_linea_disponible(texto):
     return None
 
 
+def bot_pidio_celulares(numero_limpio):
+    """True si el último mensaje del bot pidió la línea de Celulares y no la
+    Línea disponible: el monto que responde el cliente es la de Celulares."""
+    ultimo = next((str(m.get("content", "")) for m in reversed(cargar_historial(numero_limpio))
+                   if m.get("role") == "assistant"), "").lower()
+    return "celulares" in ultimo and not re.search(r"l[ií]nea\s+disponible", ultimo)
+
+
 def lineas_iphone_krece(p, nivel, disponible):
     """iPhone con Krece (Plata o más): va por la Línea disponible, tipo 'Otros'."""
     if not nivel or disponible is None:
@@ -2134,9 +2142,9 @@ LO QUE NUNCA HACES
 - Reusar precios o entrega de mensajes anteriores: usa SOLO lo que dice
   EQUIPO CONSULTADO ahora. Si el mismo modelo sale con otra RAM o
   almacenamiento, es otra versión con otro precio: nunca digas "el mismo"
-- Desdecirte de un equipo que ya cotizaste ("me equivoqué", "ignora ese
-  precio"): lo que dijiste antes sigue siendo válido aunque ahora hables de
-  otro equipo; nunca lo retires
+- Desdecirte de un equipo que ya cotizaste: lo que dijiste antes sigue
+  siendo válido aunque ya no salga en EQUIPO CONSULTADO. Si no sale, no lo
+  menciones (ni para corregirlo) y habla solo de los equipos de ahora
 - Despedirte ("que descanses", "hasta luego") cuando el cliente solo saluda
   ("buenas noches", "buen día"): devuélvele el saludo y pregunta en qué le
   ayudas. Solo te despides si él dio las gracias o dijo que ya no necesita nada
@@ -2295,6 +2303,10 @@ REGLAS:
 - Si pregunta si hay MÁS opciones ("¿solo esos?", "¿no tienes más?",
   "¿otras marcas?"), NO está eligiendo los que vio: lista vacía y tipo
   "mas_opciones". Si nombra una marca, es tipo "exacto".
+- Si pide OTROS de una marca ("¿qué otro iPhone tienes?", "qué iphone más
+  tiene", "¿qué más Samsung hay?"), elige hasta 3 de esa marca distintos a
+  los que ya le interesaban, los más cercanos en precio a esos (no los más
+  caros), con tipo "exacto".
 CANAL DE PAGO: si en ESTE mensaje el cliente nombra Krece, Cashea o
 CrediTienda, aunque lo escriba mal ("caschea", "kashea", "kreze",
 "credi tieda"), pon ese canal en "canal": "krece", "cashea" o "creditienda".
@@ -2483,7 +2495,9 @@ def atender_celulares(from_number, numero_limpio, body):
         # Línea disponible (tope del iPhone): dicha con la palabra "disponible", o un
         # monto suelto cuando le interesa un iPhone y no habla de "celulares"
         disponible = detectar_linea_disponible(body)
-        if disponible is None and pide_iphone and "celular" not in body.lower():
+        if (disponible is None and pide_iphone and "celular" not in body.lower()
+                and ("iphone" in body.lower() or not bot_pidio_celulares(numero_limpio))):
+            # Si el bot acababa de pedir la línea de Celulares, el monto es esa (chat 0714)
             # Para el iPhone, el monto que dé ("150", "plata 150", "mi línea es 40") es su Línea disponible
             m = re.fullmatch(r"\s*\$?\s*(\d{1,5})\s*(?:\$|d[oó]lares|usd)?\s*", body.lower())
             disponible = float(m.group(1)) if m else (detectar_linea_suelta(body) or linea)
