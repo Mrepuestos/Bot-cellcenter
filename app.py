@@ -2726,6 +2726,7 @@ def atender_celulares(from_number, numero_limpio, body):
         perfil.update(canal_pago="cashea", nivel_cliente=None, linea_krece=None)
         perfil["_iphone_a_cashea"] = True   # solo para este mensaje
 
+    modelo_previo = perfil.get("modelo_interes")
     if equipos:
         modelo = " / ".join(nombre_completo(e) for e in equipos)
         if modelo != perfil.get("modelo_interes"):
@@ -2781,6 +2782,14 @@ def atender_celulares(from_number, numero_limpio, body):
                              "correcto):" + bloque_equipo(interes, canal, perfil))
     else:
         info = bloque_equipo(equipos, canal, perfil)
+
+    # El equipo que ya vio sigue vigente aunque ahora se busquen otros (si no, la IA
+    # lo da por inexistente y se "corrige")
+    if (modelo_previo and equipos and tipo_resultado in ("exacto", "recomendacion")
+            and modelo_previo != " / ".join(nombre_completo(e) for e in equipos)):
+        info += ("\n\nEl cliente ya vio antes: " + modelo_previo + ". Lo que le dijiste de "
+                 "ese equipo sigue siendo VÁLIDO: no lo corrijas, no lo retires ni digas que "
+                 "no lo manejamos. Solo ofrece los de arriba como otras opciones.")
 
     # Si está comparando dos canales, se agregan los precios del segundo
     canal_extra = perfil.get("canal_extra")
