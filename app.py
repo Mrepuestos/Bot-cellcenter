@@ -407,6 +407,7 @@ def detectar_canal(texto):
                             "pago de una vez", "pagar de una vez",
                             "pagarlo de una vez", "un solo pago", "pago completo")):
         return "contado"
+    t = t.replace("platinum", "platino")
     if (re.search(r"\bnivel\s*(azul|plata|oro|platino)\b|\bsoy\s+(?:nivel\s+)?(?:azul|plata|oro|platino)\b|\b(?:azul|plata|oro|platino)\s+con\s+\$?\s*\d{2,5}\b", t)
             or re.search(r"\b\d{2,4}\s*(?:pts?|puntos)\b", t)
             or re.search(r"\blinea\s+(aprobada|de\s+celulares)\b", t)):
@@ -431,7 +432,7 @@ def detectar_canales(texto):
     return encontrados
 
 def detectar_nivel_krece(texto):
-    t = texto.lower()
+    t = texto.lower().replace("platinum", "platino")
     for nivel in ("platino", "oro", "plata", "azul"):
         if nivel in t:
             return nivel
@@ -2818,6 +2819,8 @@ def atender_celulares(from_number, numero_limpio, body):
         if not reply:
             print("La respuesta al cliente llegó vacía")
             reply = "Dame un momento y te confirmo"
+    if perfil.get("nombre"):   # ya sabes su nombre: nunca se lo preguntes
+        reply = re.sub(r"\s*(?:Por cierto,?\s*)?¿[^?¿]*con qui[eé]n tengo el gusto[^?]*\?\s*(?:😊|🙂)?", "", reply, flags=re.I).strip()
     reply = marcas_nombre(numero_limpio, reply)
 
     # ── Marcadores ────────────────────────────────────────────────────────────
@@ -3688,6 +3691,7 @@ def limpiar_nombre(texto):
     if not p.isalpha() or len(p) > 14 or p.lower() in NO_ES_NOMBRE or p.lower().startswith("amor"):
         return None
     if p.islower() and len(p) >= 10: return None   # "pedromarquez" parece usuario, no nombre
+    if len(p) >= 8 and p.lower().endswith(("os", "as")): return None   # "Chismosos": plural, no es nombre
     if not re.search(r"[aeiouáéíóú]", p.lower()) or len(set(p.lower())) == 1: return None   # "Mrs", "Hhh" no son nombres
     return p.capitalize()
 
