@@ -1593,7 +1593,7 @@ def send_whapi_video(to: str, url_video: str, caption: str = ""):
             resp = requests.get(url_video, timeout=30)
             resp.raise_for_status()
             b64 = base64.standard_b64encode(resp.content).decode("utf-8")
-            _fotos_cache[url_video] = f"data:video/mp4;base64,{b64}"
+            _fotos_cache[url_video] = f"data:video/mp4;name=honor_play_20a.mp4;base64,{b64}"
             print(f"🎬 Video descargado ({len(resp.content) // 1024} KB): {url_video}")
         media = _fotos_cache[url_video]
     except Exception as e:
@@ -1601,7 +1601,7 @@ def send_whapi_video(to: str, url_video: str, caption: str = ""):
         return
     url = f"{WHAPI_API_URL}/messages/video"
     headers = {"Authorization": f"Bearer {WHAPI_TOKEN}", "Content-Type": "application/json"}
-    payload = {"to": to, "media": media}
+    payload = {"to": to, "media": media, "no_encode": True, "width": 720, "height": 1280}
     if caption:
         payload["caption"] = caption
     try:
