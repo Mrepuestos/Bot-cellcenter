@@ -138,6 +138,7 @@ TIENDA_NOMBRE = "Cell Center 4620"
 TIENDA_DIRECCION = ("Centro, Av San Rafael entre calle El Carmen y Sucre, "
                     "frente al CC La Asunción, a 30 mtrs de la parada de Mopia")
 FOTO_FACHADA_URL = "https://i.postimg.cc/rwZJRKzD/Whats-App-Image-2026-10-07-at-9-08-11-AM.jpg"
+VIDEO_HONOR_PLAY_20A_URL = "https://raw.githubusercontent.com/Mrepuestos/Bot-cellcenter/main/media/honor_play_20a.mp4"
 
 # ── Modelo que atiende el flujo de celulares ──────────────────────────────────
 MODELO_CELULARES = "claude-haiku-5-5"
@@ -170,6 +171,7 @@ tasa_bcv_cache = {"tasa": None, "fecha": ""}
 tasa_euro_cache = {"tasa": None, "fecha": ""}
 stock_bajo_pendiente = {}
 pausas_activas = {}
+video_honor_enviado = set()   # clientes que ya recibieron el video del Honor Play 20A (Krece)
 
 
 # ── Agrupador de mensajes seguidos (flujo celulares) ──────────────────────────
@@ -1583,6 +1585,33 @@ def send_whapi_image(to: str, url_imagen: str, caption: str = ""):
         print(f"Error enviando imagen Whapi: {e}")
 
 
+def send_whapi_video(to: str, url_video: str, caption: str = ""):
+    """Envía un video (mp4 chico, alojado en GitHub). Si falla solo deja el log:
+    el cliente ya recibió el texto y la foto."""
+    try:
+        if url_video not in _fotos_cache:
+            resp = requests.get(url_video, timeout=30)
+            resp.raise_for_status()
+            b64 = base64.standard_b64encode(resp.content).decode("utf-8")
+            _fotos_cache[url_video] = f"data:video/mp4;base64,{b64}"
+            print(f"🎬 Video descargado ({len(resp.content) // 1024} KB): {url_video}")
+        media = _fotos_cache[url_video]
+    except Exception as e:
+        print(f"Error descargando video {url_video}: {e}")
+        return
+    url = f"{WHAPI_API_URL}/messages/video"
+    headers = {"Authorization": f"Bearer {WHAPI_TOKEN}", "Content-Type": "application/json"}
+    payload = {"to": to, "media": media}
+    if caption:
+        payload["caption"] = caption
+    try:
+        requests.post(url, json=payload, headers=headers, timeout=60).raise_for_status()
+    except requests.exceptions.Timeout:
+        print(f"⏳ Whapi tardó más de 60 s con el video (puede llegar tarde): {url_video}")
+    except Exception as e:
+        print(f"Error enviando video Whapi: {e}")
+
+
 def notificar_asesor(asesor: str, tema: str, numero_cliente: str):
     numero_formateado = "+" + numero_cliente.replace("@s.whatsapp.net", "")
     send_whapi_message(asesor, f"🔔 *Mensaje pendiente*\nUn cliente está esperando respuesta sobre *{tema}*.\nNúmero: {numero_formateado}")
@@ -2919,6 +2948,23 @@ def atender_celulares(from_number, numero_limpio, body):
 
     if reply:
         send_whapi_message(from_number, reply)
+
+    # Anuncio de Krece del Honor Play 20A: texto, luego foto y luego video (una vez por cliente)
+    if "honor play 20a con krece" in body.lower() and from_number not in video_honor_enviado:
+        video_honor_enviado.add(from_number)
+        url_foto = None
+        for eq in equipos or []:
+            if "play 20a" in eq["modelo"].lower():
+                url_foto = buscar_foto(eq["marca"], eq["modelo"], eq["almacenamiento"])
+                if url_foto:
+                    break
+        if not url_foto:
+            url_foto = buscar_foto("Honor", "Play 20A")
+        if url_foto:
+            send_whapi_image(from_number, url_foto, "Honor Play 20A")
+        else:
+            print("Sin foto del Honor Play 20A para el anuncio de Krece")
+        send_whapi_video(from_number, VIDEO_HONOR_PLAY_20A_URL)
 
     if quiere_foto and equipos:
         # Hasta 3 fotos, una por modelo (sin repetir el mismo modelo con otra memoria)
