@@ -2806,6 +2806,10 @@ def atender_celulares(from_number, numero_limpio, body):
                  "Cotiza los equipos de arriba y dile en una frase que ese otro no lo manejas "
                  "por ahora y que si quiere le muestras opciones parecidas "
                  "(NO respondas DERIVAR_PRECIO y no retires lo ya cotizado).")
+    # Logic y ZTE no se venden por Krece: su falta de precio no importa, no hay aviso
+    if canal == "krece":
+        faltan["sin_precio"] = [n for n in faltan["sin_precio"]
+                                if n.split()[0].lower() not in MARCAS_NO_KRECE]
     if equipos and tipo_resultado == "exacto" and faltan["sin_precio"]:
         info += ("\n\nEl cliente TAMBIÉN pidió " + ", ".join(faltan["sin_precio"]) + ", que existe pero "
                  "aún no tiene precio verificado. Cotiza solo los equipos de arriba, NO menciones ese otro "
