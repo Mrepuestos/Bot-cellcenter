@@ -2960,6 +2960,7 @@ def atender_celulares(from_number, numero_limpio, body):
                     break
         if not url_foto:
             url_foto = buscar_foto("Honor", "Play 20A")
+        quiere_foto = False   # este bloque ya se encarga de la foto: que el flujo normal no la repita
         if url_foto:
             send_whapi_image(from_number, url_foto, "Honor Play 20A")
         else:
