@@ -2168,7 +2168,8 @@ hay iniciales más bajas -> NO insistas con el mismo equipo ni le repitas los
 mismos planes, y no lo presiones. Bájale de gama: muéstrale 2 o 3 equipos
 de la LISTA CORTA que tengan la inicial más baja que la que ya vio. Si le
 dices que hay opciones más económicas, SIEMPRE las muestras en ese mismo
-mensaje.
+mensaje. Si EQUIPO CONSULTADO ya trae equipos para lo que pidió, muestra
+esos con sus montos y no uses la LISTA CORTA.
 "Lo voy a pensar" u "otro día" -> con calidez: que con gusto, que aquí estás
 cuando quiera. Sin preguntas, sin prisa y sin decir que los equipos se acaban.
 "En otra tienda está más barato" -> garantía, soporte directo y financiamiento.
@@ -2831,6 +2832,15 @@ def atender_celulares(from_number, numero_limpio, body):
     if len(historial) > 1 and debe_pedir_nombre(perfil):
         perfil["_pedir_nombre"] = True
 
+    # Si ya se buscaron equipos para lo que pidió, la IA ve solo esos (la LISTA CORTA
+    # compite con ellos y la hacía ofrecer otros equipos). Se mantiene para clientes
+    # Krece que piden Logic o ZTE: ahí sirve para ofrecerles otra marca.
+    lista_corta_turno = bloque_lista_corta(canal, perfil)
+    if (equipos and tipo_resultado in ("exacto", "recomendacion")
+            and not (es_krece(perfil)
+                     and any(eq["marca"].lower() in MARCAS_NO_KRECE for eq in equipos))):
+        lista_corta_turno = "  (en este mensaje usa solo EQUIPO CONSULTADO)"
+
     if iphone_a_cashea:
         # Respuesta fija, sin IA: Krece Azul no aplica para iPhone, se ofrece Cashea
         reply = texto_iphone_cashea(equipos, tipo_resultado)
@@ -2839,7 +2849,7 @@ def atender_celulares(from_number, numero_limpio, body):
             model=MODELO_CELULARES,
             max_tokens=4000,
             system=get_system_prompt_celulares(info, perfil, bloque_rangos(perfil),
-                                               bloque_lista_corta(canal, perfil),
+                                               lista_corta_turno,
                                                bloque_promos(perfil, body)),
             messages=historial,
         )
