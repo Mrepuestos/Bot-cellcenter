@@ -671,6 +671,10 @@ def lineas_iphone_krece(p, nivel, disponible, linea_celulares=None):
         k = precios.krece(p, nivel, plazo, linea=disponible, tipo="otros")
         if not k.get("aplica"):
             continue
+        if k["inicial_pct"] > IPHONE_INICIAL_MAX_PCT:
+            return ["  Su Línea disponible no alcanza para este iPhone por Krece (la inicial "
+                    "pasaría del 80%). NO des cuotas de Krece de este iPhone: dile que por Krece "
+                    "no le conviene ahora y ofrécele llevarlo con Cashea o de contado."]
         extra = " (inicial subida por su Línea disponible)" if k["topado_por_linea"] else ""
         salida.append(f"  Krece {plazo} cuotas: inicial ${k['inicial']} "
                       f"+ {plazo} x ${k['monto_cuota']}{extra}")
@@ -898,6 +902,36 @@ def es_mensaje_sin_equipo(texto):
     palabras = re.sub(r"[^a-zñ ]", " ", t).split()
     return (bool(palabras) and len(palabras) <= 8
             and all(p in SIN_EQUIPO_PALABRAS for p in palabras))
+
+
+IPHONE_INICIAL_MAX_PCT = 80   # más de esto de inicial: por Krece no conviene
+
+
+def iphone_sin_linea(eq, perfil):
+    """True si con su Línea disponible la inicial del iPhone por Krece pasa del 80%."""
+    nivel = perfil.get("nivel_cliente")
+    try:
+        plazo = precios.plazos_krece(nivel, "otros")[0]
+        k = precios.krece(eq["precio_paralelo"], nivel, plazo,
+                          linea=perfil["_linea_disponible"], tipo="otros")
+    except (ValueError, KeyError, IndexError):
+        return False
+    return not k.get("aplica") or k["inicial_pct"] > IPHONE_INICIAL_MAX_PCT
+
+
+def texto_iphone_sin_linea(equipos, disponible):
+    """Respuesta fija: la Línea disponible no alcanza para el iPhone; Cashea o contado."""
+    nombres = [nombre_completo(e) for e in equipos[:3]]
+    cual = nombres[0] if len(nombres) == 1 else ", ".join(nombres[:-1]) + " y el " + nombres[-1]
+    return ("¡Listo, ya revisé tus datos! 🙌\n\n"
+            f"Tu *Línea disponible* de Krece es de *${float(disponible):.0f}*, y para el *{cual}* "
+            "no alcanza: tendrías que dar casi todo el precio de inicial, así que por Krece no te "
+            "conviene ahora.\n\n"
+            "Te lo puedes llevar de otra forma:\n"
+            "• Con *Cashea*, en cuotas cada 2 semanas\n"
+            "• De *contado*\n\n"
+            "¿Cuál prefieres? Te paso el monto enseguida 😊\n"
+            "Si no tienes Cashea, no hay problema: en la tienda te hacemos el registro en el momento.")
 
 
 def texto_iphone_cashea(equipos, tipo):
@@ -2870,6 +2904,15 @@ def atender_celulares(from_number, numero_limpio, body):
         perfil.update(canal_pago="cashea", nivel_cliente=None, linea_krece=None)
         perfil["_iphone_a_cashea"] = True   # solo para este mensaje
 
+    # Krece Plata o más con iPhone y la Línea disponible no alcanza (inicial de más
+    # del 80%): por Krece no conviene, se ofrece Cashea o contado
+    if (canal == "krece" and perfil.get("nivel_cliente") not in (None, "azul")
+            and perfil.get("_linea_disponible") is not None
+            and equipos and tipo_resultado in ("exacto", "recomendacion")
+            and all(e["marca"].lower() == "iphone" and iphone_sin_linea(e, perfil)
+                    for e in equipos)):
+        perfil["_iphone_sin_linea"] = True   # solo para este mensaje
+
     modelo_previo = perfil.get("modelo_interes")
     if equipos:
         modelo = " / ".join(nombre_completo(e) for e in equipos)
@@ -3001,6 +3044,9 @@ def atender_celulares(from_number, numero_limpio, body):
     if iphone_a_cashea:
         # Respuesta fija, sin IA: Krece Azul no aplica para iPhone, se ofrece Cashea
         reply = texto_iphone_cashea(equipos, tipo_resultado)
+    elif perfil.get("_iphone_sin_linea") and len(body.split()) <= 12:
+        # Respuesta fija, sin IA: su Línea disponible no alcanza para el iPhone por Krece
+        reply = texto_iphone_sin_linea(equipos, perfil["_linea_disponible"])
     elif perfil.get("_disponible_dudosa") and len(body.split()) <= 12:
         # Respuesta fija, sin IA: la "Línea disponible" que escribió parece la de Celulares
         reply = texto_disponible_dudosa(perfil["_disponible_dudosa"],
