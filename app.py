@@ -538,6 +538,38 @@ RELLENO_LINEA = {"y", "mi", "es", "de", "la", "linea", "línea", "tengo", "son",
                  "ah", "aja", "ajá", "dice", "bueno", "pues", "oye", "listo", "aparece", "aparecen",
                  "sale", "salen", "monto", "ahora", "ahorita"}
 
+NUM_PALABRAS = {
+    "un": 1, "uno": 1, "dos": 2, "tres": 3, "cuatro": 4, "cinco": 5, "seis": 6, "siete": 7,
+    "ocho": 8, "nueve": 9, "diez": 10, "once": 11, "doce": 12, "trece": 13, "catorce": 14,
+    "quince": 15, "dieciseis": 16, "diecisiete": 17, "dieciocho": 18, "diecinueve": 19,
+    "veinte": 20, "veintiuno": 21, "veintidos": 22, "veintitres": 23, "veinticuatro": 24,
+    "veinticinco": 25, "veintiseis": 26, "veintisiete": 27, "veintiocho": 28, "veintinueve": 29,
+    "treinta": 30, "cuarenta": 40, "cincuenta": 50, "sesenta": 60, "setenta": 70,
+    "ochenta": 80, "noventa": 90}
+NUM_CIENTOS = {
+    "cien": 100, "ciento": 100, "doscientos": 200, "docientos": 200, "trescientos": 300,
+    "trecientos": 300, "cuatrocientos": 400, "quinientos": 500, "seiscientos": 600,
+    "setecientos": 700, "ochocientos": 800, "novecientos": 900}
+MONTO_EN_LETRAS = re.compile(r"\b(?:cien|ciento|dos?cientos|tres?cientos|cuatrocientos|quinientos|"
+                             r"seiscientos|setecientos|ochocientos|novecientos|mil)\b", re.IGNORECASE)
+
+
+def numero_en_palabras(palabras):
+    """'trescientos diez' -> 310, 'quinientos' -> 500, 'mil doscientos' -> 1200.
+    Todas las palabras deben ser números (y traer una centena o 'mil'); si no, None."""
+    total, centena = 0, False
+    for p in palabras:
+        p = "".join(c for c in unicodedata.normalize("NFD", p) if unicodedata.category(c) != "Mn")
+        if p == "mil":
+            total, centena = (total or 1) * 1000, True
+        elif p in NUM_CIENTOS:
+            total, centena = total + NUM_CIENTOS[p], True
+        elif p in NUM_PALABRAS:
+            total += NUM_PALABRAS[p]
+        else:
+            return None
+    return total if centena else None
+
 
 def detectar_linea_suelta(texto):
     """Número solo como línea de Krece: "400", "400 nivel oro", "$400".
@@ -551,6 +583,9 @@ def detectar_linea_suelta(texto):
             n = float(palabras[0].replace(",", "."))
             if 50 <= n <= 5000 and n not in (64, 128, 256, 512):
                 return n
+        n = numero_en_palabras(palabras)
+        if n and 50 <= n <= 5000:
+            return float(n)
     return None
 
 
@@ -2805,7 +2840,9 @@ def atender_celulares(from_number, numero_limpio, body):
     if (canal in ("krece", "cashea") and perfil.get("modelo_interes")
             and len(body.split()) <= 6
             and (detectar_sin_cuenta(body) or es_no_corto(canal, perfil, body)
-                 or (canal == "krece" and detectar_linea_suelta(body) is not None))):
+                 or (canal == "krece" and detectar_linea_suelta(body) is not None)
+                 or (canal == "krece" and not perfil.get("linea_krece")
+                     and MONTO_EN_LETRAS.search(body)))):
         equipos = equipos_de_interes(perfil["modelo_interes"])
         tipo_resultado, canal_ia = "exacto", None
     # "Mándame las fotos de esos tres": pide ver varios de los que ya vio
