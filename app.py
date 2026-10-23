@@ -614,15 +614,20 @@ def bot_pidio_celulares(numero_limpio):
     return "celulares" in ultimo and not re.search(r"l[ií]nea\s+disponible", ultimo)
 
 
-def lineas_iphone_krece(p, nivel, disponible):
+def lineas_iphone_krece(p, nivel, disponible, linea_celulares=None):
     """iPhone con Krece (Plata o más): va por la Línea disponible, tipo 'Otros'."""
     if not nivel or disponible is None:
         falta = ("su nivel y su Línea disponible" if not nivel and disponible is None
                  else "su nivel" if not nivel else "su Línea disponible")
+        aviso = ""
+        if nivel and linea_celulares:
+            aviso = (f" El cliente ya te dio ${float(linea_celulares):.0f}: ese monto es solo para "
+                     f"los Android. Dile en una frase: 'Ese monto solo sirve para Android; para "
+                     f"el iPhone necesito el de *Línea disponible* (el grande en la app)'.")
         return [f"  El iPhone SÍ tiene precio. Con Krece el iPhone se paga con la 'Línea "
                 f"disponible' (el monto grande de la app, lo que le queda libre; no el Límite "
                 f"ni el de Celulares). Falta {falta}. Pídeselo en una frase. "
-                f"NO respondas DERIVAR_PRECIO."]
+                f"NO respondas DERIVAR_PRECIO." + aviso]
     if float(disponible) <= 0:
         return ["  No le queda Línea disponible libre (la tiene usada en otras compras): "
                 "por Krece no aplica ahora. Dile eso con amabilidad."]
@@ -683,7 +688,9 @@ def bloque_equipo(equipos, canal, perfil):
                               "prefiere este equipo, se lo puede llevar de contado o con Cashea.")
                 continue
             if eq["marca"].lower() == "iphone" and nivel != "azul":
-                lineas.extend(lineas_iphone_krece(p, nivel, perfil.get("_linea_disponible")))
+                lineas.extend(lineas_iphone_krece(
+                    p, nivel, perfil.get("_linea_disponible"),
+                    None if perfil.get("_krece_supuesto") else perfil.get("linea_krece")))
                 continue
             if not nivel or not linea:
                 if not nivel and not linea:
