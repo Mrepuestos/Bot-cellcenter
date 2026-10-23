@@ -702,9 +702,14 @@ def bloque_equipo(equipos, canal, perfil):
                 continue
             if eq["marca"].lower() == "iphone" and nivel == "azul":
                 if perfil.get("_krece_supuesto"):
-                    lineas.append("  Los iPhone requieren Krece Plata o superior y tú SUPUSISTE "
-                                  "Azul: NO des cuotas de Krece; pregúntale su nivel y su Línea "
-                                  "disponible (el monto grande de la app).")
+                    lineas.append("  El iPhone SÍ tiene precio, pero NO lo des todavía y NO respondas "
+                                  "DERIVAR_PRECIO. Los iPhone con Krece requieren Plata o superior y tú "
+                                  "SUPUSISTE Azul. Si solo pregunta qué iPhone hay, dile cuáles hay y "
+                                  "pregúntale su nivel de Krece y su Línea disponible (el monto grande de la "
+                                  "app). Si pregunta el precio, dile con amabilidad que con nivel Azul el "
+                                  "iPhone no aplica y pregúntale si lo quiere ver por *Cashea* o de "
+                                  "*contado*; si en realidad su nivel es más alto, que te diga nivel y Línea "
+                                  "disponible. No des cuotas ni montos hasta que elija una opción.")
                 else:
                     lineas.append("  Los iPhone NO aplican con Krece Azul (requieren Plata o "
                                   "superior). NO des cuotas de Krece para este equipo: "
