@@ -115,6 +115,7 @@ modo_prueba_pantallas = set()   # números de prueba probando el flujo de pantal
 krece_supuesto = set()          # clientes cotizados con Azul/$300 supuesto (solo en memoria)
 nivel1_pendiente = set()        # clientes que dijeron "nivel 1" sin decir Cashea o Krece (solo en memoria)
 krece_linea_dudosa = {}         # cliente → monto chico que parecía la "Línea disponible"
+krece_disponible_dudosa = {}    # cliente → Línea disponible alta que se le pidió confirmar
 krece_linea_disponible = {}     # cliente → su "Línea disponible" (tope del iPhone, solo en memoria)
 tecnico_celulares = {}   # técnico → hasta cuándo sigue en el flujo de celulares (30 min)
 confirmar_celular = {}   # técnico → (mensaje, hora) mientras confirma teléfono o pantalla
@@ -592,6 +593,34 @@ def linea_celulares_dudosa(numero_limpio, linea, texto):
         return False
     krece_linea_dudosa[numero_limpio] = linea
     return True
+
+
+def disponible_dudosa(numero_limpio, disponible, linea_celulares):
+    """True si la 'Línea disponible' que escribió parece la de Celulares (Android):
+    $200 o más, o igual a la de Celulares que ya dio. Si repite el mismo monto, se le cree."""
+    if disponible is None:
+        return False
+    if krece_disponible_dudosa.get(numero_limpio) == disponible:
+        krece_disponible_dudosa.pop(numero_limpio, None)
+        return False
+    if disponible >= 200 or (linea_celulares and float(linea_celulares) == disponible):
+        krece_disponible_dudosa[numero_limpio] = disponible
+        return True
+    krece_disponible_dudosa.pop(numero_limpio, None)
+    return False
+
+
+def texto_disponible_dudosa(monto, nivel_dicho=None):
+    """Respuesta fija: el monto que dio como Línea disponible parece el de Celulares."""
+    inicio = f"¡Perfecto, nivel {nivel_dicho.capitalize()}! 🙌" if nivel_dicho else "¡Gracias! 🙌"
+    return (f"{inicio}\n\n"
+            f"Ojo: ese monto de *${float(monto):.0f}* casi siempre es tu línea para *celulares Android* "
+            "(la que sale debajo del ícono \"Celulares\").\n\n"
+            "Para el *iPhone*, Krece usa otra: la *Línea disponible*, que es el número grande que "
+            "aparece arriba al abrir la app. Ese monto suele ser menor, porque se va usando con otras "
+            "compras.\n\n"
+            "¿Me confirmas cuánto te sale ahí? Si quieres, mándame una captura de esa pantalla y lo "
+            "reviso yo 📲")
 
 
 def detectar_linea_disponible(texto):
@@ -2017,6 +2046,12 @@ def get_system_prompt_celulares(info_equipo, perfil, rangos, lista_corta, promos
                       "Cotiza con los montos de EQUIPO CONSULTADO sin pedirle esos datos. "
                       "Nunca digas 'tu nivel' ni 'tu línea': di que es calculado con "
                       "Azul y $300 por ser lo más común.")
+    if perfil.get("_disponible_dudosa"):
+        conocidos += (f" OJO: te dio ${float(perfil['_disponible_dudosa']):.0f} como Línea disponible; "
+                      "Krece casi nunca da tanto ahí: suele ser su línea de Celulares (Android). "
+                      "NO cotices el iPhone con ese monto. Explícale que ese monto es para Android, "
+                      "que para el iPhone se usa la *Línea disponible* (el número grande arriba en la "
+                      "app) y pregúntale cuánto le sale ahí o que te mande captura.")
     if perfil.get("_linea_dudosa"):
         conocidos += (f" OJO: te dio ${float(perfil['_linea_dudosa']):.0f} de línea; eso parece "
                       "su 'Línea disponible' (la general), no la de celulares. Explícaselo en "
@@ -2654,6 +2689,9 @@ def atender_celulares(from_number, numero_limpio, body):
             disponible = float(m.group(1)) if m else (detectar_linea_suelta(body) or linea)
         if disponible is not None and linea == disponible:
             linea = None
+        if pide_iphone and disponible_dudosa(numero_limpio, disponible, perfil.get("linea_krece")):
+            perfil["_disponible_dudosa"] = disponible   # solo en memoria
+            disponible = None
         if disponible is not None:
             krece_linea_disponible[numero_limpio] = disponible
             perfil["_linea_disponible"] = disponible
@@ -2963,6 +3001,10 @@ def atender_celulares(from_number, numero_limpio, body):
     if iphone_a_cashea:
         # Respuesta fija, sin IA: Krece Azul no aplica para iPhone, se ofrece Cashea
         reply = texto_iphone_cashea(equipos, tipo_resultado)
+    elif perfil.get("_disponible_dudosa") and len(body.split()) <= 12:
+        # Respuesta fija, sin IA: la "Línea disponible" que escribió parece la de Celulares
+        reply = texto_disponible_dudosa(perfil["_disponible_dudosa"],
+                                        perfil.get("nivel_cliente") if perfil.get("_nivel_recien") else None)
     else:
         respuesta = client.messages.create(
             model=MODELO_CELULARES,
