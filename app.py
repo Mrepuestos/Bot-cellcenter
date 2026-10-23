@@ -1746,22 +1746,25 @@ def leer_captura_krece(image_data):
 - "disponible": el monto grande de "Línea disponible" (lo que le queda libre).
 Responde SOLO con JSON: {"es_krece": true, "nivel": "azul", "linea": 300, "disponible": 40}
 Si no puedes leer alguno de los dos con certeza, pon null en ese campo.
-Si la imagen NO es una captura de Krece, responde {"es_krece": false}"""
+Si la imagen NO es una captura de Krece, responde {"es_krece": false}
+Responde únicamente con el JSON, en una sola línea, sin texto antes ni después y sin ```."""
 
     r = client.messages.create(
-        model=MODELO_CELULARES, max_tokens=200,
+        model=MODELO_CELULARES, max_tokens=1500,
+        extra_body={"output_config": {"effort": "low"}},
         messages=[{"role": "user", "content": [
             {"type": "image", "source": {"type": "base64", "media_type": mime, "data": b64}},
             {"type": "text", "text": prompt},
         ]}],
     )
     registrar_uso("captura-krece", r)
+    crudo = texto_respuesta(r)
     try:
-        datos = json.loads(texto_respuesta(r))
+        datos = json.loads(re.search(r"\{.*\}", crudo, re.S).group(0))
         return (datos.get("nivel"), datos.get("linea"), bool(datos.get("es_krece")),
                 datos.get("disponible"))
     except Exception as e:
-        print(f"Error leyendo captura Krece: {e}")
+        print(f"Error leyendo captura Krece: {e} | respuesta: {crudo[:300]!r}")
         return None, None, True, None
 
 def _bajar_imagen_whapi(image_data):
@@ -2438,6 +2441,8 @@ REGLAS:
 - Si nombra DOS O MÁS modelos y alguno NO está en el catálogo, devuelve solo los
   que sí están, con tipo "exacto", y pon en "no_hay" el nombre de los que faltan
   tal como los escribió el cliente. Esta regla manda sobre la de "recomendacion".
+  PERO si NINGUNO de los que nombró está en el catálogo, usa la regla de
+  "recomendacion" (parecidos a esos modelos) y deja "no_hay" vacío.
   En cualquier otro caso "no_hay" va vacío.
 - Si nombra DOS O MÁS modelos concretos en este mensaje (para compararlos o
   pedir que le recomienden uno), devuelve TODOS los que nombró (máximo 4) con
@@ -2493,7 +2498,7 @@ Responde SOLO con JSON, sin explicaciones ni markdown:
         no_hay_ia = [str(x).strip()[:40] for x in (datos.get("no_hay") or []) if str(x).strip()][:3]
         if canal_ia not in ("krece", "cashea", "creditienda"):
             canal_ia = None
-        print(f"IA CRUDO -> claves={claves} tipo={tipo} canal={canal_ia}")
+        print(f"IA CRUDO -> claves={claves} tipo={tipo} canal={canal_ia} no_hay={no_hay_ia}")
     except Exception as e:
         print(f"Error interpretando pedido: {e}")
         return [], "ninguno", None
@@ -3530,8 +3535,8 @@ def webhook():
                 # Video, documento o nota de voz
                 if msg_type in ("video", "document", "audio", "voice"):
                     send_whapi_message(from_number,
-                        "Soy un asistente con inteligencia artificial y no puedo ver fotos, "
-                        "videos ni documentos, ni escuchar notas de voz 🙏 Por favor "
+                        "Soy un asistente con inteligencia artificial y no puedo escuchar notas de voz "
+                        "ni ver videos o documentos 🙏 Por favor "
                         "escríbeme tu consulta por aquí y con gusto te ayudo 📝")
                 continue        
 
