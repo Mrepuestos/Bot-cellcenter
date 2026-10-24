@@ -571,6 +571,25 @@ def numero_en_palabras(palabras):
     return total if centena else None
 
 
+def parece_monto_en_letras(texto):
+    """True si el mensaje es un monto en letras, aunque tenga un error ("Trescientos doez").
+    Solo números y relleno, con una centena; se acepta UNA palabra rara justo después de
+    un número. "quiero uno de quinientos" NO cuenta (pide un equipo, no da su línea)."""
+    if not MONTO_EN_LETRAS.search(texto):
+        return False
+    t = "".join(c for c in unicodedata.normalize("NFD", texto.lower()) if unicodedata.category(c) != "Mn")
+    palabras = [p for p in re.sub(r"[^a-z ]", " ", t).split() if p not in RELLENO_LINEA]
+    raras, previa_num = 0, False
+    for p in palabras:
+        es_num = p == "mil" or p in NUM_CIENTOS or p in NUM_PALABRAS
+        if not es_num:
+            raras += 1
+            if raras > 1 or not previa_num:
+                return False
+        previa_num = es_num
+    return True
+
+
 def detectar_linea_suelta(texto):
     """Número solo como línea de Krece: "400", "400 nivel oro", "$400".
     Solo si en ese renglón no hay nada más (ni modelo ni GB)."""
@@ -2842,7 +2861,7 @@ def atender_celulares(from_number, numero_limpio, body):
             and (detectar_sin_cuenta(body) or es_no_corto(canal, perfil, body)
                  or (canal == "krece" and detectar_linea_suelta(body) is not None)
                  or (canal == "krece" and not perfil.get("linea_krece")
-                     and MONTO_EN_LETRAS.search(body)))):
+                     and parece_monto_en_letras(body)))):
         equipos = equipos_de_interes(perfil["modelo_interes"])
         tipo_resultado, canal_ia = "exacto", None
     # "Mándame las fotos de esos tres": pide ver varios de los que ya vio
