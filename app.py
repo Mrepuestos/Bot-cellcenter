@@ -2073,7 +2073,7 @@ def get_system_prompt_celulares(info_equipo, perfil, rangos, lista_corta, promos
     ahora = datetime.now(tz)
     es_domingo = ahora.weekday() == 6
     horario_hoy = "9:00am a 2:00pm" if es_domingo else "8:30am a 5:30pm"
-    dia_hoy = "domingo" if es_domingo else "lunes a sábado"
+    dia_hoy = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"][ahora.weekday()]
     estado_tienda = "ABIERTA" if esta_abierto() else "CERRADA"
     linea_apertura = ""
     if estado_tienda == "CERRADA":
@@ -2175,6 +2175,7 @@ Si sabes cómo se llama el cliente, úsalo con naturalidad al saludar, al cerrar
 Regla NOMBRE: si los datos dicen que no sabes su nombre, pregúntalo UNA sola vez, casual, en un mensaje donde no hagas otra pregunta, y solo cuando el cliente agradece ("gracias"), dice "lo voy a pensar" o se despide. NUNCA tras un simple "ok" o "está bien", ni mientras está eligiendo equipo o esperando un precio: "Por cierto, ¿con quién tengo el gusto? 😊", y agrega al final PREGUNTE_NOMBRE. Nunca insistas. Si el cliente te dice su nombre, agrega al final NOMBRE:<su nombre>.
 No menciones el horario ni si estamos abiertos o cerrados a menos que el cliente
 lo pregunte, o que quiera pasar hoy y ya esté cerrado. No lo digas al saludar.
+Si das el horario, dalo siempre completo ("lunes a sábado 8:30am-5:30pm, domingos y feriados 9:00am-2:00pm"), nunca solo una parte; y si TIENDA dice CERRADA, no digas que está abierta: usa la próxima apertura.
 
 LO PRIMERO: ENTENDER QUÉ QUIERE
 - Compra de celular -> lo atiendes tú
