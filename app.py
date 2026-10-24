@@ -2864,6 +2864,9 @@ def atender_celulares(from_number, numero_limpio, body):
                      and parece_monto_en_letras(body)))):
         equipos = equipos_de_interes(perfil["modelo_interes"])
         tipo_resultado, canal_ia = "exacto", None
+        if (canal == "krece" and not perfil.get("linea_krece")
+                and detectar_linea_suelta(body) is None and parece_monto_en_letras(body)):
+            perfil["_monto_letras_dudoso"] = True   # solo en memoria
     # "Mándame las fotos de esos tres": pide ver varios de los que ya vio
     if (not equipos and perfil.get("modelo_interes") and pide_foto(body)
             and re.search(r"\b(fotos|imagenes|esos|esas|ambos|ambas|todos|todas|tres|dos)\b",
@@ -3102,6 +3105,10 @@ def atender_celulares(from_number, numero_limpio, body):
     if iphone_a_cashea:
         # Respuesta fija, sin IA: Krece Azul no aplica para iPhone, se ofrece Cashea
         reply = texto_iphone_cashea(equipos, tipo_resultado)
+    elif perfil.get("_monto_letras_dudoso"):
+        # Respuesta fija, sin IA: escribió su línea en letras y no se entendió
+        reply = ("Me parece que me escribiste el monto en letras y no lo entendí bien 🙏 "
+                 "¿Me lo escribes en números? Por ejemplo: *250*")
     elif perfil.get("_iphone_sin_linea") and len(body.split()) <= 12:
         # Respuesta fija, sin IA: su Línea disponible no alcanza para el iPhone por Krece
         reply = texto_iphone_sin_linea(equipos, perfil["_linea_disponible"])
