@@ -406,7 +406,7 @@ def detectar_canal(texto):
         return "creditienda"
     if any(p in t for p in ("contado", "efectivo", "divisa", "dolar", "d\u00f3lar",
                             "zelle", "usdt", "cash", "precio normal",
-                            "sin financiamiento", "sin financiar", "sin cuotas",
+                            "sin financiamiento", "sin financiar", "sin cuotas", "sin tener cuotas", "sin pagar cuotas",
                             "pago de una vez", "pagar de una vez",
                             "pagarlo de una vez", "un solo pago", "pago completo")):
         return "contado"
@@ -2703,7 +2703,7 @@ def atender_celulares(from_number, numero_limpio, body):
     # una palabra explícita de pago de contado.
     PALABRAS_CONTADO_EXPLICITO = ("contado", "efectivo", "zelle", "usdt", "cash",
                                   "precio normal", "sin financiamiento",
-                                  "sin financiar", "sin cuotas",
+                                  "sin financiar", "sin cuotas", "sin tener cuotas", "sin pagar cuotas",
                                   "pago de una vez", "pagar de una vez",
                                   "pagarlo de una vez", "un solo pago", "pago completo")
     canal_previo = perfil.get("canal_pago")
