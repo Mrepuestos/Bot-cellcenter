@@ -948,6 +948,16 @@ SIN_EQUIPO_PALABRAS = {
     "esta", "todo"}
 
 
+def pide_vender_iphone(body):
+    """¿Compran mi iPhone? / ¿lo reciben como parte de pago? / quiero vender mi iPhone."""
+    t = "".join(c for c in unicodedata.normalize("NFD", body.lower()) if unicodedata.category(c) != "Mn")
+    if not re.search(r"\b(iphone|ifon|aifon|iphon)", t):
+        return False
+    if re.search(r"\b(aceptan|reciben)\b.*\b(krece|cashea|creditienda|zelle|pago movil|dolares|bolivares|tarjeta)\b", t):
+        return False
+    return bool(re.search(r"\b(compran|compras|reciben|recibes|aceptan|aceptas|toman|vender|venderlo|vendo|cambiar mi|cambio mi|parte de pago|parte del pago|canje|trade ?in|entregar mi|dejar mi|cuanto me dan|me dan por)\b", t))
+
+
 def es_mensaje_sin_equipo(texto):
     """'Gracias', 'buenos días', 'ok están ubicados': no nombra ningún equipo.
     Solo da True si TODAS las palabras son de cortesía, saludo o ubicación."""
@@ -2179,9 +2189,13 @@ Si das el horario, dalo siempre completo ("lunes a sábado 8:30am-5:30pm, doming
 
 LO PRIMERO: ENTENDER QUÉ QUIERE
 - Compra de celular -> lo atiendes tú
+- Si pregunta si compramos su iPhone o lo recibimos como parte de pago -> lo atiendes tú (ver IPHONE DEL CLIENTE)
 - Servicio técnico, reparación, pantallas o repuestos -> responde exactamente: DERIVAR_TECNICO
 - Accesorios o cualquier otra cosa -> responde exactamente: DERIVAR_OTROS
 Si ya dijo lo que quiere en su primer mensaje, no se lo preguntes de nuevo.
+
+IPHONE DEL CLIENTE (venderlo o dejarlo como parte de pago)
+Sí compramos iPhone y también lo recibimos como parte de pago para que se lleve otro equipo (casi siempre otro iPhone, y a veces un Android). Díselo en una o dos frases. Para valorarlo debe pasar por la tienda con el equipo o escribir al 0412-609-3756. No des precios ni rangos de lo que pagamos por el suyo, no pidas datos del equipo, no uses DERIVAR_OTROS ni INTENCION_COMPRA. Si además quiere llevarse otro equipo, ayúdalo con ese equipo como siempre.
 
 RESPETA EL CANAL QUE ELIGIÓ — regla más importante
 El canal que eligió y lo que ya sabes de él están en DATOS DE ESTA CONVERSACIÓN, al final.
@@ -2881,6 +2895,9 @@ def atender_celulares(from_number, numero_limpio, body):
     if not equipos and sin_equipo:
         tipo_resultado, canal_ia = "ninguno", None
         print(f"Mensaje sin equipo ({numero_limpio}): no se llama a la IA")
+    elif not equipos and pide_vender_iphone(body):
+        # Quiere vender su iPhone o dejarlo como parte de pago: no se busca ningún modelo
+        tipo_resultado, canal_ia = "ninguno", None
     elif not equipos:
         equipos, tipo_resultado, canal_ia = interpretar_pedido(body, contexto, faltan)
         # Solo dio su nivel o línea: sigue con los equipos que ya le interesaban
