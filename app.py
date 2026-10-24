@@ -3192,19 +3192,23 @@ def atender_celulares(from_number, numero_limpio, body):
         hora_vzla = datetime.now(pytz.timezone("America/Caracas")).hour
         if online and 6 <= hora_vzla < 22:
             reply = ("¡Perfecto! 🙌 Ya le pasé tu solicitud de compra online a un asesor "
-                     "de la tienda, él te da todos los detalles. Solo debes estar atento "
-                     "a sus indicaciones al momento de hacer la compra.")
+                     "de ventas de la tienda. En breve te escribe desde el número oficial "
+                     "de Cell Center: 0412-609-3756, y él te da todos los detalles. Solo "
+                     "debes estar atento a sus indicaciones al momento de hacer la compra.")
         elif online:
             reply = ("¡Perfecto! 🙌 Ya le pasé tu solicitud de compra online a un asesor "
-                     "de la tienda y mañana a partir de las 6:00 am "
-                     "te da todos los detalles. Solo debes estar atento a sus indicaciones "
-                     "al momento de hacer la compra.")
+                     "de ventas de la tienda. Mañana a partir de las 6:00 am te escribe desde "
+                     "el número oficial de Cell Center: 0412-609-3756, y él te da todos los "
+                     "detalles. Solo debes estar atento a sus indicaciones al momento de "
+                     "hacer la compra.")
         elif 6 <= hora_vzla < 22:
-            reply = ("¡Perfecto! Ya le pasé tu solicitud a un asesor de la tienda, "
-                     "en breve te contacta para coordinar 🙌")
+            reply = ("¡Perfecto! Ya le pasé tu solicitud a un asesor de ventas de la tienda. "
+                     "En breve te escribe desde el número oficial de Cell Center: "
+                     "0412-609-3756 🙌")
         else:
-            reply = ("¡Perfecto! Ya le pasé tu solicitud a un asesor de la tienda. "
-                     "Te contactará mañana a partir de las 6:00 am para coordinar 🙌")
+            reply = ("¡Perfecto! Ya le pasé tu solicitud a un asesor de ventas de la tienda. "
+                     "Te escribirá mañana a partir de las 6:00 am desde el número oficial de "
+                     "Cell Center: 0412-609-3756 🙌")
 
     enviar_ubicacion = "ENVIAR_UBICACION" in reply
     if enviar_ubicacion:
