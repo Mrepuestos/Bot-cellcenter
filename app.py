@@ -3541,6 +3541,11 @@ def atender_admin_ia(from_number, numero_limpio, body):
 
 # ── Webhook ───────────────────────────────────────────────────────────────────
 
+@app.route('/ping', methods=['GET'])
+def ping():
+    return "ok", 200
+
+
 @app.route('/webhook', methods=['POST'])
 def webhook():
     try:
@@ -4203,6 +4208,23 @@ def _ciclo_bienvenidas():
 
 
 threading.Thread(target=_ciclo_bienvenidas, daemon=True).start()
+
+
+# ── Mantener despierto el servidor (Render gratis se duerme a los 15 min) ──
+URL_PUBLICA = os.environ.get("RENDER_EXTERNAL_URL", "")
+
+def _mantener_despierto():
+    if not URL_PUBLICA:
+        print("⚠️ Sin RENDER_EXTERNAL_URL: no se hace ping de mantenimiento")
+        return
+    while True:
+        time.sleep(600)   # cada 10 minutos
+        try:
+            requests.get(URL_PUBLICA + "/ping", timeout=30)
+        except Exception as e:
+            print(f"Ping de mantenimiento falló: {e}")
+
+threading.Thread(target=_mantener_despierto, daemon=True).start()
 
 
 if __name__ == '__main__':
