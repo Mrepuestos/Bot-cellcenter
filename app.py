@@ -2131,6 +2131,8 @@ def get_system_prompt_celulares(info_equipo, perfil, rangos, lista_corta, promos
                  ". No se lo vuelvas a preguntar.") if datos else ""
     if perfil.get("_pedir_nombre"):
         conocidos += " No sabes su nombre (regla NOMBRE)."
+    if perfil.get("_nombre_perfil"):
+        conocidos += f" Su nombre en WhatsApp es «{perfil['_nombre_perfil']}» (por confirmar, regla NOMBRE)."
     if perfil.get("_nivel1_krece"):
         conocidos += (" OJO: antes te dijo 'nivel 1' y ahora eligió Krece: su nivel de Krece es AZUL. "
                       "Cotiza con los montos de EQUIPO CONSULTADO (calculados con Azul y $300) "
@@ -2184,7 +2186,7 @@ Habla como se habla en Venezuela. NUNCA uses expresiones de otros países como
 "¿qué te parece?" o "¿te interesa?".
 No repitas lo que ya dijiste en el mensaje anterior.
 Si sabes cómo se llama el cliente, úsalo con naturalidad al saludar, al cerrar o al dar una buena noticia; NO lo repitas en cada mensaje.
-Regla NOMBRE: si los datos dicen que no sabes su nombre, pregúntalo UNA sola vez, casual, en un mensaje donde no hagas otra pregunta, y solo cuando el cliente agradece ("gracias"), dice "lo voy a pensar" o se despide. NUNCA tras un simple "ok" o "está bien", ni mientras está eligiendo equipo o esperando un precio: "Por cierto, ¿con quién tengo el gusto? 😊", y agrega al final PREGUNTE_NOMBRE. Nunca insistas. Si el cliente te dice su nombre, agrega al final NOMBRE:<su nombre>.
+Regla NOMBRE: si los datos dicen que no sabes su nombre, pregúntalo UNA sola vez, casual, en un mensaje donde no hagas otra pregunta, y solo cuando el cliente agradece ("gracias"), dice "lo voy a pensar" o se despide. NUNCA tras un simple "ok" o "está bien", ni mientras está eligiendo equipo o esperando un precio: "Por cierto, ¿con quién tengo el gusto? 😊", y agrega al final PREGUNTE_NOMBRE. Nunca insistas. Si el cliente te dice su nombre, agrega al final NOMBRE:<su nombre>. Si los datos traen su nombre de WhatsApp por confirmar: si es el nombre de pila de una persona (aunque venga con apellido, emojis o en minúsculas), úsalo como cualquier nombre sabido y agrega al final NOMBRE:<nombre de pila>; si es apodo, negocio, apellido, frase, equipo, usuario o cualquier cosa que no sea un nombre de pila, no lo uses y agrega al final NOMBRE:NINGUNO. Si dudas, NOMBRE:NINGUNO. Nunca menciones esta revisión.
 No menciones el horario ni si estamos abiertos o cerrados a menos que el cliente
 lo pregunte, o que quiera pasar hoy y ya esté cerrado. No lo digas al saludar.
 Si das el horario, dalo siempre completo ("lunes a sábado 8:30am-5:30pm, domingos y feriados 9:00am-2:00pm"), nunca solo una parte; y si TIENDA dice CERRADA, no digas que está abierta: usa la próxima apertura.
@@ -3113,7 +3115,10 @@ def atender_celulares(from_number, numero_limpio, body):
     historial.append({"role": "user", "content": body})
     if len(historial) > 4:
         historial = historial[-4:]
-    if len(historial) > 1 and debe_pedir_nombre(perfil):
+    if not perfil.get("nombre") and NOMBRE_PERFIL.get(numero_limpio):
+        perfil["_nombre_perfil"] = NOMBRE_PERFIL[numero_limpio]
+    if (len(historial) > 1 and debe_pedir_nombre(perfil)
+            and not perfil.get("_nombre_perfil")):
         perfil["_pedir_nombre"] = True
 
     # Si ya se buscaron equipos para lo que pidió, la IA ve solo esos (la LISTA CORTA
@@ -4023,6 +4028,7 @@ def webhook():
         return jsonify({"status": "error", "detail": str(e)}), 200
 
 # ── Relación con clientes de celulares: nombre, bienvenida y contacto en Google ──
+NOMBRE_PERFIL = {}   # número -> nombre de WhatsApp por confirmar con la IA (None = ya revisado)
 HORA_BIENVENIDA = 10
 DIAS_PARA_REPREGUNTAR = 7
 MAX_BIENVENIDAS_DIA = 20
@@ -4065,7 +4071,7 @@ NO_ES_NOMBRE = {"mama", "mamá", "papa", "papá", "mi", "el", "la", "de", "del",
                 "ventas", "accesorios", "importadora", "tech", "store", "market",
                 "licoreria", "licorería", "ferreteria", "ferretería", "farmacia",
                 "panaderia", "panadería", "peluqueria", "peluquería", "barberia",
-                "barbería", "taller", "motos", "autos", "ca", "cristo", "jesucristo", "jehova", "jehová", "yahveh", "amen", "amén", "aleluya", "bendiciones"}
+                "barbería", "taller", "motos", "autos", "ca", "cristo", "jesucristo", "jehova", "jehová", "yahveh", "amen", "amén", "aleluya", "bendiciones", "ninguno", "ninguna"}
 TITULOS_NOMBRE = {"dr", "dra", "doctor", "doctora", "lic", "licdo", "licda", "ing",
                   "sr", "sra", "srta", "prof", "profe", "don", "doña", "abg", "tsu"}
 FRASE_RELIGIOSA = {"es", "te", "ama", "vive", "reina", "salva", "mi", "su", "nos", "guia", "guía", "cuida", "bendice", "protege"}
@@ -4121,6 +4127,7 @@ def marcas_nombre(numero_limpio, reply):
         if nombre:
             guardar_perfil(numero_limpio, nombre=nombre)
         reply = reply.replace(m.group(0), "")
+        NOMBRE_PERFIL[numero_limpio] = None   # ya revisado: no se vuelve a mostrar
     return reply.strip()
 
 
@@ -4132,10 +4139,11 @@ def registrar_cliente(numero_limpio, from_name):
         r = supabase.table("Clientes").select("nombre").eq("numero", numero_limpio).execute()
         fila = r.data[0] if r.data else None
         if fila is None:   # cliente totalmente nuevo
-            guardar_perfil(numero_limpio, nombre=limpiar_nombre(from_name),
-                           primer_contacto=datetime.utcnow().isoformat() + "Z")
-        elif not fila.get("nombre"):
-            guardar_perfil(numero_limpio, nombre=limpiar_nombre(from_name))
+            guardar_perfil(numero_limpio, primer_contacto=datetime.utcnow().isoformat() + "Z")
+        if ((fila is None or not fila.get("nombre")) and limpiar_nombre(from_name)
+                and numero_limpio not in NOMBRE_PERFIL):
+            # El nombre del perfil lo confirma la IA en su próxima respuesta (NOMBRE:<x> o NOMBRE:NINGUNO)
+            NOMBRE_PERFIL[numero_limpio] = (from_name or "").strip()[:40]
     except Exception as e:
         print(f"Error registrando cliente: {e}")
 
