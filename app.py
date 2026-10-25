@@ -3771,6 +3771,7 @@ def webhook():
                     memoria_admin_ia.pop(numero_limpio, None)
                     krece_supuesto.discard(numero_limpio)
                     krece_linea_disponible.pop(numero_limpio, None)
+                    NOMBRE_PERFIL.pop(numero_limpio, None)
                     tecnico_celulares.pop(numero_limpio, None)
                     confirmar_celular.pop(numero_limpio, None)
                     send_whapi_message(from_number, "✅ Historial limpiado. Puedes empezar una conversación nueva.")
