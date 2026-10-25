@@ -140,6 +140,7 @@ TIENDA_DIRECCION = ("Centro, Av San Rafael entre calle El Carmen y Sucre, "
                     "frente al CC La Asunción, a 30 mtrs de la parada de Mopia")
 FOTO_FACHADA_URL = "https://i.postimg.cc/rwZJRKzD/Whats-App-Image-2026-10-07-at-9-08-11-AM.jpg"
 VIDEO_HONOR_PLAY_20A_URL = "https://raw.githubusercontent.com/Mrepuestos/Bot-cellcenter/main/media/honor_play_20a.mp4"
+VIDEO_TECNO_SPARK_GO_3_URL = "https://raw.githubusercontent.com/Mrepuestos/Bot-cellcenter/main/media/tecno_spark_go_3.mp4"
 
 # ── Modelo que atiende el flujo de celulares ──────────────────────────────────
 MODELO_CELULARES = "claude-haiku-5-5"
@@ -173,6 +174,7 @@ tasa_euro_cache = {"tasa": None, "fecha": ""}
 stock_bajo_pendiente = {}
 pausas_activas = {}
 video_honor_enviado = set()   # clientes que ya recibieron el video del Honor Play 20A (Krece)
+video_tecno_enviado = set()   # clientes que ya recibieron el video del Tecno Spark Go 3 (Krece)
 
 
 # ── Agrupador de mensajes seguidos (flujo celulares) ──────────────────────────
@@ -3270,6 +3272,24 @@ def atender_celulares(from_number, numero_limpio, body):
         else:
             print("Sin foto del Honor Play 20A para el anuncio de Krece")
         send_whapi_video(from_number, VIDEO_HONOR_PLAY_20A_URL)
+
+    # Anuncio de Krece del Tecno Spark Go 3: texto, luego foto y luego video (una vez por cliente)
+    if "tecno spark go 3 con krece" in body.lower() and from_number not in video_tecno_enviado:
+        video_tecno_enviado.add(from_number)
+        url_foto = None
+        for eq in equipos or []:
+            if "spark go 3" in eq["modelo"].lower():
+                url_foto = buscar_foto(eq["marca"], eq["modelo"], eq["almacenamiento"])
+                if url_foto:
+                    break
+        if not url_foto:
+            url_foto = buscar_foto("Tecno", "Spark Go 3")
+        quiere_foto = False   # este bloque ya se encarga de la foto: que el flujo normal no la repita
+        if url_foto:
+            send_whapi_image(from_number, url_foto, "Tecno Spark Go 3")
+        else:
+            print("Sin foto del Tecno Spark Go 3 para el anuncio de Krece")
+        send_whapi_video(from_number, VIDEO_TECNO_SPARK_GO_3_URL)
 
     if quiere_foto and equipos:
         # Hasta 3 fotos, una por modelo (sin repetir el mismo modelo con otra memoria)
