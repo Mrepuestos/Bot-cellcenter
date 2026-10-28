@@ -2807,7 +2807,10 @@ def atender_celulares(from_number, numero_limpio, body):
             m = re.fullmatch(r"\s*\$?\s*(\d{1,5})\s*(?:\$|d[oó]lares|usd)?\s*", body.lower())
             disponible = float(m.group(1)) if m else (detectar_linea_suelta(body) or linea)
         if disponible is not None and linea == disponible:
-            linea = None
+            if "celular" in body.lower():
+                disponible = None   # dijo "celulares": ese monto es su línea de Celulares
+            else:
+                linea = None
         if pide_iphone and disponible_dudosa(numero_limpio, disponible, perfil.get("linea_krece")):
             perfil["_disponible_dudosa"] = disponible   # solo en memoria
             disponible = None
