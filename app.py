@@ -141,7 +141,7 @@ TIENDA_DIRECCION = ("Centro, Av San Rafael entre calle El Carmen y Sucre, "
 FOTO_FACHADA_URL = "https://i.postimg.cc/rwZJRKzD/Whats-App-Image-2026-10-07-at-9-08-11-AM.jpg"
 VIDEO_HONOR_PLAY_20A_URL = "https://raw.githubusercontent.com/Mrepuestos/Bot-cellcenter/main/media/honor_play_20a.mp4"
 VIDEO_TECNO_SPARK_GO_3_URL = "https://raw.githubusercontent.com/Mrepuestos/Bot-cellcenter/main/media/tecno_spark_go_3.mp4"
-VIDEO_TECNO_29800_URL = "https://raw.githubusercontent.com/Mrepuestos/Bot-cellcenter/main/media/tecno_spark_go_3_29800.mp4"
+VIDEO_TECNO_29800_URL = VIDEO_TECNO_SPARK_GO_3_URL   # mismo video nuevo del Tecno para los dos anuncios
 
 # ── Modelo que atiende el flujo de celulares ──────────────────────────────────
 MODELO_CELULARES = "claude-haiku-5-5"
