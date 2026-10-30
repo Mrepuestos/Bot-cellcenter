@@ -2154,6 +2154,12 @@ def get_system_prompt_celulares(info_equipo, perfil, rangos, lista_corta, promos
                       "NO cotices el iPhone con ese monto. Explícale que ese monto es para Android, "
                       "que para el iPhone se usa la *Línea disponible* (el número grande arriba en la "
                       "app) y pregúntale cuánto le sale ahí o que te mande captura.")
+    if perfil.get("_linea_recien"):
+        conocidos += (f" OJO: te acaba de dar su línea de Celulares: ${float(perfil['linea_krece']):.0f}. "
+                      "Los montos de EQUIPO CONSULTADO YA están calculados con esa línea: dáselos "
+                      "tal cual, diciendo que son con su línea de ese monto. No digas que el equipo "
+                      "supera su línea ni que los montos anteriores ya no le aplican, salvo que "
+                      "EQUIPO CONSULTADO diga 'inicial ajustada a su línea'.")
     if perfil.get("_linea_dudosa"):
         conocidos += (f" OJO: te dio ${float(perfil['_linea_dudosa']):.0f} de línea; eso parece "
                       "su 'Línea disponible' (la general), no la de celulares. Explícaselo en "
@@ -2837,6 +2843,8 @@ def atender_celulares(from_number, numero_limpio, body):
             perfil["nivel_cliente"] = nivel
             perfil["_nivel_recien"] = True   # lo dijo en este mensaje (solo en memoria)
         if linea:
+            if perfil.get("linea_krece") and float(perfil["linea_krece"]) != linea:
+                perfil["_linea_recien"] = True   # cambió su línea en este mensaje (solo en memoria)
             cambios["linea_krece"] = linea
             perfil["linea_krece"] = linea
         if nivel or linea or disponible is not None:
