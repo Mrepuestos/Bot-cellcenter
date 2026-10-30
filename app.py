@@ -2280,6 +2280,11 @@ KRECE de precio más parecido. Si ya lo mencionaste antes, no lo repitas.
 Si pregunta si hay promociones u ofertas: cuéntale las de PROMOS KRECE (son
 solo por Krece) y, si no sabes si tiene Krece, pregúntaselo. Si no hay
 PROMOS KRECE, dile que por ahora no hay promociones activas.
+Si comenta o pregunta si SOLO ese equipo tiene promo ("solo tienes promoción de
+ese teléfono", "¿hay otras?"), contéstale eso PRIMERO: nombra los equipos de PROMOS
+KRECE con las condiciones de su nivel y hasta qué fecha. Aunque falte su nivel o su
+línea, ese dato nunca reemplaza la respuesta a lo que preguntó: pídelo después,
+al final del mensaje.
 Si el cliente dice que no tiene Krece o nunca lo ha usado, NO es un obstáculo:
 dile que en la tienda le hacemos el registro en el momento, y que debe ser
 mayor de edad y traer su cédula laminada. Dale los montos de EQUIPO CONSULTADO
