@@ -533,7 +533,7 @@ def detectar_linea(texto):
     return float(m.group(1).replace(",", ".")) if m else None
 
 
-RELLENO_LINEA = {"y", "mi", "es", "de", "la", "linea", "línea", "tengo", "son", "me",
+RELLENO_LINEA = {"que", "y", "mi", "es", "de", "la", "linea", "línea", "tengo", "son", "me",
                  "aprobaron", "aprobado", "aprobada", "limite", "límite", "dolares",
                  "dólares", "usd", "oro", "plata", "azul", "platino", "nivel", "ok",
                  "si", "sí", "con", "krece", "soy", "como",
@@ -2795,7 +2795,8 @@ def atender_celulares(from_number, numero_limpio, body):
             linea = detectar_linea_suelta(body)
         # Respaldo con IA: ya tiene nivel, espera la línea y Python no encontró el monto
         if (not linea and not pide_iphone and re.search(r"\d", body) and len(body) <= 80
-                and (nivel or perfil.get("nivel_cliente")) and not perfil.get("linea_krece")):
+                and (nivel or perfil.get("nivel_cliente"))
+                and (not perfil.get("linea_krece") or perfil.get("_krece_supuesto"))):
             linea = linea_por_ia(numero_limpio, body)
         # Línea disponible (tope del iPhone): dicha con la palabra "disponible", o un
         # monto suelto cuando le interesa un iPhone y no habla de "celulares"
