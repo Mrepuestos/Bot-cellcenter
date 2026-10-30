@@ -141,6 +141,7 @@ TIENDA_DIRECCION = ("Centro, Av San Rafael entre calle El Carmen y Sucre, "
 FOTO_FACHADA_URL = "https://i.postimg.cc/rwZJRKzD/Whats-App-Image-2026-10-07-at-9-08-11-AM.jpg"
 VIDEO_HONOR_PLAY_20A_URL = "https://raw.githubusercontent.com/Mrepuestos/Bot-cellcenter/main/media/honor_play_20a.mp4"
 VIDEO_TECNO_SPARK_GO_3_URL = "https://raw.githubusercontent.com/Mrepuestos/Bot-cellcenter/main/media/tecno_spark_go_3.mp4"
+VIDEO_TECNO_29800_URL = "https://raw.githubusercontent.com/Mrepuestos/Bot-cellcenter/main/media/tecno_spark_go_3_29800.mp4"
 
 # ── Modelo que atiende el flujo de celulares ──────────────────────────────────
 MODELO_CELULARES = "claude-haiku-5-5"
@@ -175,6 +176,7 @@ stock_bajo_pendiente = {}
 pausas_activas = {}
 video_honor_enviado = set()   # clientes que ya recibieron el video del Honor Play 20A (Krece)
 video_tecno_enviado = set()   # clientes que ya recibieron el video del Tecno Spark Go 3 (Krece)
+anuncio_29800 = set()   # clientes que llegaron por el anuncio de 29.800 Bs (Tecno Spark Go 3)
 
 
 # ── Agrupador de mensajes seguidos (flujo celulares) ──────────────────────────
@@ -490,6 +492,21 @@ def detectar_sin_cuenta(texto):
         r"|no (estoy|me he|he) (registrad|inscrit|afiliad)"
         r"|no (estoy|tengo) en (krece|crece|cashea|cashe)"
         r"|nunca (lo |la )?he usado|no (lo |la )?he usado", t))
+
+
+def es_anuncio_29800(texto):
+    """True si el mensaje viene del anuncio de Krece Azul de 29.800 Bs (hasta el 01/11)."""
+    t = texto.lower()
+    return (("29.800" in t or "29800" in t)
+            and datetime.now(pytz.timezone("America/Caracas")).strftime("%Y-%m-%d") <= "2026-11-01")
+
+
+def inicial_29800(eq, nivel, perfil):
+    """Spark Go 3 de 64 GB: 29.800 Bs de inicial para quien llegó por ese anuncio (Azul)."""
+    return bool(perfil.get("_anuncio_29800") and nivel == "azul"
+                and "spark go 3" in eq["modelo"].lower()
+                and str(eq.get("almacenamiento", "")).startswith("64")
+                and datetime.now(pytz.timezone("America/Caracas")).strftime("%Y-%m-%d") <= "2026-11-01")
 
 
 def detectar_linea(texto):
@@ -831,6 +848,8 @@ def bloque_equipo(equipos, canal, perfil):
                 hubo = True
                 extra = " (inicial ajustada a su línea)" if k["topado_por_linea"] else ""
                 inicial = "sin inicial" if k["inicial"] == 0 else f"inicial ${k['inicial']}"
+                if inicial_29800(eq, nivel, perfil):
+                    inicial = "inicial 29.800 Bs (precio especial de la promo)"
                 lineas.append(f"  Krece {plazo} cuotas: {inicial} "
                               f"+ {plazo} x ${k['monto_cuota']}{extra}")
             if promo and hubo:
@@ -1107,6 +1126,8 @@ def inicial_corta(eq, canal, perfil):
             if not k.get("aplica"):
                 return None
             inicial = "sin inicial" if k["inicial"] == 0 else f"inicial ${k['inicial']}"
+            if inicial_29800(eq, nivel, perfil):
+                inicial = "inicial 29.800 Bs (precio especial de la promo)"
             texto = f"Krece: {inicial} + {plazo} x ${k['monto_cuota']}"
             if promo:
                 texto = f"🔥 promo Krece hasta el {promo['hasta']:%d/%m} — {texto}"
@@ -2143,6 +2164,12 @@ def get_system_prompt_celulares(info_equipo, perfil, rangos, lista_corta, promos
                       "(los dos tienen nivel 1). Pregúntale solo eso, con naturalidad: "
                       "'¿Ese nivel es de Cashea o de Krece? 😊'. No des precios todavía "
                       "y no respondas DERIVAR_PRECIO.")
+    if perfil.get("_anuncio_29800") and perfil.get("nivel_cliente") == "azul":
+        conocidos += (" OJO: viene del anuncio de 29.800 Bs: no tiene Krece. Dile que lo "
+                      "registramos aquí en la tienda solo con su cédula laminada (sujeto a "
+                      "aprobación de Krece) y entra en nivel Azul. La inicial del Spark Go 3 "
+                      "de 64 GB es 29.800 Bs, precio especial de la promo: dala tal cual, "
+                      "no la conviertas a dólares ni la recalcules.")
     if perfil.get("_krece_supuesto"):
         conocidos += (" OJO: él NO te dio nivel ni línea; tú supusiste Azul con $300 en Celulares. "
                       "Cotiza con los montos de EQUIPO CONSULTADO sin pedirle esos datos. "
@@ -2719,6 +2746,10 @@ def atender_celulares(from_number, numero_limpio, body):
         perfil["_krece_supuesto"] = True   # sigue con el Azul/$300 supuesto
     if numero_limpio in krece_linea_disponible:
         perfil["_linea_disponible"] = krece_linea_disponible[numero_limpio]
+    if es_anuncio_29800(body):
+        anuncio_29800.add(numero_limpio)
+    if numero_limpio in anuncio_29800:
+        perfil["_anuncio_29800"] = True
 
     # Canal de pago
     detectado = detectar_canal(body)
@@ -2992,7 +3023,7 @@ def atender_celulares(from_number, numero_limpio, body):
 
     # Cliente sin cuenta en Krece o Cashea: se cotiza con el nivel de entrada
     # (el registro se lo hacemos en la tienda con su cédula laminada)
-    if canal in ("krece", "cashea") and (detectar_sin_cuenta(body)
+    if canal in ("krece", "cashea") and (detectar_sin_cuenta(body) or es_anuncio_29800(body)
                                          or es_no_corto(canal, perfil, body)):
         if canal == "krece":
             cambios.update(nivel_cliente="azul", linea_krece=300)
@@ -3304,6 +3335,17 @@ def atender_celulares(from_number, numero_limpio, body):
         else:
             print("Sin foto del Honor Play 20A para el anuncio de Krece")
         send_whapi_video(from_number, VIDEO_HONOR_PLAY_20A_URL)
+
+    # Anuncio Krece Azul 29.800 Bs del Tecno Spark Go 3: foto y video (una vez por cliente)
+    if es_anuncio_29800(body) and from_number not in video_tecno_enviado:
+        video_tecno_enviado.add(from_number)
+        quiere_foto = False   # este bloque ya se encarga de la foto: que el flujo normal no la repita
+        url_foto = buscar_foto("Tecno", "Spark Go 3")
+        if url_foto:
+            send_whapi_image(from_number, url_foto, "Tecno Spark Go 3")
+        else:
+            print("Sin foto del Tecno Spark Go 3 para el anuncio de 29.800 Bs")
+        send_whapi_video(from_number, VIDEO_TECNO_29800_URL)
 
     # Anuncio de Krece del Tecno Spark Go 3: texto, luego foto y luego video (una vez por cliente)
     if "tecno spark go 3 con krece" in body.lower() and from_number not in video_tecno_enviado:
