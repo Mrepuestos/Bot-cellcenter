@@ -495,18 +495,18 @@ def detectar_sin_cuenta(texto):
 
 
 def es_anuncio_29800(texto):
-    """True si el mensaje viene del anuncio de Krece Azul de 29.800 Bs (hasta el 01/11)."""
+    """True si el mensaje viene del anuncio de Krece Azul de 38.900 Bs (hasta el 15/11)."""
     t = texto.lower()
-    return (("29.800" in t or "29800" in t)
-            and datetime.now(pytz.timezone("America/Caracas")).strftime("%Y-%m-%d") <= "2026-11-01")
+    return (("38.900" in t or "38900" in t)
+            and datetime.now(pytz.timezone("America/Caracas")).strftime("%Y-%m-%d") <= "2026-11-15")
 
 
 def inicial_29800(eq, nivel, perfil):
-    """Spark Go 3 de 64 GB: 29.800 Bs de inicial para quien llegó por ese anuncio (Azul)."""
+    """Spark Go 3 de 64 GB: 38.900 Bs de inicial para quien llegó por ese anuncio (Azul)."""
     return bool(perfil.get("_anuncio_29800") and nivel == "azul"
                 and "spark go 3" in eq["modelo"].lower()
                 and str(eq.get("almacenamiento", "")).startswith("64")
-                and datetime.now(pytz.timezone("America/Caracas")).strftime("%Y-%m-%d") <= "2026-11-01")
+                and datetime.now(pytz.timezone("America/Caracas")).strftime("%Y-%m-%d") <= "2026-11-15")
 
 
 def detectar_linea(texto):
@@ -849,7 +849,7 @@ def bloque_equipo(equipos, canal, perfil):
                 extra = " (inicial ajustada a su línea)" if k["topado_por_linea"] else ""
                 inicial = "sin inicial" if k["inicial"] == 0 else f"inicial ${k['inicial']}"
                 if inicial_29800(eq, nivel, perfil):
-                    inicial = "inicial 29.800 Bs (precio especial de la promo)"
+                    inicial = "inicial 38.900 Bs (precio especial de la promo)"
                 lineas.append(f"  Krece {plazo} cuotas: {inicial} "
                               f"+ {plazo} x ${k['monto_cuota']}{extra}")
             if promo and hubo:
@@ -1127,7 +1127,7 @@ def inicial_corta(eq, canal, perfil):
                 return None
             inicial = "sin inicial" if k["inicial"] == 0 else f"inicial ${k['inicial']}"
             if inicial_29800(eq, nivel, perfil):
-                inicial = "inicial 29.800 Bs (precio especial de la promo)"
+                inicial = "inicial 38.900 Bs (precio especial de la promo)"
             texto = f"Krece: {inicial} + {plazo} x ${k['monto_cuota']}"
             if promo:
                 texto = f"🔥 promo Krece hasta el {promo['hasta']:%d/%m} — {texto}"
@@ -2165,10 +2165,10 @@ def get_system_prompt_celulares(info_equipo, perfil, rangos, lista_corta, promos
                       "'¿Ese nivel es de Cashea o de Krece? 😊'. No des precios todavía "
                       "y no respondas DERIVAR_PRECIO.")
     if perfil.get("_anuncio_29800") and perfil.get("nivel_cliente") == "azul":
-        conocidos += (" OJO: viene del anuncio de 29.800 Bs: no tiene Krece. Dile que lo "
+        conocidos += (" OJO: viene del anuncio de 38.900 Bs: no tiene Krece. Dile que lo "
                       "registramos aquí en la tienda solo con su cédula laminada (sujeto a "
                       "aprobación de Krece) y entra en nivel Azul. La inicial del Spark Go 3 "
-                      "de 64 GB es 29.800 Bs, precio especial de la promo: dala tal cual, "
+                      "de 64 GB es 38.900 Bs, precio especial de la promo: dala tal cual, "
                       "no la conviertas a dólares ni la recalcules.")
     if perfil.get("_krece_supuesto"):
         conocidos += (" OJO: él NO te dio nivel ni línea; tú supusiste Azul con $300 en Celulares. "
@@ -3336,7 +3336,7 @@ def atender_celulares(from_number, numero_limpio, body):
             print("Sin foto del Honor Play 20A para el anuncio de Krece")
         send_whapi_video(from_number, VIDEO_HONOR_PLAY_20A_URL)
 
-    # Anuncio Krece Azul 29.800 Bs del Tecno Spark Go 3: foto y video (una vez por cliente)
+    # Anuncio Krece Azul 38.900 Bs del Tecno Spark Go 3: foto y video (una vez por cliente)
     if es_anuncio_29800(body) and from_number not in video_tecno_enviado:
         video_tecno_enviado.add(from_number)
         quiere_foto = False   # este bloque ya se encarga de la foto: que el flujo normal no la repita
@@ -3344,7 +3344,7 @@ def atender_celulares(from_number, numero_limpio, body):
         if url_foto:
             send_whapi_image(from_number, url_foto, "Tecno Spark Go 3")
         else:
-            print("Sin foto del Tecno Spark Go 3 para el anuncio de 29.800 Bs")
+            print("Sin foto del Tecno Spark Go 3 para el anuncio de 38.900 Bs")
         send_whapi_video(from_number, VIDEO_TECNO_29800_URL)
 
     # Anuncio de Krece del Tecno Spark Go 3: texto, luego foto y luego video (una vez por cliente)
