@@ -509,6 +509,12 @@ def inicial_29800(eq, nivel, perfil):
                 and datetime.now(pytz.timezone("America/Caracas")).strftime("%Y-%m-%d") <= "2026-11-15")
 
 
+def frase_fin_promo(fin):
+    """Cuándo hablar del fin de una promo: solo faltando 2 días, 1 día y el mismo día (sin fechas)."""
+    dias = (fin - datetime.now(pytz.timezone("America/Caracas")).date()).days
+    return {2: "se termina en dos días", 1: "se termina en un día", 0: "es hasta hoy"}.get(dias, "")
+
+
 def detectar_linea(texto):
     """Busca un monto que parezca la línea aprobada de Krece."""
     texto = texto.replace("@", "")   # "800@$" es 800$
@@ -839,8 +845,13 @@ def bloque_equipo(equipos, canal, perfil):
                               f"Pídele que confirme: Azul, Plata, Oro o Platino.")
                 continue
             if promo:
-                lineas.append(f"  🔥 PROMO KRECE hasta el {promo['hasta']:%d/%m} "
-                              f"(dilo como dato, sin presionar)")
+                fin = datetime(2026, 11, 15).date() if inicial_29800(eq, nivel, perfil) else promo["hasta"]
+                aviso = frase_fin_promo(fin)
+                if aviso:
+                    lineas.append(f"  🔥 PROMO KRECE: {aviso}. Díselo como urgencia, con esas palabras y sin fechas")
+                else:
+                    lineas.append(f"  🔥 PROMO KRECE vigente. NO digas cuándo termina ni menciones fechas; "
+                                  f"solo si él pregunta, termina el {fin:%d/%m}")
             for plazo in plazos:
                 k = precios.krece(p, nivel, plazo, linea=linea, promo=promo)
                 if not k.get("aplica"):
@@ -864,7 +875,7 @@ def bloque_equipo(equipos, canal, perfil):
                     if cuotas_n:
                         lineas.append(
                             f"  Después de la promo (desde el "
-                            f"{promo['hasta'] + timedelta(days=1):%d/%m}): inicial "
+                            f"{fin + timedelta(days=1):%d/%m}): inicial "
                             f"${inicial_n} + " + " / ".join(cuotas_n)
                             + " (dilo solo si pregunta por el precio sin promo)")
                 except (ValueError, KeyError):
@@ -1130,7 +1141,8 @@ def inicial_corta(eq, canal, perfil):
                 inicial = "inicial 38.900 Bs (precio especial de la promo)"
             texto = f"Krece: {inicial} + {plazo} x ${k['monto_cuota']}"
             if promo:
-                texto = f"🔥 promo Krece hasta el {promo['hasta']:%d/%m} — {texto}"
+                aviso = frase_fin_promo(promo["hasta"])
+                texto = f"🔥 promo Krece{' (' + aviso + ')' if aviso else ''} — {texto}"
             return texto
         if canal == "cashea":
             nivel = perfil.get("nivel_cliente")
@@ -2165,11 +2177,17 @@ def get_system_prompt_celulares(info_equipo, perfil, rangos, lista_corta, promos
                       "'¿Ese nivel es de Cashea o de Krece? 😊'. No des precios todavía "
                       "y no respondas DERIVAR_PRECIO.")
     if perfil.get("_anuncio_29800") and perfil.get("nivel_cliente") == "azul":
-        conocidos += (" OJO: viene del anuncio de 38.900 Bs: no tiene Krece. Dile que lo "
-                      "registramos aquí en la tienda solo con su cédula laminada (sujeto a "
-                      "aprobación de Krece) y entra en nivel Azul. La inicial del Spark Go 3 "
-                      "de 64 GB es 38.900 Bs, precio especial de la promo: dala tal cual, "
-                      "no la conviertas a dólares ni la recalcules.")
+        conocidos += (" OJO: viene del anuncio de 38.900 Bs y no tiene Krece. La inicial del "
+                      "Spark Go 3 de 64 GB es 38.900 Bs, precio especial de la promo: dala tal cual, "
+                      "no la conviertas a dólares ni la recalcules. En tu PRIMERA respuesta escribe "
+                      "el precio así: 'Con Krece nivel Azul la inicial es de 38.900 Bs (precio especial "
+                      "de la promo) y las cuotas son N x $M', con SOLO el plazo más largo de EQUIPO "
+                      "CONSULTADO (el de más cuotas); los otros plazos dalos solo si él los pregunta, "
+                      "y no le preguntes qué plazo prefiere. Da los montos como datos normales, sin "
+                      "decir que son aproximados ni cada cuánto se pagan las cuotas. Termina esa "
+                      "primera respuesta con: 'Si no estás registrado en Krece, nosotros te registramos "
+                      "y entras en nivel Azul 😊'. No digas 'como aún no tienes Krece' ni menciones "
+                      "cédula, mayoría de edad ni 'sujeto a aprobación': solo si él lo pregunta.")
     if perfil.get("_krece_supuesto"):
         conocidos += (" OJO: él NO te dio nivel ni línea; tú supusiste Azul con $300 en Celulares. "
                       "Cotiza con los montos de EQUIPO CONSULTADO sin pedirle esos datos. "
@@ -2298,9 +2316,9 @@ PROMOS DE KRECE
 Solo existen las que aparecen en PROMOS KRECE (DATOS DE ESTA CONVERSACIÓN).
 Nunca inventes una promo ni llames promo a un equipo que no esté ahí.
 Si un equipo de las TRES OPCIONES, la LISTA CORTA o EQUIPO CONSULTADO trae 🔥,
-dile que está en promo de Krece y hasta qué fecha, como dato y sin presionar.
-Si das varios equipos y más de uno trae 🔥, pon "(promo hasta el dd/mm)" en la línea de CADA uno que la tenga, no solo en la del primero.
-Si dice "sin inicial", dilo así: "sin inicial mientras la promo esté vigente (hasta el dd/mm)". No digas "la única vez".
+dile que está en promo de Krece, como dato y sin presionar. No menciones cuándo termina ni fechas. Solo si la línea 🔥 dice que se termina en dos días, en un día u hoy, dilo como urgencia con esas mismas palabras, sin fecha. Si el cliente pregunta cuándo termina, dile la fecha.
+Si das varios equipos y más de uno trae 🔥, pon "(promo)" en la línea de CADA uno que la tenga, no solo en la del primero.
+Si dice "sin inicial", dilo así: "sin inicial mientras la promo esté vigente". No digas "la única vez".
 Si es cliente Krece y pidió un equipo que NO está en promo, cotízalo normal y,
 UNA sola vez en toda la conversación, menciona en una frase el equipo de PROMOS
 KRECE de precio más parecido. Si ya lo mencionaste antes, no lo repitas.
@@ -2317,6 +2335,7 @@ dile que en la tienda le hacemos el registro en el momento, y que debe ser
 mayor de edad y traer su cédula laminada. Dale los montos de EQUIPO CONSULTADO
 diciendo SIEMPRE que son aproximados: el monto real lo da Krece cuando quede
 registrado.
+Excepción: si DATOS DE ESTA CONVERSACIÓN trae el OJO del anuncio de 38.900 Bs, sigue ese OJO en vez de esta regla.
 Si ese cliente sin cuenta pide un iPhone, NO le digas que "tiene" nivel Azul
 ni que "suba de nivel": dile que al registrarse empieza en nivel Azul y que el
 iPhone se habilita desde nivel Plata, y ofrécele Cashea como en la regla de abajo.
@@ -2446,7 +2465,7 @@ Si EQUIPO CONSULTADO trae cuotas de varios equipos, NO preguntes cuál quiere an
 Si en esa comparación algún equipo dice "llega en 24 a 48 horas", añade en la misma línea de ese equipo "(llega en 24 a 48 horas)"; los que dicen "disponible ya" no llevan aclaración.
 Si el equipo dice "disponible ya", NO ofrezcas apartarlo ni reservarlo (eso es solo para los que llegan en 24 a 48 horas) ni des a elegir entre reservar o verlo: basta con "Si quieres pasar a verlo".
 Los montos de inicial y cuotas los calculas tú con el nivel y la línea del cliente: nunca digas que se los dio Krece, Cashea o la app.
-Las cuotas de Krece y CrediTienda se pagan cada 15 días, y las de Cashea cada 2 semanas (14 días). Al hablar de plazos escribe siempre "N cuotas cada 15 días" (Cashea: "cada 2 semanas"); no uses meses ni otra unidad de tiempo para los plazos.
+Con Krece y CrediTienda escribe solo "N cuotas", sin decir cada cuánto se pagan: solo si el cliente lo pregunta, dile que cada 15 días. Con Cashea escribe "N cuotas cada 2 semanas". No uses meses ni otra unidad de tiempo para los plazos.
 Al ofrecer otros plazos, nombra solo los que de verdad existen en EQUIPO CONSULTADO: si el plazo que ya diste es el más largo disponible, di que hay plazos "más cortos" y NUNCA "más largos" ni "más cuotas"; si ya diste el más corto, al revés.
 Cuando detectes intención de compra (dice que lo quiere, pregunta cómo apartarlo,
 confirma que va a ir, o ya dijo que viene a comprar hoy o mañana y ahora muestra
