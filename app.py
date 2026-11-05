@@ -495,10 +495,10 @@ def detectar_sin_cuenta(texto):
 
 
 def es_anuncio_29800(texto):
-    """True si el mensaje viene del anuncio de Krece Azul de 38.900 Bs (hasta el 15/11)."""
+    """True si el mensaje viene del anuncio de Krece Azul de 38.900 Bs (hasta el 30/11)."""
     t = texto.lower()
     return (("38.900" in t or "38900" in t)
-            and datetime.now(pytz.timezone("America/Caracas")).strftime("%Y-%m-%d") <= "2026-11-15")
+            and datetime.now(pytz.timezone("America/Caracas")).strftime("%Y-%m-%d") <= "2026-11-30")
 
 
 def inicial_29800(eq, nivel, perfil):
@@ -506,7 +506,7 @@ def inicial_29800(eq, nivel, perfil):
     return bool(perfil.get("_anuncio_29800") and nivel == "azul"
                 and "spark go 3" in eq["modelo"].lower()
                 and str(eq.get("almacenamiento", "")).startswith("64")
-                and datetime.now(pytz.timezone("America/Caracas")).strftime("%Y-%m-%d") <= "2026-11-15")
+                and datetime.now(pytz.timezone("America/Caracas")).strftime("%Y-%m-%d") <= "2026-11-30")
 
 
 def frase_fin_promo(fin):
