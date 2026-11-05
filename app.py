@@ -845,7 +845,7 @@ def bloque_equipo(equipos, canal, perfil):
                               f"Pídele que confirme: Azul, Plata, Oro o Platino.")
                 continue
             if promo:
-                fin = datetime(2026, 11, 15).date() if inicial_29800(eq, nivel, perfil) else promo["hasta"]
+                fin = datetime(2026, 11, 30).date() if inicial_29800(eq, nivel, perfil) else promo["hasta"]
                 aviso = frase_fin_promo(fin)
                 if aviso:
                     lineas.append(f"  🔥 PROMO KRECE: {aviso}. Díselo como urgencia, con esas palabras y sin fechas")
