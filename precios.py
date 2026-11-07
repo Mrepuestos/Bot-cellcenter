@@ -62,6 +62,13 @@ KRECE_FACTORES_OTROS = {
     "platino": {3: "1.20", 4: "1.30", 6: "1.40"},
 }
 
+# CrediFacil — solo iPhone 12 en adelante. Igual que la calculadora web.
+# Se calcula sobre el precio del catálogo (divisas). Cuotas cada 15 días.
+CREDIFACIL_INICIAL_MIN = Decimal("0.50")
+CREDIFACIL_INICIAL_MAX = Decimal("0.70")
+CREDIFACIL_INTERES_CUOTA = Decimal("0.10")   # 10% del financiado por cada cuota
+CREDIFACIL_PLANES = (6, 8, 10)               # 3, 4 y 5 meses
+
 
 # ══════════════════════════════════════════════════════════════════════════
 #  Utilidades
@@ -216,6 +223,48 @@ def krece(paralelo, nivel, plazo=6, linea=None, inicial_pct=None, tipo="celular"
         "monto_cuota": cuota,
         "total": inicial + cuota * plazo,
         "topado_por_linea": tope,
+    }
+
+
+# ══════════════════════════════════════════════════════════════════════════
+#  CrediFacil (igual que la calculadora calculadora-cuotas)
+# ══════════════════════════════════════════════════════════════════════════
+
+def credifacil_limites(paralelo):
+    """Inicial mínima y máxima en dólares (redondeadas como la calculadora)."""
+    precio = _d(paralelo)
+    minima = _redondear(precio * CREDIFACIL_INICIAL_MIN)
+    maxima = int((precio * CREDIFACIL_INICIAL_MAX).to_integral_value(rounding="ROUND_FLOOR"))
+    return minima, max(minima, maxima)
+
+
+def credifacil(paralelo, cuotas=10, inicial=None):
+    """
+    Misma cuenta que la calculadora web de CrediFacil:
+        financiado = precio - inicial
+        interes    = redondear(financiado × 10% × n_cuotas)
+        cuota      = redondear((financiado + interes) / n_cuotas)
+    inicial=None usa la mínima. Si la inicial queda fuera del rango
+    (50% a 70%) devuelve aplica=False con la mínima y la máxima.
+    """
+    if cuotas not in CREDIFACIL_PLANES:
+        raise ValueError(f"CrediFacil no maneja {cuotas} cuotas. Disponibles: {CREDIFACIL_PLANES}")
+    minima, maxima = credifacil_limites(paralelo)
+    inicial = minima if inicial is None else _redondear(inicial)
+    if inicial < minima or inicial > maxima:
+        return {"canal": "CrediFacil", "aplica": False,
+                "inicial_min": minima, "inicial_max": maxima}
+    financiado = _d(paralelo) - inicial
+    interes = _redondear(financiado * CREDIFACIL_INTERES_CUOTA * cuotas)
+    cuota = _redondear((financiado + interes) / cuotas)
+    return {
+        "canal": "CrediFacil",
+        "aplica": True,
+        "inicial": inicial,
+        "inicial_min": minima,
+        "inicial_max": maxima,
+        "cuotas": cuotas,
+        "monto_cuota": cuota,
     }
 
 
