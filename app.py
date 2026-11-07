@@ -894,6 +894,8 @@ def bloque_equipo(equipos, canal, perfil):
             if not hubo:
                 lineas.append("  Este equipo supera la línea aprobada del cliente. "
                               "No aplica para Krece.")
+                lineas.append(f"  [solo si pide el precio de contado] De contado: ${int(p)} "
+                              f"en divisas o ${precios.precio_bcv(p)} a tasa BCV")
 
         elif canal == "cashea":
             nivel = perfil.get("nivel_cliente")
@@ -2956,6 +2958,7 @@ def atender_celulares(from_number, numero_limpio, body):
             linea = detectar_linea_suelta(body)
         # Respaldo con IA: ya tiene nivel, espera la línea y Python no encontró el monto
         if (not linea and not pide_iphone and re.search(r"\d", body) and len(body) <= 80
+                and not es_anuncio_29800(body)
                 and (nivel or perfil.get("nivel_cliente"))
                 and (not perfil.get("linea_krece") or perfil.get("_krece_supuesto"))):
             linea = linea_por_ia(numero_limpio, body)
@@ -4279,6 +4282,18 @@ SEGUIMIENTOS = [
     "{saludo} Soy de *Cell Center 4620* 📱 ¿Pudiste decidirte por el *{equipo}*? Todavía lo "
     "tenemos y te lo podemos apartar para hoy. Te dejo nuestro contacto para cualquier duda 🙌",
 ]
+# Seguimiento si el único equipo que vio llega en 24 a 48 horas (no se promete "hoy")
+SEGUIMIENTOS_PEDIDO = [
+    "{saludo} Te escribimos de *Cell Center 4620*. ¿Te animas con el *{equipo}*? Lo pedimos y "
+    "llega a la tienda en 24 a 48 horas; si quieres te lo apartamos 📲 "
+    "¡Te dejo nuestro contacto para que nos guardes!",
+]
+# Seguimiento si vio varios equipos (no se nombra uno al azar)
+SEGUIMIENTOS_VARIOS = [
+    "{saludo} Te escribimos de *Cell Center 4620*. ¿Pudiste decidirte por alguno de los equipos "
+    "que viste? Si quieres te ayudamos a escoger o te lo apartamos 📲 "
+    "¡Te dejo nuestro contacto para que nos guardes!",
+]
 NO_ES_NOMBRE = {"mama", "mamá", "papa", "papá", "mi", "el", "la", "de", "del", "dios",
                 "amor", "vida", "cielo", "corazon", "corazón", "tesoro", "cariño", "mor", "cell", "tienda", "celular", "telefono", "teléfono",
                 "movil", "móvil", "shop", "store", "servicio", "repuestos", "cliente",
@@ -4463,9 +4478,17 @@ def enviar_bienvenidas():
             continue
         guardar_contacto_google(numero, nombre)
         saludo = f"¡Hola, {nombre}! 😊" if nombre else "¡Hola! 😊"
-        equipo = (c.get("modelo_interes") or "").split(" / ")[-1].strip()
-        if equipo:   # preguntó por un equipo: seguimiento de venta
-            texto = random.choice(SEGUIMIENTOS).format(saludo=saludo, equipo=equipo)
+        vistos = [n.strip() for n in (c.get("modelo_interes") or "").split(" / ") if n.strip()]
+        equipo = vistos[-1] if vistos else ""
+        if len(vistos) > 1:   # vio varios equipos: no se nombra uno al azar
+            texto = random.choice(SEGUIMIENTOS_VARIOS).format(saludo=saludo)
+        elif equipo:   # preguntó por un equipo: seguimiento de venta
+            try:
+                eqs = equipos_de_interes(equipo)
+            except Exception:
+                eqs = []
+            lista = SEGUIMIENTOS_PEDIDO if eqs and not eqs[0]["inmediato"] else SEGUIMIENTOS
+            texto = random.choice(lista).format(saludo=saludo, equipo=equipo)
         else:
             texto = random.choice(SALUDOS_BIENVENIDA).format(saludo=saludo)
         send_whapi_message(numero, texto)
