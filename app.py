@@ -154,6 +154,12 @@ MENSAJE_KRECE = "quiero comprar con krece"
 # ── Marcas que Krece no aprueba (no les puede instalar su seguridad) ──────────
 MARCAS_NO_KRECE = {"logic", "zte"}
 
+# ── CrediFacil: financiamiento propio, solo iPhone 12 en adelante ─────────────
+CREDIFACIL_RE = re.compile(r"credi\s*fa[cs]il")
+# Pide financiamiento sin nombrar Krece, Cashea ni CrediTienda (texto sin acentos)
+PIDE_FINANCIAMIENTO = re.compile(
+    r"\b(financ\w*|credito|cuotas?|inicial|a pagos|por partes|en partes)\b")
+
 WHAPI_TOKEN = os.environ.get("WHAPI_TOKEN", "")
 WHAPI_API_URL = os.environ.get("WHAPI_API_URL", "https://gate.whapi.cloud")
 ODOO_URL = os.environ.get("ODOO_URL", "")
@@ -406,6 +412,8 @@ def detectar_canal(texto):
         return "krece"
     if "cashea" in t or "cashe" in t or "cachea" in t:
         return "cashea"
+    if CREDIFACIL_RE.search(t):
+        return "credifacil"
     if "creditienda" in t or "credi tienda" in t:
         return "creditienda"
     if any(p in t for p in ("contado", "efectivo", "divisa", "dolar", "d\u00f3lar",
@@ -434,6 +442,8 @@ def detectar_canales(texto):
         encontrados.append("krece")
     if "cashea" in t or "cashe" in t or "cachea" in t:
         encontrados.append("cashea")
+    if CREDIFACIL_RE.search(t):
+        encontrados.append("credifacil")
     if "creditienda" in t or "credi tienda" in t:
         encontrados.append("creditienda")
     return encontrados
@@ -821,19 +831,20 @@ def bloque_equipo(equipos, canal, perfil):
                               f"{falta}. Pídeselo en una frase. NO respondas DERIVAR_PRECIO.")
                 continue
             if eq["marca"].lower() == "iphone" and nivel == "azul":
+                otra = "CrediFacil" if aplica_credifacil(eq) else "Cashea"
                 if perfil.get("_krece_supuesto"):
                     lineas.append("  El iPhone SÍ tiene precio, pero NO lo des todavía y NO respondas "
                                   "DERIVAR_PRECIO. Los iPhone con Krece requieren Plata o superior y tú "
                                   "SUPUSISTE Azul. Si solo pregunta qué iPhone hay, dile cuáles hay y "
                                   "pregúntale su nivel de Krece y su Línea disponible (el monto grande de la "
                                   "app). Si pregunta el precio, dile con amabilidad que con nivel Azul el "
-                                  "iPhone no aplica y pregúntale si lo quiere ver por *Cashea* o de "
+                                  f"iPhone no aplica y pregúntale si lo quiere ver por *{otra}* o de "
                                   "*contado*; si en realidad su nivel es más alto, que te diga nivel y Línea "
                                   "disponible. No des cuotas ni montos hasta que elija una opción.")
                 else:
                     lineas.append("  Los iPhone NO aplican con Krece Azul (requieren Plata o "
                                   "superior). NO des cuotas de Krece para este equipo: "
-                                  "para el iPhone ofrécele Cashea (regla IPHONE CON KRECE AZUL).")
+                                  f"para el iPhone ofrécele {otra} (regla IPHONE CON KRECE AZUL).")
                 continue
             hubo = False
             promo = promo_krece(eq, nivel)
@@ -898,9 +909,36 @@ def bloque_equipo(equipos, canal, perfil):
                               f"Pídele que confirme: 1 Semilla, 2 Raíz, 3 Hoja, "
                               f"4 Tronco, 5 Árbol o 6 Araguaney.")
 
+        elif canal == "credifacil":
+            if not aplica_credifacil(eq):
+                lineas.append(f"  CrediFacil NO aplica para este equipo (es solo para iPhone 12 "
+                              f"en adelante). Díselo en una frase y ofrécele verlo de contado "
+                              f"(${int(p)}) o con otro financiamiento. NO des cuotas de CrediFacil.")
+            else:
+                pedida = perfil.get("nivel_cliente")
+                pedida = int(pedida) if str(pedida or "").isdigit() else None
+                base = precios.credifacil(p, 10, pedida)
+                if pedida and not base["aplica"]:
+                    lineas.append(f"  La inicial de ${pedida} que propone no se puede: con CrediFacil la "
+                                  f"inicial de este equipo va de ${base['inicial_min']} a "
+                                  f"${base['inicial_max']}. Díselo y cotiza con la mínima:")
+                    pedida = None
+                planes = [precios.credifacil(p, n, pedida) for n in (10, 8, 6)]
+                lineas.append(f"  CrediFacil: inicial ${planes[0]['inicial']} + 10 cuotas de "
+                              f"${planes[0]['monto_cuota']}")
+                lineas.append(f"  [otros plazos, solo si los pide] 8 cuotas de ${planes[1]['monto_cuota']}"
+                              f" · 6 cuotas de ${planes[2]['monto_cuota']}")
+                lineas.append(f"  [solo si quiere dar más inicial] puede dar hasta "
+                              f"${planes[0]['inicial_max']} de inicial y la cuota baja: pídele el "
+                              f"monto y se recalcula")
+
         elif canal == "creditienda" and eq["marca"].lower() == "iphone":
-            lineas.append("  Los iPhone NO se venden por CrediTienda. Ofrécele "
-                          "contado, Cashea o Krece (nivel Plata o superior).")
+            if aplica_credifacil(eq):
+                lineas.append("  Los iPhone NO se venden por CrediTienda. Ofrécele "
+                              "CrediFacil o contado.")
+            else:
+                lineas.append("  Los iPhone NO se venden por CrediTienda. Ofrécele "
+                              "contado, Cashea o Krece (nivel Plata o superior).")
 
         elif canal == "creditienda":
             moneda = perfil.get("nivel_cliente")
@@ -1015,19 +1053,50 @@ def iphone_sin_linea(eq, perfil):
     return not k.get("aplica") or k["inicial_pct"] > IPHONE_INICIAL_MAX_PCT
 
 
+def aplica_credifacil(eq):
+    """CrediFacil: solo iPhone 12 en adelante (12, 12 mini, 13 Pro, 16e, Air...)."""
+    if str(eq.get("marca", "")).lower() != "iphone":
+        return False
+    modelo = str(eq.get("modelo", "")).lower()
+    if re.search(r"\bse\b", modelo):
+        return False   # iPhone SE no entra
+    m = re.search(r"(?<!\d)(\d{1,2})(?!\d)", modelo)
+    if m:
+        return int(m.group(1)) >= 12
+    return "air" in modelo   # iPhone Air (2025) no lleva número
+
+
+def todos_credifacil(equipos):
+    return bool(equipos) and all(aplica_credifacil(e) for e in equipos)
+
+
+def inicial_credifacil(texto):
+    """Inicial que el cliente propone: 'inicial de 400', 'doy 350 de inicial'."""
+    t = texto.lower()
+    m = (re.search(r"inicial\s*(?:de|es|seria|sería|:|con)?\s*\$?\s*(\d{2,4})\b(?!\s*(?:gb|pro|mini|plus))", t)
+         or re.search(r"\b(\d{2,4})\s*\$?\s*(?:d[oó]lares\s*)?(?:de|como|para la)\s+inicial", t))
+    return int(m.group(1)) if m else None
+
+
 def texto_iphone_sin_linea(equipos, disponible):
-    """Respuesta fija: la Línea disponible no alcanza para el iPhone; Cashea o contado."""
+    """Respuesta fija: la Línea disponible no alcanza para el iPhone; CrediFacil
+    (iPhone 12 en adelante) o Cashea, o contado."""
     nombres = [nombre_completo(e) for e in equipos[:3]]
     cual = nombres[0] if len(nombres) == 1 else ", ".join(nombres[:-1]) + " y el " + nombres[-1]
+    if todos_credifacil(equipos):
+        otra = "• Con *CrediFacil*, en cuotas\n"
+        cierre = "¿Cuál prefieres? Te paso el monto enseguida 😊"
+    else:
+        otra = "• Con *Cashea*, en cuotas cada 2 semanas\n"
+        cierre = ("¿Cuál prefieres? Te paso el monto enseguida 😊\n"
+                  "Si no tienes Cashea, no hay problema: en la tienda te hacemos el registro en el momento.")
     return ("¡Listo, ya revisé tus datos! 🙌\n\n"
             f"Tu *Línea disponible* de Krece es de *${float(disponible):.0f}*, y para el *{cual}* "
             "no alcanza: tendrías que dar casi todo el precio de inicial, así que por Krece no te "
             "conviene ahora.\n\n"
             "Te lo puedes llevar de otra forma:\n"
-            "• Con *Cashea*, en cuotas cada 2 semanas\n"
-            "• De *contado*\n\n"
-            "¿Cuál prefieres? Te paso el monto enseguida 😊\n"
-            "Si no tienes Cashea, no hay problema: en la tienda te hacemos el registro en el momento.")
+            + otra +
+            "• De *contado*\n\n" + cierre)
 
 
 def texto_iphone_cashea(equipos, tipo):
@@ -1153,6 +1222,9 @@ def inicial_corta(eq, canal, perfil):
         if canal == "creditienda":
             c = precios.creditienda(p, "divisas")
             return f"CrediTienda: inicial ${c['inicial']} + 4 x ${c['monto_cuota']}"
+        if canal == "credifacil" and aplica_credifacil(eq):
+            c = precios.credifacil(p, 10)
+            return f"CrediFacil: inicial ${c['inicial']} + 10 x ${c['monto_cuota']}"
     except (ValueError, KeyError):
         return f"de contado ${int(p)}"
     return f"de contado ${int(p)}"
@@ -2149,6 +2221,8 @@ def get_system_prompt_celulares(info_equipo, perfil, rangos, lista_corta, promos
         if canal == "creditienda":
             datos.append("paga en bolívares" if perfil["nivel_cliente"] == "bs"
                          else "paga en divisas")
+        elif canal == "credifacil":
+            datos.append(f"quiere dar ${perfil['nivel_cliente']} de inicial")
         else:
             datos.append(f"nivel {perfil['nivel_cliente']}"
                          + (" (te lo acaba de decir)" if perfil.get("_nivel_recien") else ""))
@@ -2270,6 +2344,21 @@ caso de DERIVAR_PRECIO: ahí usas las 3 opciones de la sección "SI NO SABE QUÉ
 QUIERE" de abajo, que sí tienen precio real y verificado.
 Nunca uses la palabra "paralelo". Di "en divisas", "en efectivo" o "en dólares".
 
+CREDIFACIL
+Es nuestro financiamiento propio, solo para iPhone 12 en adelante. Si pide financiamiento
+o cuotas para un iPhone 12 o más nuevo sin nombrar otro, es la PRIMERA y única opción que
+ofreces: Krece o Cashea solo si él los nombra. No necesita nivel ni registro.
+Da la inicial y las 10 cuotas de EQUIPO CONSULTADO; los plazos de 8 y 6 cuotas solo si los pide.
+La inicial mínima es la que da EQUIPO CONSULTADO. Si quiere dar más inicial, usa el monto
+que trae EQUIPO CONSULTADO para él; si aún no está calculado, pídele cuánto quiere dar.
+Nunca menciones porcentajes ni intereses, solo montos en dólares.
+Si pregunta cómo se paga: en divisas o en bolívares a la tasa USDT del día. No des montos
+en bolívares: el monto exacto se lo da el asesor al momento del pago. No lo menciones si no pregunta.
+Si pregunta requisitos: solo cédula, la inicial y disponer de unos 30 minutos para el
+proceso. Lo de los 30 minutos dilo SOLO si pregunta por requisitos o cuánto tarda.
+Si el equipo dice "disponible ya", se lo lleva el mismo día.
+Nunca menciones otras tiendas aliadas ni de dónde viene el financiamiento.
+
 KRECE
 No cotizas sin dos datos: su NIVEL (Azul, Plata, Oro o Platino) y su LÍNEA APROBADA.
 Pídeselos juntos en una sola frase, y ofrécele que te los escriba o te mande captura de la app.
@@ -2293,8 +2382,9 @@ Los iPhone con Krece solo aplican de nivel Plata en adelante y se pagan con su
 Línea disponible: si la inicial sale alta, explícale que es porque lo que le queda
 libre en esa línea es menor que el equipo. Si el cliente es
 nivel Azul y pregunta por un iPhone (regla IPHONE CON KRECE AZUL): dile que con
-Krece Azul el iPhone todavía no se habilita, pero que se lo puede llevar con
-*Cashea* en 3 cuotas. Pregúntale si tiene Cashea y, si lo tiene, su nivel
+Krece Azul el iPhone todavía no se habilita. Si es iPhone 12 en adelante, ofrécele
+*CrediFacil* (sigue la sección CREDIFACIL) y no hables de Cashea. Si es iPhone 11
+o anterior, dile que se lo puede llevar con *Cashea* en 3 cuotas. Pregúntale si tiene Cashea y, si lo tiene, su nivel
 (1 Semilla, 2 Raíz, 3 Hoja, 4 Tronco, 5 Árbol o 6 Araguaney). Dile que si no lo
 tiene no hay problema: en la tienda le hacemos el registro en el momento (esa
 frase va SIEMPRE). Si EQUIPO CONSULTADO dice que ese modelo no lo tenemos, díselo
@@ -2338,7 +2428,8 @@ registrado.
 Excepción: si DATOS DE ESTA CONVERSACIÓN trae el OJO del anuncio de 38.900 Bs, sigue ese OJO en vez de esta regla.
 Si ese cliente sin cuenta pide un iPhone, NO le digas que "tiene" nivel Azul
 ni que "suba de nivel": dile que al registrarse empieza en nivel Azul y que el
-iPhone se habilita desde nivel Plata, y ofrécele Cashea como en la regla de abajo.
+iPhone se habilita desde nivel Plata, y ofrécele CrediFacil (iPhone 12 en adelante)
+o Cashea (iPhone 11 o anterior) como en la regla de arriba.
 
 CASHEA
 Pregunta primero el NIVEL del cliente: 1 Semilla, 2 Raíz, 3 Hoja, 4 Tronco, 5 Árbol o 6 Araguaney. Al preguntarlo nombra SIEMPRE los 6 con su número, sin saltarte ninguno. Usa SOLO esos nombres. Sin nivel no hay precio. Son 3 cuotas.
@@ -2354,8 +2445,8 @@ Da la inicial y las cuotas en dólares. Los montos en bolívares solo si el clie
 los pide, aclarando que son a la tasa BCV de hoy.
 Los iPhone NO se venden por CrediTienda. Nunca ofrezcas ni sugieras un iPhone a
 un cliente CrediTienda. Si él lo pide, dile: "Los iPhone no están disponibles por
-CrediTienda 🙏 Puedes llevártelo de contado, con Cashea o con Krece (nivel Plata
-o superior). ¿Cuál te interesa?"
+CrediTienda 🙏 Puedes llevártelo de contado o con CrediFacil. ¿Cuál te interesa?"
+Si es iPhone 11 o anterior, en vez de CrediFacil dile: contado, Cashea o Krece (nivel Plata o superior).
 Si pregunta qué requisitos hay o qué necesita para CrediTienda: solo cédula laminada y la inicial del celular. Con eso se lo lleva ese mismo día. No pidas nada más ni menciones registro ni nivel.
 
 PAGO EN BOLÍVARES Y DESCUENTOS (Krece, Cashea y CrediTienda)
@@ -2465,7 +2556,7 @@ Si EQUIPO CONSULTADO trae cuotas de varios equipos, NO preguntes cuál quiere an
 Si en esa comparación algún equipo dice "llega en 24 a 48 horas", añade en la misma línea de ese equipo "(llega en 24 a 48 horas)"; los que dicen "disponible ya" no llevan aclaración.
 Si el equipo dice "disponible ya", NO ofrezcas apartarlo ni reservarlo (eso es solo para los que llegan en 24 a 48 horas) ni des a elegir entre reservar o verlo: basta con "Si quieres pasar a verlo".
 Los montos de inicial y cuotas los calculas tú con el nivel y la línea del cliente: nunca digas que se los dio Krece, Cashea o la app.
-Con Krece y CrediTienda escribe solo "N cuotas", sin decir cada cuánto se pagan: solo si el cliente lo pregunta, dile que cada 15 días. Con Cashea escribe "N cuotas cada 2 semanas". No uses meses ni otra unidad de tiempo para los plazos.
+Con Krece, CrediTienda y CrediFacil escribe solo "N cuotas", sin decir cada cuánto se pagan: solo si el cliente lo pregunta, dile que cada 15 días. Con Cashea escribe "N cuotas cada 2 semanas". No uses meses ni otra unidad de tiempo para los plazos.
 Al ofrecer otros plazos, nombra solo los que de verdad existen en EQUIPO CONSULTADO: si el plazo que ya diste es el más largo disponible, di que hay plazos "más cortos" y NUNCA "más largos" ni "más cuotas"; si ya diste el más corto, al revés.
 Cuando detectes intención de compra (dice que lo quiere, pregunta cómo apartarlo,
 confirma que va a ir, o ya dijo que viene a comprar hoy o mañana y ahora muestra
@@ -2676,10 +2767,10 @@ REGLAS:
   tiene", "¿qué más Samsung hay?"), elige hasta 3 de esa marca distintos a
   los que ya le interesaban, los más cercanos en precio a esos (no los más
   caros), con tipo "exacto".
-CANAL DE PAGO: si en ESTE mensaje el cliente nombra Krece, Cashea o
-CrediTienda, aunque lo escriba mal ("caschea", "kashea", "kreze",
-"credi tieda"), pon ese canal en "canal": "krece", "cashea" o "creditienda".
-Si no nombra ninguno de los tres, pon "canal": null.
+CANAL DE PAGO: si en ESTE mensaje el cliente nombra Krece, Cashea,
+CrediTienda o CrediFacil, aunque lo escriba mal ("caschea", "kashea", "kreze",
+"credi tieda", "credifasil"), pon ese canal en "canal": "krece", "cashea",
+"creditienda" o "credifacil". Si no nombra ninguno de los cuatro, pon "canal": null.
 
 En "nombrados" pon true solo cuando devuelves los modelos que el cliente nombró
 (2 o más); en cualquier otro caso, false.
@@ -2717,7 +2808,7 @@ Responde SOLO con JSON, sin explicaciones ni markdown:
         canal_ia = datos.get("canal")
         nombrados = bool(datos.get("nombrados"))
         no_hay_ia = [str(x).strip()[:40] for x in (datos.get("no_hay") or []) if str(x).strip()][:3]
-        if canal_ia not in ("krece", "cashea", "creditienda"):
+        if canal_ia not in ("krece", "cashea", "creditienda", "credifacil"):
             canal_ia = None
         print(f"IA CRUDO -> claves={claves} tipo={tipo} canal={canal_ia} no_hay={no_hay_ia}")
     except Exception as e:
@@ -2933,6 +3024,12 @@ def atender_celulares(from_number, numero_limpio, body):
         elif re.search(r"\b(divisas?|dolares|dólares|efectivo)\b", t):
             cambios["nivel_cliente"] = "divisas"
             perfil["nivel_cliente"] = "divisas"
+    elif canal == "credifacil":
+        # Inicial que propone el cliente (entre 50% y 70%); se guarda en nivel_cliente
+        ini = inicial_credifacil(body)
+        if ini:
+            cambios["nivel_cliente"] = str(ini)
+            perfil["nivel_cliente"] = str(ini)
 
     # Equipo: la IA interpreta lo que pidió
     contexto = ""
@@ -3060,8 +3157,39 @@ def atender_celulares(from_number, numero_limpio, body):
             cambios["nivel_cliente"] = "1"
             perfil["nivel_cliente"] = "1"
 
-    # Krece Azul (dado por él, no supuesto) y pide iPhone: por Krece no aplica,
-    # se le ofrece Cashea (si no lo tiene, el registro se le hace en la tienda)
+    # iPhone 12 en adelante y pide financiamiento sin nombrar Krece, Cashea ni
+    # CrediTienda: la primera opción es CrediFacil
+    sin_acento = "".join(c for c in unicodedata.normalize("NFD", body.lower())
+                         if unicodedata.category(c) != "Mn")
+    if (canal in (None, "contado")
+            and not any(p in body.lower() for p in PALABRAS_CONTADO_EXPLICITO)
+            and PIDE_FINANCIAMIENTO.search(sin_acento)):
+        candidatos = equipos
+        if not candidatos and perfil.get("modelo_interes"):
+            candidatos = equipos_de_interes(perfil["modelo_interes"])
+        if todos_credifacil(candidatos):
+            canal = "credifacil"
+            ini = inicial_credifacil(body)
+            cambios.update(canal_pago="credifacil", nivel_cliente=str(ini) if ini else None,
+                           canal_extra=None)
+            perfil.update(canal_pago="credifacil", nivel_cliente=str(ini) if ini else None,
+                          canal_extra=None)
+            if not equipos:
+                equipos, tipo_resultado = candidatos, "exacto"
+
+    # Krece Azul (dado por él, no supuesto) y pide iPhone 12 en adelante: por Krece
+    # no aplica, se le ofrece CrediFacil
+    if (canal == "krece" and perfil.get("nivel_cliente") == "azul"
+            and not perfil.get("_krece_supuesto") and not perfil.get("canal_extra")
+            and tipo_resultado in ("exacto", "recomendacion")
+            and todos_credifacil(equipos)):
+        canal = "credifacil"
+        cambios.update(canal_pago="credifacil", nivel_cliente=None, linea_krece=None)
+        perfil.update(canal_pago="credifacil", nivel_cliente=None, linea_krece=None)
+        perfil["_iphone_a_credifacil"] = True   # solo para este mensaje
+
+    # Krece Azul (dado por él, no supuesto) y pide iPhone 11 o anterior: por Krece
+    # no aplica, se le ofrece Cashea (si no lo tiene, el registro se le hace en la tienda)
     if (canal == "krece" and perfil.get("nivel_cliente") == "azul"
             and not perfil.get("_krece_supuesto") and not perfil.get("canal_extra")
             and equipos and tipo_resultado in ("exacto", "recomendacion")
@@ -3170,6 +3298,10 @@ def atender_celulares(from_number, numero_limpio, body):
                  "equipo y termina tu mensaje con DERIVAR_PRECIO_PARCIAL.")
 
     iphone_a_cashea = perfil.pop("_iphone_a_cashea", None)
+    if perfil.pop("_iphone_a_credifacil", None):
+        info += ("\n\nEl cliente es Krece nivel Azul y con Krece Azul el iPhone todavía no se "
+                 "habilita. Díselo en una frase amable y cotízale con *CrediFacil* (montos de "
+                 "arriba). No le hables de subir de nivel ni de Cashea.")
 
     print(f"INFO AL MODELO [{numero_limpio}] -> " + info[:2000].replace("\n", " / "))
 
