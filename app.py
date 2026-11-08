@@ -497,11 +497,14 @@ def detectar_sin_cuenta(texto):
     """True si el cliente dice que no tiene cuenta en Krece o Cashea."""
     t = "".join(c for c in unicodedata.normalize("NFD", texto.lower())
                 if unicodedata.category(c) != "Mn")
+    nunca_compro = (not re.search(r"azul|plata|\boro\b|platino", t)
+                    and re.search(r"(por|con|en|de) (krece|crece|cashea|cashe) nunca (he |en |e )?compr"
+                                  r"|nunca (he |en |e )?compr\w*( \w+)? (por|con|en|de) (krece|crece|cashea|cashe)", t))
     return bool(re.search(
         r"no (tengo|uso|manejo) (ni |cuenta|la app|la aplicacion|krece|crece|cashea|cashe)"
         r"|no (estoy|me he|he) (registrad|inscrit|afiliad)"
         r"|no (estoy|tengo) en (krece|crece|cashea|cashe)"
-        r"|nunca (lo |la )?he usado|no (lo |la )?he usado", t))
+        r"|nunca (lo |la )?he usado|no (lo |la )?he usado", t)) or bool(nunca_compro)
 
 
 def es_anuncio_29800(texto):
@@ -2427,7 +2430,7 @@ Si el cliente dice que no tiene Krece o nunca lo ha usado, NO es un obstáculo:
 dile que en la tienda le hacemos el registro en el momento, y que debe ser
 mayor de edad y traer su cédula laminada. Dale los montos de EQUIPO CONSULTADO
 diciendo SIEMPRE que son aproximados: el monto real lo da Krece cuando quede
-registrado.
+registrado. A este cliente NO le preguntes si su nivel es otro ni le ofrezcas recalcular: al registrarse empieza en Azul y no hay otro nivel.
 Excepción: si DATOS DE ESTA CONVERSACIÓN trae el OJO del anuncio de 38.900 Bs, sigue ese OJO en vez de esta regla.
 Si ese cliente sin cuenta pide un iPhone, NO le digas que "tiene" nivel Azul
 ni que "suba de nivel": dile que al registrarse empieza en nivel Azul y que el
