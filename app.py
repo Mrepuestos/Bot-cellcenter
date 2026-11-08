@@ -3452,6 +3452,18 @@ def atender_celulares(from_number, numero_limpio, body):
     # Expresiones de otros países que a veces se escapan
     for malo, bueno in (("¿qué te late?", "¿qué te parece?"), ("te late", "te gusta"), ("Te late", "Te gusta")):
         reply = reply.replace(malo, bueno)
+    # Saludo según la hora de Venezuela (la IA a veces dice "buen día" de noche)
+    _h = datetime.now(pytz.timezone("America/Caracas")).hour
+    if _h >= 18:
+        _s, _d = "Buenas noches", "buena noche"
+    elif _h >= 12:
+        _s, _d = "Buenas tardes", "buena tarde"
+    else:
+        _s, _d = "Buenos días", "buen día"
+    reply = re.sub(r"(?i)\bque tengas (?:un |una )?(?:buen d[ií]a|buena (?:tarde|noche))",
+                   lambda m: ("Que" if m.group(0)[0] == "Q" else "que") + " tengas " + _d, reply)
+    reply = re.sub(r"(?i)\b(?:buenos d[ií]as|buen d[ií]a|buenas tardes|buenas noches)\b",
+                   lambda m: _s if m.group(0)[0].isupper() else _s.lower(), reply)
     # WhatsApp pone negrita con un solo asterisco; con dos se ven los asteriscos
     reply = reply.replace("**", "*")
 
