@@ -462,7 +462,9 @@ def detectar_nivel_krece(texto):
     if m:
         p = int(m.group(1))
         return "azul" if p < 121 else "plata" if p < 241 else "oro" if p < 500 else "platino"
-    if re.search(r"\b(nivel\s*)?1\b", t) or "primero" in t or "nuevo" in t:
+    # "nivel 1" o "soy nuevo" es Azul; "El primero" o "el 1" es elegir un equipo, no un nivel
+    if (re.search(r"\bnivel\s*1\b|\b(?:soy|cliente)\s+nuev[oa]\b|\bnuev[oa]\s+(?:en|con)\b", t)
+            or re.fullmatch(r"\s*(?:1|nuev[oa])\s*[.!]*\s*", t)):
         return "azul"
     return None
 
