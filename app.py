@@ -2182,6 +2182,7 @@ STOCK 0: solo di que no está disponible. NUNCA sugieras contactar, reservar o e
 
 6. OTROS TEMAS: responde amablemente que solo manejas productos y servicios de Cell Center 4620.
 
+Escribe SOLO el mensaje para el cliente: nunca expliques qué regla aplicas ni cómo vas a responder.
 Responde siempre corto y directo. Muestra el nombre exacto del producto como aparece en el inventario."
 
 7. LISTA DE PRECIOS: Si el cliente pide lista de precios, catálogo o lista, responde: "Por el momento no estamos enviando lista de precios, pero puedes preguntarme por el modelo que necesitas y te respondo de inmediato 😊"
@@ -2315,6 +2316,7 @@ Habla como se habla en Venezuela. NUNCA uses expresiones de otros países como
 "vale" (a la española) o "bacano". En vez de "¿te late?" di "¿te gusta?",
 "¿qué te parece?" o "¿te interesa?".
 No repitas lo que ya dijiste en el mensaje anterior.
+Escribe SOLO el mensaje para el cliente: nunca expliques qué regla aplicas ni cómo vas a responder.
 Si sabes cómo se llama el cliente, úsalo con naturalidad al saludar, al cerrar o al dar una buena noticia; NO lo repitas en cada mensaje.
 Regla NOMBRE: si los datos dicen que no sabes su nombre, pregúntalo UNA sola vez, casual, en un mensaje donde no hagas otra pregunta, y solo cuando el cliente agradece ("gracias"), dice "lo voy a pensar" o se despide. NUNCA tras un simple "ok" o "está bien", ni mientras está eligiendo equipo o esperando un precio: "Por cierto, ¿con quién tengo el gusto? 😊", y agrega al final PREGUNTE_NOMBRE. Nunca insistas. Si el cliente te dice su nombre, agrega al final NOMBRE:<su nombre>. Si los datos traen su nombre de WhatsApp por confirmar: si es el nombre de pila de una persona (aunque venga con apellido, emojis o en minúsculas), úsalo como cualquier nombre sabido y agrega al final NOMBRE:<nombre de pila>; si es apodo, negocio, apellido, frase, equipo, usuario o cualquier cosa que no sea un nombre de pila, no lo uses y agrega al final NOMBRE:NINGUNO. Si dudas, NOMBRE:NINGUNO. Nunca menciones esta revisión.
 No menciones el horario ni si estamos abiertos o cerrados a menos que el cliente
@@ -2668,6 +2670,20 @@ def texto_respuesta(respuesta):
         elif hasattr(bloque, "text") and not hasattr(bloque, "thinking"):
             partes.append(bloque.text)
     return "\n".join(partes).strip()
+
+PISTAS_RAZONAMIENTO = re.compile(r"(?i)\bregla (?:de )?nombre\b|\bel cliente\b|\brespondo con\b|\bpuedo usar")
+
+def quitar_razonamiento(texto):
+    """Si el modelo 'piensa en voz alta', deja solo el mensaje final para el cliente."""
+    partes = [p for p in re.split(r"\n\s*\n", (texto or "").strip()) if p.strip()]
+    ultimo = -1
+    for i, p in enumerate(partes):
+        if PISTAS_RAZONAMIENTO.search(p):
+            ultimo = i
+    if ultimo < 0:
+        return texto
+    print(f"⚠️ Razonamiento filtrado de la respuesta: {texto[:200]!r}")
+    return "\n\n".join(partes[ultimo + 1:]).strip()
 
 def registrar_uso(etiqueta, respuesta):
     """Imprime en el log cuántos tokens gastó cada llamada."""
@@ -3374,7 +3390,7 @@ def atender_celulares(from_number, numero_limpio, body):
                                                bloque_promos(perfil, body)),
             messages=historial,
         )
-        reply = texto_respuesta(respuesta)
+        reply = quitar_razonamiento(texto_respuesta(respuesta))
         registrar_uso("celulares-respuesta", respuesta)
         if not reply:
             print("La respuesta al cliente llegó vacía")
@@ -4176,7 +4192,7 @@ def webhook():
                     system=get_system_prompt(),
                     messages=historial
                 )
-                reply = texto_respuesta(response)
+                reply = quitar_razonamiento(texto_respuesta(response)) or "Dame un momento y te confirmo"
                 registrar_uso("repuestos", response)
 
                 if "DERIVAR_CELULARES" in reply:
@@ -4242,7 +4258,7 @@ def webhook():
                     system=get_system_prompt(),
                     messages=[{"role": "user", "content": body + "\n\nINFORMACIÓN DEL INVENTARIO:\nEste producto NO existe en el inventario. Stock: 0. No inventes productos ni precios."}]
                 )
-                reply = texto_respuesta(response)
+                reply = quitar_razonamiento(texto_respuesta(response)) or "Dame un momento y te confirmo"
                 registrar_uso("repuestos-no-encontrado", response)
 
                 if "DERIVAR_CELULARES" in reply:
