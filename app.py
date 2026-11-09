@@ -113,6 +113,7 @@ ASESOR_CEL_OTROS   = "584126093756"   # accesorios y todo lo demás
 NUMEROS_PRUEBA_CELULARES = ["573208112456"]
 modo_prueba_pantallas = set()   # números de prueba probando el flujo de pantallas
 krece_supuesto = set()          # clientes cotizados con Azul/$300 supuesto (solo en memoria)
+avisos_intencion = {}           # numero -> (clave, hora) del último aviso de intención (solo en memoria)
 nivel1_pendiente = set()        # clientes que dijeron "nivel 1" sin decir Cashea o Krece (solo en memoria)
 krece_linea_dudosa = {}         # cliente → monto chico que parecía la "Línea disponible"
 krece_disponible_dudosa = {}    # cliente → Línea disponible alta que se le pidió confirmar
@@ -451,8 +452,10 @@ def detectar_canales(texto):
 def detectar_nivel_krece(texto):
     t = texto.lower().replace("platinum", "platino")
     t = re.sub(r"\b(?:la|mi|tu|su|esa|mucha|poca|toda|sin|tengo|tenga|tienes|tiene)\s+plata\b", " ", t)
+    # "de color azul", "color oro" es el color del equipo, no su nivel
+    t = re.sub(r"\bcolou?r(?:es)?\s+(?:azul|oro|plata)\b", " ", t)
     for nivel in ("platino", "oro", "plata", "azul"):
-        if nivel in t:
+        if re.search(rf"\b{nivel}\b", t):
             return nivel
     # App nueva: el nivel sale de los puntos ("tengo 150 pts")
     m = re.search(r"\b(\d{1,4})\s*(?:pts?|puntos)\b", t)
@@ -562,6 +565,10 @@ def detectar_linea(texto):
         return float(m.group(1))
     m = re.search(r"\b(\d{2,5})\s*(?:\$|d[oó]lares|usd)?\s*(?:de\s+)?"
                   r"(?:linea|línea|cr[eé]dito|l[ií]mite)", texto.lower())
+    if m:
+        return float(m.group(1))
+    # "soy nivel plata con 200", "azul con 300": el monto después de "nivel con" es su línea
+    m = re.search(r"\b(?:azul|plata|oro|platino)\s+con\s+\$?\s*(\d{2,5})\b(?!\s*(?:gb|g\b|tb|pts?|puntos))", texto.lower())
     if m:
         return float(m.group(1))
     # Con decimales: "83.11$" es 83.11 (antes se leía 11)
@@ -3436,7 +3443,14 @@ def atender_celulares(from_number, numero_limpio, body):
 
     elif "INTENCION_COMPRA" in reply:
         online = "INTENCION_COMPRA_ONLINE" in reply
-        notificar_intencion_compra(from_number, perfil, equipos, online)
+        # Mismo cliente, mismo equipo y canal en menos de 10 min: el asesor ya fue avisado
+        clave_aviso = (perfil.get("modelo_interes"), perfil.get("canal_pago"), online)
+        previo_aviso = avisos_intencion.get(from_number)
+        if previo_aviso and previo_aviso[0] == clave_aviso and time.time() - previo_aviso[1] < 600:
+            print(f"Aviso de intención repetido ({from_number}): no se envía otra vez")
+        else:
+            notificar_intencion_compra(from_number, perfil, equipos, online)
+            avisos_intencion[from_number] = (clave_aviso, time.time())
         hora_vzla = datetime.now(pytz.timezone("America/Caracas")).hour
         if online and 6 <= hora_vzla < 22:
             reply = ("¡Perfecto! 🙌 Ya le pasé tu solicitud de compra online a un asesor "
