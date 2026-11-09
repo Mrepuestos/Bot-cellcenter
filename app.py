@@ -571,6 +571,10 @@ def detectar_linea(texto):
     m = re.search(r"\b(?:azul|plata|oro|platino)\s+con\s+\$?\s*(\d{2,5})\b(?!\s*(?:gb|g\b|tb|pts?|puntos))", texto.lower())
     if m:
         return float(m.group(1))
+    # "en la app solo me sale que tengo son 180": el monto después de "la app" es su línea
+    m = re.search(r"\b(?:app|aplicaci[oó]n)\b[^\d]{0,40}(\d{2,5})(?![\da-z])(?!\s*(?:gb|tb|pts?|puntos))", texto.lower())
+    if m:
+        return float(m.group(1))
     # Con decimales: "83.11$" es 83.11 (antes se leía 11)
     m = (re.search(r"\$\s*(\d{2,5}(?:[.,]\d{1,2})?)", texto)
          or re.search(r"(?<![\d.,])(\d{2,5}(?:[.,]\d{1,2})?)\s*\$", texto))
