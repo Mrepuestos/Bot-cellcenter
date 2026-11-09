@@ -450,6 +450,7 @@ def detectar_canales(texto):
 
 def detectar_nivel_krece(texto):
     t = texto.lower().replace("platinum", "platino")
+    t = re.sub(r"\b(?:la|mi|tu|su|esa|mucha|poca|toda|sin|tengo|tenga|tienes|tiene)\s+plata\b", " ", t)
     for nivel in ("platino", "oro", "plata", "azul"):
         if nivel in t:
             return nivel
@@ -3345,7 +3346,7 @@ def atender_celulares(from_number, numero_limpio, body):
             and historial[-1].get("role") == "assistant"
             and historial[-2].get("role") == "user"
             and es_mensaje_sin_equipo(str(historial[-2].get("content", "")))
-            and not re.search(r"gracias|grax|hola|buen|saludos", body.lower())
+            and not re.search(r"gracias|grax|hola|buen|saludos|d[oó]nde|direcci[oó]n|ubicaci[oó]n", body.lower())
             and "?" not in str(historial[-1].get("content", ""))):
         print(f"Segundo acuse seguido ({numero_limpio}): no se responde")
         return
