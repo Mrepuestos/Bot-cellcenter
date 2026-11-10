@@ -500,7 +500,7 @@ def detectar_nivel_cashea(texto):
     if re.search(r"\b(?:primer|1er)\s+nivel\b|\bnivel\s+(?:el\s+)?primero\b", t):
         return "1"
     m = re.search(r"\bnivel\s*([1-6])\b", t) or re.search(
-        r"\b([1-6])\b(?!\s*(?:cuotas?|pagos?|meses|veces|x\b|\$|d[oó]lares))", t)
+        r"(?:^|\b(?:soy|es|el|en|tengo|cashea|cachea)\s+)([1-6])\b(?!\s*(?:cuotas?|pagos?|meses|veces|x\b|\$|d[oó]lares))", t)
     return m.group(1) if m else None
 
 
