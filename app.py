@@ -208,6 +208,9 @@ def procesar_buffer(numero_limpio):
         datos = buffer_mensajes.pop(numero_limpio, None)
         if not datos:
             return
+        if en_pausa(numero_limpio):
+            print(f"⏸️ Bot en pausa para {numero_limpio}, mensajes agrupados ignorados")
+            return
         procesando.add(numero_limpio)
     body_junto = "\n".join(datos["textos"])
     from_number = datos["from"]
@@ -681,6 +684,16 @@ def detectar_linea_suelta(texto):
     return None
 
 
+def sin_numeros_de_modelo(texto):
+    """Quita los números que son parte de un modelo ("Spark Go 3", "Redmi 17",
+    "A57", "256GB", "nivel 1"): lo que queda puede ser la línea de Krece."""
+    return re.sub(r"\bnivel\s*\d\b"
+                  r"|\b(?:go|spark|redmi|note|honor|play|galaxy|smart|hot|camon|pova|iphone|ipone|ifone"
+                  r"|moto|infinix|tecno|samsung|xiaomi|poco|realme|zte|logic|blu|itel|oppo|vivo"
+                  r"|pro|plus|max|lite|promax|a|s|g|c|x|y)\s*\d+\w*"
+                  r"|\b\d+\s*(?:gb|g|tb)\b|[^\W\d_]+\d+\w*", " ", texto.lower())
+
+
 def linea_por_ia(numero_limpio, texto):
     """Respaldo: la IA lee la línea de Krece cuando Python no la entendió.
     Siempre deja la marca RESPALDO en el log para la revisión diaria."""
@@ -1069,7 +1082,8 @@ SIN_EQUIPO_PALABRAS = {
     "claro", "ah", "aja", "ya", "entiendo", "entendido", "buenos", "buenas", "dias",
     "tardes", "noches", "saludos", "cordiales", "hola", "amigo", "amiga", "pana",
     "estan", "ubicado", "ubicados", "ubicada", "ubicadas", "donde", "y",
-    "esta", "todo"}
+    "esta", "todo", "encuentran", "situados", "hubicados", "ubican", "se",
+    "queda", "tienda", "chevere", "igualmente", "uds", "ustedes"}
 
 
 def pide_vender_iphone(body):
@@ -1088,7 +1102,7 @@ def es_mensaje_sin_equipo(texto):
     t = "".join(c for c in unicodedata.normalize("NFD", texto.lower())
                 if unicodedata.category(c) != "Mn")
     palabras = re.sub(r"[^a-zñ ]", " ", t).split()
-    return (bool(palabras) and len(palabras) <= 8
+    return (bool(palabras) and len(palabras) <= 8 and not re.search(r"\d", t)
             and all(p in SIN_EQUIPO_PALABRAS for p in palabras))
 
 
@@ -1830,7 +1844,16 @@ def consultar_odoo(mensaje):
 
     # ── Mensajería y asesores ─────────────────────────────────────────────────────
 
+def en_pausa(to):
+    """True si un asesor escribió ** en ese chat hace menos de 15 minutos."""
+    numero = str(to).replace("@s.whatsapp.net", "").replace("+", "")
+    return pausas_activas.get(numero, 0) > time.time()
+
+
 def send_whapi_message(to: str, text: str):
+    if en_pausa(to):
+        print(f"⏸️ Bot en pausa para {to}: respuesta no enviada")
+        return
     url = f"{WHAPI_API_URL}/messages/text"
     headers = {"Authorization": f"Bearer {WHAPI_TOKEN}", "Content-Type": "application/json"}
     try:
@@ -3039,7 +3062,7 @@ def atender_celulares(from_number, numero_limpio, body):
             linea = detectar_linea_suelta(body)
         # Respaldo con IA: ya tiene nivel, espera la línea y Python no encontró el monto
         if (not linea and not pide_iphone and len(body) <= 80
-                and re.search(r"\d", re.sub(r"\bnivel\s*\d\b", "", body.lower()))
+                and re.search(r"\d", sin_numeros_de_modelo(body))
                 and not es_anuncio_29800(body)
                 and (nivel or perfil.get("nivel_cliente"))
                 and (not perfil.get("linea_krece") or perfil.get("_krece_supuesto"))):
@@ -3479,6 +3502,7 @@ def atender_celulares(from_number, numero_limpio, body):
         respuesta = client.messages.create(
             model=MODELO_CELULARES,
             max_tokens=4000,
+            extra_body={"output_config": {"effort": "low"}},
             system=get_system_prompt_celulares(info, perfil, bloque_rangos(perfil),
                                                lista_corta_turno,
                                                bloque_promos(perfil, body)),
