@@ -3380,6 +3380,13 @@ def atender_celulares(from_number, numero_limpio, body):
         info += ("\n\nEl cliente ya vio antes: " + modelo_previo + ". Lo que le dijiste de "
                  "ese equipo sigue siendo VÁLIDO: no lo corrijas, no lo retires ni digas que "
                  "no lo manejamos. Solo ofrece los de arriba como otras opciones.")
+    elif opciones_previas.get(numero_limpio) and equipos:
+        # Ya eligió uno, pero antes vio otros: lo que se le dijo de esos sigue valiendo
+        actuales = [nombre_completo(e) for e in equipos]
+        otros = [x for x in opciones_previas[numero_limpio].split(" / ") if x and x not in actuales]
+        if otros:
+            info += ("\n\nAntes también vio: " + " / ".join(otros) + ". Lo que le dijiste de "
+                     "ese equipo sigue siendo VÁLIDO: no lo retires ni digas que no lo puedes confirmar.")
 
     # Si está comparando dos canales, se agregan los precios del segundo
     canal_extra = perfil.get("canal_extra")
