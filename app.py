@@ -457,6 +457,9 @@ NIVEL_KRECE_NUM = {"2": "plata", "dos": "plata", "3": "oro", "tres": "oro",
 def detectar_nivel_krece(texto):
     t = texto.lower().replace("platinum", "platino")
     t = re.sub(r"\b(?:la|mi|tu|su|esa|mucha|poca|toda|sin|tengo|tenga|tienes|tiene)\s+plata\b", " ", t)
+    # "algo de plata", "dar plata", "más plata": es dinero, no el nivel Plata (chat 0099)
+    t = re.sub(r"\b(?:algo|poco|nada|harta|bastante)\s+de\s+plata\b"
+               r"|\b(?:dar|doy|pagar|pago|poner|m[aá]s|menos|suficiente|cu[aá]nta)\s+plata\b", " ", t)
     # "de color azul", "color oro" es el color del equipo, no su nivel
     t = re.sub(r"\bcolou?r(?:es)?\s+(?:azul|oro|plata)\b", " ", t)
     for nivel in ("platino", "oro", "plata", "azul"):
