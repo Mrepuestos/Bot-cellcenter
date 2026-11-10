@@ -118,6 +118,7 @@ nivel1_pendiente = set()        # clientes que dijeron "nivel 1" sin decir Cashe
 krece_linea_dudosa = {}         # cliente → monto chico que parecía la "Línea disponible"
 krece_disponible_dudosa = {}    # cliente → Línea disponible alta que se le pidió confirmar
 krece_linea_disponible = {}     # cliente → su "Línea disponible" (tope del iPhone, solo en memoria)
+opciones_previas = {}           # cliente → opciones que vio antes de elegir una (solo en memoria)
 tecnico_celulares = {}   # técnico → hasta cuándo sigue en el flujo de celulares (30 min)
 confirmar_celular = {}   # técnico → (mensaje, hora) mientras confirma teléfono o pantalla
 PALABRAS_PANTALLA = ("pantalla", "display", "repuesto", "modulo", "módulo", "lcd", "oled",
@@ -3160,6 +3161,17 @@ def atender_celulares(from_number, numero_limpio, body):
         equipos = equipos_de_interes(perfil["modelo_interes"])
         if equipos:
             tipo_resultado, canal_ia = "exacto", None
+    # "¿Cuál de los 2 tiene mejor cámara?" después de elegir uno: se le muestran otra
+    # vez las opciones que vio, sin cambiar el que eligió (chat 2613)
+    if (not equipos and opciones_previas.get(numero_limpio) and len(body.split()) <= 20
+            and re.search(r"\b(?:los|las)\s+(?:2|dos)\b|\bamb[oa]s\b|\b(?:el|la)\s+otr[oa]\b"
+                          r"|\bdiferencia\b", body.lower())):
+        equipos = equipos_de_interes(opciones_previas[numero_limpio])
+        if len(equipos) >= 2:
+            tipo_resultado, canal_ia = "exacto", None
+            perfil["_compara_previas"] = True   # solo en memoria
+        else:
+            equipos = []
     # Gracias, ok, saludo o "ubicados": no nombra equipo, no hace falta la IA
     faltan = {"no_hay": [], "sin_precio": []}   # los llena interpretar_pedido
     sin_equipo = bool(perfil.get("modelo_interes") and es_mensaje_sin_equipo(body))
@@ -3295,9 +3307,16 @@ def atender_celulares(from_number, numero_limpio, body):
         perfil["_iphone_sin_linea"] = True   # solo para este mensaje
 
     modelo_previo = perfil.get("modelo_interes")
-    if equipos:
+    if equipos and not perfil.get("_compara_previas"):
         modelo = " / ".join(nombre_completo(e) for e in equipos)
         if modelo != perfil.get("modelo_interes"):
+            # Eligió uno de los que vio ("El primero"): se guardan las otras opciones
+            antes = [n for n in (modelo_previo or "").split(" / ") if n]
+            nuevo = modelo.split(" / ")
+            if len(nuevo) < len(antes) and all(n in antes for n in nuevo):
+                opciones_previas[numero_limpio] = modelo_previo
+            else:
+                opciones_previas.pop(numero_limpio, None)
             cambios["modelo_interes"] = modelo
             perfil["modelo_interes"] = modelo
 
@@ -3353,7 +3372,10 @@ def atender_celulares(from_number, numero_limpio, body):
 
     # El equipo que ya vio sigue vigente aunque ahora se busquen otros (si no, la IA
     # lo da por inexistente y se "corrige")
-    if (modelo_previo and equipos and tipo_resultado in ("exacto", "recomendacion")
+    if perfil.get("_compara_previas"):
+        info += ("\n\nPregunta por los equipos que ya vio; él había elegido el "
+                 + str(modelo_previo) + ". Respóndele comparándolos con estos datos.")
+    elif (modelo_previo and equipos and tipo_resultado in ("exacto", "recomendacion")
             and modelo_previo != " / ".join(nombre_completo(e) for e in equipos)):
         info += ("\n\nEl cliente ya vio antes: " + modelo_previo + ". Lo que le dijiste de "
                  "ese equipo sigue siendo VÁLIDO: no lo corrijas, no lo retires ni digas que "
@@ -4100,6 +4122,7 @@ def webhook():
                     memoria_admin_ia.pop(numero_limpio, None)
                     krece_supuesto.discard(numero_limpio)
                     krece_linea_disponible.pop(numero_limpio, None)
+                    opciones_previas.pop(numero_limpio, None)
                     NOMBRE_PERFIL.pop(numero_limpio, None)
                     tecnico_celulares.pop(numero_limpio, None)
                     confirmar_celular.pop(numero_limpio, None)
