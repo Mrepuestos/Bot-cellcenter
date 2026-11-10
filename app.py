@@ -3154,13 +3154,6 @@ def atender_celulares(from_number, numero_limpio, body):
         if (canal == "krece" and not perfil.get("linea_krece")
                 and detectar_linea_suelta(body) is None and parece_monto_en_letras(body)):
             perfil["_monto_letras_dudoso"] = True   # solo en memoria
-    # "Mándame las fotos de esos tres": pide ver varios de los que ya vio
-    if (not equipos and perfil.get("modelo_interes") and pide_foto(body)
-            and re.search(r"\b(fotos|imagenes|esos|esas|ambos|ambas|todos|todas|tres|dos)\b",
-                          body.lower())):
-        equipos = equipos_de_interes(perfil["modelo_interes"])
-        if equipos:
-            tipo_resultado, canal_ia = "exacto", None
     # "¿Cuál de los 2 tiene mejor cámara?" después de elegir uno: se le muestran otra
     # vez las opciones que vio, sin cambiar el que eligió (chat 2613)
     if (not equipos and opciones_previas.get(numero_limpio) and len(body.split()) <= 20
@@ -3172,6 +3165,13 @@ def atender_celulares(from_number, numero_limpio, body):
             perfil["_compara_previas"] = True   # solo en memoria
         else:
             equipos = []
+    # "Mándame las fotos de esos tres": pide ver varios de los que ya vio
+    if (not equipos and perfil.get("modelo_interes") and pide_foto(body)
+            and re.search(r"\b(fotos|imagenes|esos|esas|ambos|ambas|todos|todas|tres|dos)\b",
+                          body.lower())):
+        equipos = equipos_de_interes(perfil["modelo_interes"])
+        if equipos:
+            tipo_resultado, canal_ia = "exacto", None
     # Gracias, ok, saludo o "ubicados": no nombra equipo, no hace falta la IA
     faltan = {"no_hay": [], "sin_precio": []}   # los llena interpretar_pedido
     sin_equipo = bool(perfil.get("modelo_interes") and es_mensaje_sin_equipo(body))
