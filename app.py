@@ -1731,6 +1731,32 @@ def buscar_referencia(todos, ref):
     return None, None, similares
 
 
+# ── Modelo bien escrito que no tenemos: "no disponible" directo, sin lista ni IA ──
+def modelo_claro_no_disponible(todos, palabras_clave):
+    """Devuelve el modelo para mostrar ("Samsung A56") si el técnico escribió marca + modelo
+    y ese número de modelo no aparece en ningún producto ni COMPATIBLE de Odoo.
+    Ante cualquier duda devuelve None (se usa la lista de similares de siempre)."""
+    marcas = [p for p in palabras_clave if p in MARCAS_CONOCIDAS]
+    numeros = [p for p in palabras_clave if re.search(r'\d', p)]
+    if not marcas or not numeros:
+        return None
+    vocab = set()
+    for p in todos:
+        vocab.update(normalizar_texto(p['name']).split())
+        notas = limpiar_html(p.get('description') or "")
+        for parte in re.split(r'compatible:', notas, flags=re.IGNORECASE)[1:]:
+            vocab.update(normalizar_texto(parte).split())
+    # Si todos los números existen en el inventario, puede ser otra variante o un error: lista
+    if all(n in vocab for n in numeros):
+        return None
+    # Palabra rara (posible error de escritura o pieza distinta): lista
+    for p in palabras_clave:
+        if p not in vocab and p not in numeros and p not in PALABRAS_VARIANTE:
+            return None
+    return " ".join("iPhone" if p == "iphone" else (p.upper() if re.search(r'\d', p) else p.capitalize())
+                    for p in palabras_clave)
+
+
 def consultar_odoo(mensaje):
     try:
         import socket
@@ -1827,6 +1853,13 @@ def consultar_odoo(mensaje):
 
         # Paso 5: similares
         similares = buscar_similares(todos, palabras_clave)
+
+        # Paso 5b: marca + modelo bien escrito que no existe en Odoo -> "no disponible" directo (sin IA)
+        if similares:
+            modelo_claro = modelo_claro_no_disponible(todos, palabras_clave)
+            if modelo_claro:
+                print(f"Modelo claro no disponible: '{mensaje}' -> {modelo_claro}")
+                return None, None, modelo_claro
 
         # Paso 6: rescate con IA (solo si todo lo anterior fallo)
         modelo_ia = interpretar_modelo(mensaje, todos)
@@ -4343,6 +4376,12 @@ def webhook():
 
                 historial.append({"role": "assistant", "content": reply})
                 guardar_historial(from_number, historial)
+                send_whapi_message(from_number, reply)
+
+            elif isinstance(similares, str):
+                # Marca + modelo bien escrito que no existe en Odoo: "no disponible" directo
+                reply = f"❌ *{similares}*: no disponible por ahora."
+                registrar_producto_no_encontrado(numero_limpio, body)
                 send_whapi_message(from_number, reply)
 
             elif similares:
