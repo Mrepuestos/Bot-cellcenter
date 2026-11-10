@@ -449,6 +449,10 @@ def detectar_canales(texto):
         encontrados.append("creditienda")
     return encontrados
 
+NIVEL_KRECE_NUM = {"2": "plata", "dos": "plata", "3": "oro", "tres": "oro",
+                   "4": "platino", "cuatro": "platino"}
+
+
 def detectar_nivel_krece(texto):
     t = texto.lower().replace("platinum", "platino")
     t = re.sub(r"\b(?:la|mi|tu|su|esa|mucha|poca|toda|sin|tengo|tenga|tienes|tiene)\s+plata\b", " ", t)
@@ -462,6 +466,14 @@ def detectar_nivel_krece(texto):
     if m:
         p = int(m.group(1))
         return "azul" if p < 121 else "plata" if p < 241 else "oro" if p < 500 else "platino"
+    # Los niveles van en orden: 1 Azul, 2 Plata, 3 Oro, 4 Platino (el último es Platino)
+    m = re.search(r"\bnivel\s*(?:de\s+krece\s*)?([2-4]|dos|tres|cuatro)\b", t)
+    if m:
+        return NIVEL_KRECE_NUM[m.group(1)]
+    if re.search(r"\b[uú]ltimo\s+nivel\b|\bnivel\s+(?:el\s+)?(?:[uú]ltimo|m[aá]s\s+alto)\b", t):
+        return "platino"
+    if re.search(r"\b(?:primer|1er)\s+nivel\b|\bnivel\s+(?:el\s+)?primero\b|\bnivel\s*uno\b", t):
+        return "azul"
     # "nivel 1" o "soy nuevo" es Azul; "El primero" o "el 1" es elegir un equipo, no un nivel
     if (re.search(r"\bnivel\s*1\b|\b(?:soy|cliente)\s+nuev[oa]\b|\bnuev[oa]\s+(?:en|con)\b", t)
             or re.fullmatch(r"\s*(?:1|nuev[oa])\s*[.!]*\s*", t)):
@@ -482,6 +494,11 @@ def detectar_nivel_cashea(texto):
         return palabras[m.group(1)]
     if t.strip() in palabras:
         return palabras[t.strip()]
+    # El primero es 1 Semilla y el último es 6 Araguaney
+    if re.search(r"\b[uú]ltimo\s+nivel\b|\bnivel\s+(?:el\s+)?(?:[uú]ltimo|m[aá]s\s+alto)\b", t):
+        return "6"
+    if re.search(r"\b(?:primer|1er)\s+nivel\b|\bnivel\s+(?:el\s+)?primero\b", t):
+        return "1"
     m = re.search(r"\bnivel\s*([1-6])\b", t) or re.search(
         r"\b([1-6])\b(?!\s*(?:cuotas?|pagos?|meses|veces|x\b|\$|d[oó]lares))", t)
     return m.group(1) if m else None
@@ -740,6 +757,20 @@ def detectar_linea_disponible(texto):
     if m:
         return float(next(g for g in m.groups() if g))
     return None
+
+
+def nivel_ordinal(numero_limpio, body):
+    """'El primero' o 'el último' respondiendo a '¿qué nivel tienes?' (sin precios en
+    ese mensaje del bot): devuelve 'primero' o 'ultimo'. Si no, None."""
+    m = re.fullmatch(r"\s*(?:es\s+)?(?:el\s+)?(primer[oa]?|[uú]ltim[oa])(?:\s+nivel)?\s*[.!]*\s*",
+                     body.lower())
+    if not m:
+        return None
+    ultimo = next((str(x.get("content", "")) for x in reversed(cargar_historial(numero_limpio))
+                   if x.get("role") == "assistant"), "").lower()
+    if "nivel" not in ultimo or "$" in ultimo:
+        return None
+    return "primero" if m.group(1).startswith("primer") else "ultimo"
 
 
 def bot_pidio_celulares(numero_limpio):
@@ -2383,6 +2414,10 @@ Nunca menciones otras tiendas aliadas ni de dónde viene el financiamiento.
 
 KRECE
 No cotizas sin dos datos: su NIVEL (Azul, Plata, Oro o Platino) y su LÍNEA APROBADA.
+Los niveles de Krece van en orden: 1 Azul, 2 Plata, 3 Oro y 4 Platino (el primero es Azul
+y el último es Platino). Si el cliente dice su nivel con el número o como "el primero" o
+"el último", ese ya es su nivel: nómbralo por su color ("¡Perfecto, nivel Azul!") y sigue,
+sin preguntarle cuál es.
 Pídeselos juntos en una sola frase, y ofrécele que te los escriba o te mande captura de la app.
 Si el cliente dice "Aquí está mi captura de Krece", esa captura YA la revisaste: el nivel y
 las líneas que conoces salen de ella. Di que ya la revisaste; no digas que no te llegó. Si los
@@ -2455,6 +2490,7 @@ o Cashea (iPhone 11 o anterior) como en la regla de arriba.
 
 CASHEA
 Pregunta primero el NIVEL del cliente: 1 Semilla, 2 Raíz, 3 Hoja, 4 Tronco, 5 Árbol o 6 Araguaney. Al preguntarlo nombra SIEMPRE los 6 con su número, sin saltarte ninguno. Usa SOLO esos nombres. Sin nivel no hay precio. Son 3 cuotas.
+Si dice su nivel con el número o como "el primero" (1 Semilla) o "el último" (6 Araguaney), ese ya es su nivel: nómbralo ("¡Perfecto, nivel 1 Semilla!") y sigue, sin preguntarle cuál es.
 Si el cliente dice que no tiene Cashea o nunca lo ha usado, NO es un obstáculo
 y NO le preguntes el nivel: dile que en la tienda le hacemos el registro, y que
 debe ser mayor de edad y traer su cédula laminada. Dale los montos de EQUIPO
@@ -2917,6 +2953,11 @@ def atender_celulares(from_number, numero_limpio, body):
                                   "pago de una vez", "pagar de una vez",
                                   "pagarlo de una vez", "un solo pago", "pago completo")
     canal_previo = perfil.get("canal_pago")
+    # Cliente de Krece que dice "nivel 2", "nivel 3" o "nivel 4" sin nombrar Cashea:
+    # es su nivel de Krece (Plata, Oro, Platino), no un cambio a Cashea
+    if (detectado == "cashea" and canal_previo == "krece" and not detectar_canales(body)
+            and re.search(r"\bnivel\s*[2-4]\b", body.lower())):
+        detectado = None
     if (detectado == "contado" and canal_previo and canal_previo != "contado"
             and not any(p in body.lower() for p in PALABRAS_CONTADO_EXPLICITO)):
         detectado = None
@@ -2986,11 +3027,15 @@ def atender_celulares(from_number, numero_limpio, body):
             perfil["_nivel1_krece"] = True   # solo en memoria
         nivel1_pendiente.discard(numero_limpio)
         nivel = detectar_nivel_krece(body)
+        if not nivel and not perfil.get("nivel_cliente"):
+            orden = nivel_ordinal(numero_limpio, body)
+            nivel = {"primero": "azul", "ultimo": "platino"}.get(orden)
         linea = detectar_linea(body)
         if not linea:
             linea = detectar_linea_suelta(body)
         # Respaldo con IA: ya tiene nivel, espera la línea y Python no encontró el monto
-        if (not linea and not pide_iphone and re.search(r"\d", body) and len(body) <= 80
+        if (not linea and not pide_iphone and len(body) <= 80
+                and re.search(r"\d", re.sub(r"\bnivel\s*\d\b", "", body.lower()))
                 and not es_anuncio_29800(body)
                 and (nivel or perfil.get("nivel_cliente"))
                 and (not perfil.get("linea_krece") or perfil.get("_krece_supuesto"))):
@@ -3044,6 +3089,9 @@ def atender_celulares(from_number, numero_limpio, body):
             krece_supuesto.discard(numero_limpio)
     elif canal == "cashea":
         nivel = detectar_nivel_cashea(body)
+        if not nivel and not perfil.get("nivel_cliente"):
+            orden = nivel_ordinal(numero_limpio, body)
+            nivel = {"primero": "1", "ultimo": "6"}.get(orden)
         if not nivel and numero_limpio in nivel1_pendiente:
             nivel = "1"
         nivel1_pendiente.discard(numero_limpio)
