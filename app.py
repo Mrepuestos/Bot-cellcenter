@@ -113,6 +113,7 @@ ASESOR_CEL_OTROS   = "584126093756"   # accesorios y todo lo demás
 NUMEROS_PRUEBA_CELULARES = ["573208112456"]
 modo_prueba_pantallas = set()   # números de prueba probando el flujo de pantallas
 krece_supuesto = set()          # clientes cotizados con Azul/$300 supuesto (solo en memoria)
+sin_cuenta_financ = {}          # cliente → frase con la que dijo que no tiene Krece/Cashea (solo en memoria)
 avisos_intencion = {}           # numero -> (clave, hora) del último aviso de intención (solo en memoria)
 nivel1_pendiente = set()        # clientes que dijeron "nivel 1" sin decir Cashea o Krece (solo en memoria)
 krece_linea_dudosa = {}         # cliente → monto chico que parecía la "Línea disponible"
@@ -155,6 +156,25 @@ MENSAJE_KRECE = "quiero comprar con krece"
 
 # ── Marcas que Krece no aprueba (no les puede instalar su seguridad) ──────────
 MARCAS_NO_KRECE = {"logic", "zte"}
+
+# ── Marcas que en Krece van por la "Línea disponible" (tipo Otros), desde nivel Plata ──
+MARCAS_LINEA_DISPONIBLE = {"iphone", "hotwav"}
+
+
+def va_por_disponible(eq):
+    return str(eq.get("marca", "")).lower() in MARCAS_LINEA_DISPONIBLE
+
+
+def nombra_disponible(texto):
+    """True si el texto nombra una marca que en Krece va por la Línea disponible."""
+    t = (texto or "").lower()
+    return any(m in t for m in MARCAS_LINEA_DISPONIBLE)
+
+
+def nombre_marca_disp(eq):
+    """'el iPhone' o 'el Hotwav' para los textos de la Línea disponible."""
+    m = str(eq.get("marca", "")).lower()
+    return "el iPhone" if m == "iphone" else f"el {m.capitalize()}"
 
 # ── CrediFacil: financiamiento propio, solo iPhone 12 en adelante ─────────────
 CREDIFACIL_RE = re.compile(r"credi\s*fa[cs]il")
@@ -527,6 +547,7 @@ def detectar_sin_cuenta(texto):
     """True si el cliente dice que no tiene cuenta en Krece o Cashea."""
     t = "".join(c for c in unicodedata.normalize("NFD", texto.lower())
                 if unicodedata.category(c) != "Mn")
+    t = re.sub(r"\s+", " ", t)   # "No tengo  krece" (doble espacio)
     nunca_compro = (not re.search(r"azul|plata|\boro\b|platino", t)
                     and re.search(r"(por|con|en|de) (krece|crece|cashea|cashe) nunca (he |en |e )?compr"
                                   r"|nunca (he |en |e )?compr\w*( \w+)? (por|con|en|de) (krece|crece|cashea|cashe)", t))
@@ -564,8 +585,12 @@ def detectar_linea(texto):
     # "inicial de 40$" o "40$ de inicial" es lo que quiere pagar de inicial, NO su línea
     texto = re.sub(r"inicial(?:\s+de)?\s*\$?\s*\d+(?:[.,]\d+)?\s*(?:\$|d[oó]lares|usd)?"
                    r"|\$?\s*\d+(?:[.,]\d+)?\s*(?:\$|d[oó]lares|usd)?\s*de\s+inicial"
-                   r"|\b(?:doy|dar|pongo|poner|entrego|entregar|abono|abonar)\s+\$?\s*\d+(?:[.,]\d+)?\s*(?:\$|d[oó]lares|usd)?",
+                   r"|\b(?:doy|dar|pongo|poner|entrego|entregar|abono|abonar|pagar|cancelar)\s+(?:[a-z](?=\d))?\$?\s*\d+(?:[.,]\d+)?\s*(?:\$|d[oó]lares|usd)?",
                    " ", texto, flags=re.IGNORECASE)
+    # "el 143 $", "ese de 143 $", "uno más o menos de 130$": precio de un equipo, NO su línea
+    if not re.search(r"l[ií]nea|celulares|cr[eé]dito|l[ií]mite|aprobad|\bapp\b|aplicaci|disponible", texto, re.IGNORECASE):
+        texto = re.sub(r"\b(?:el|ese|este|uno|alguno|otro)\s+(?:(?:de|como|por|m[aá]s\s+o\s+menos)\s+){0,3}"
+                       r"\$?\s*\d{2,5}(?:[.,]\d+)?\s*(?:\$|d[oó]lares|usd)?", " ", texto, flags=re.IGNORECASE)
     # "75$ al mes", "cuota de 75$", "75 cada 15 días" es una cuota, NO su línea
     texto = re.sub(r"\$?\s*\d+(?:[.,]\d+)?\s*(?:\$|d[oó]lares|usd)?\s*"
                    r"(?:al mes|por mes|mensual\w*|quincenal\w*|cada\b|por cuota|de cuota|la cuota|x cuota)"
@@ -798,17 +823,17 @@ def bot_pidio_celulares(numero_limpio):
     return "celulares" in ultimo and not re.search(r"l[ií]nea\s+disponible", ultimo)
 
 
-def lineas_iphone_krece(p, nivel, disponible, linea_celulares=None):
-    """iPhone con Krece (Plata o más): va por la Línea disponible, tipo 'Otros'."""
+def lineas_iphone_krece(p, nivel, disponible, linea_celulares=None, quien="el iPhone"):
+    """iPhone o Hotwav con Krece (Plata o más): va por la Línea disponible, tipo 'Otros'."""
     if not nivel or disponible is None:
         falta = ("su nivel y su Línea disponible" if not nivel and disponible is None
                  else "su nivel" if not nivel else "su Línea disponible")
         aviso = ""
         if nivel and linea_celulares:
             aviso = (f" El cliente ya te dio ${float(linea_celulares):.0f}: ese monto es solo para "
-                     f"los Android. Dile en una frase: 'Ese monto solo sirve para Android; para "
-                     f"el iPhone necesito el de *Línea disponible* (el grande en la app)'.")
-        return [f"  El iPhone SÍ tiene precio. Con Krece el iPhone se paga con la 'Línea "
+                     f"los demás equipos. Dile en una frase: 'Ese monto sirve para los demás equipos; para "
+                     f"{quien} necesito el de *Línea disponible* (el grande en la app)'.")
+        return [f"  {quien[0].upper() + quien[1:]} SÍ tiene precio. Con Krece {quien} se paga con la 'Línea "
                 f"disponible' (el monto grande de la app, lo que le queda libre; no el Límite "
                 f"ni el de Celulares). Falta {falta}. Pídeselo en una frase. "
                 f"NO respondas DERIVAR_PRECIO." + aviso]
@@ -826,13 +851,13 @@ def lineas_iphone_krece(p, nivel, disponible, linea_celulares=None):
         if not k.get("aplica"):
             continue
         if k["inicial_pct"] > IPHONE_INICIAL_MAX_PCT:
-            return ["  Su Línea disponible no alcanza para este iPhone por Krece (la inicial "
+            return ["  Su Línea disponible no alcanza para este equipo por Krece (la inicial "
                     "pasaría del 80%). NO des cuotas de Krece de este iPhone: dile que por Krece "
                     "no le conviene ahora y ofrécele llevarlo con Cashea o de contado."]
         extra = " (inicial subida por su Línea disponible)" if k["topado_por_linea"] else ""
         salida.append(f"  Krece {plazo} cuotas: inicial ${k['inicial']} "
                       f"+ {plazo} x ${k['monto_cuota']}{extra}")
-    return salida or ["  Su Línea disponible no alcanza para este iPhone por Krece."]
+    return salida or ["  Su Línea disponible no alcanza para este equipo por Krece."]
 
 
 def dato_faltante(canal, perfil):
@@ -875,10 +900,11 @@ def bloque_equipo(equipos, canal, perfil):
                               "frase y ofrécele otra marca de la LISTA CORTA por Krece; si "
                               "prefiere este equipo, se lo puede llevar de contado o con Cashea.")
                 continue
-            if eq["marca"].lower() == "iphone" and nivel != "azul":
+            if va_por_disponible(eq) and nivel != "azul":
                 lineas.extend(lineas_iphone_krece(
                     p, nivel, perfil.get("_linea_disponible"),
-                    None if perfil.get("_krece_supuesto") else perfil.get("linea_krece")))
+                    None if perfil.get("_krece_supuesto") else perfil.get("linea_krece"),
+                    nombre_marca_disp(eq)))
                 continue
             if not nivel or not linea:
                 if not nivel and not linea:
@@ -894,6 +920,19 @@ def bloque_equipo(equipos, canal, perfil):
                              f"pidas ni lo menciones)")
                 lineas.append(f"  El equipo SÍ tiene precio, pero para cotizar Krece falta "
                               f"{falta}. Pídeselo en una frase. NO respondas DERIVAR_PRECIO.")
+                continue
+            if va_por_disponible(eq) and nivel == "azul" and eq["marca"].lower() != "iphone":
+                q = eq["marca"].capitalize()
+                if perfil.get("_krece_supuesto"):
+                    lineas.append(f"  El {q} SÍ tiene precio, pero NO lo des todavía y NO respondas "
+                                  f"DERIVAR_PRECIO. Los {q} con Krece requieren Plata o superior (van por "
+                                  f"la Línea disponible) y tú SUPUSISTE Azul. Pregúntale su nivel de Krece; "
+                                  f"si es Azul, dile que con Krece Azul los {q} todavía no se habilitan y "
+                                  f"ofrécele *Cashea* o *contado*. No des cuotas de Krece de este equipo.")
+                else:
+                    lineas.append(f"  Los {q} NO aplican con Krece Azul (requieren Plata o superior). "
+                                  f"NO des cuotas de Krece de este equipo: dile en una frase que con "
+                                  f"Krece Azul los {q} todavía no se habilitan y ofrécele *Cashea* o *contado*.")
                 continue
             if eq["marca"].lower() == "iphone" and nivel == "azul":
                 otra = "CrediFacil" if aplica_credifacil(eq) else "Cashea"
@@ -959,8 +998,8 @@ def bloque_equipo(equipos, canal, perfil):
             if not hubo:
                 lineas.append("  Este equipo supera la línea aprobada del cliente. "
                               "No aplica para Krece.")
-                lineas.append(f"  [solo si pide el precio de contado] De contado: ${int(p)} "
-                              f"en divisas o ${precios.precio_bcv(p)} a tasa BCV")
+            lineas.append(f"  [solo si pide el precio del equipo o de contado] De contado: ${int(p)} "
+                          f"en divisas o ${precios.precio_bcv(p)} a tasa BCV")
 
         elif canal == "cashea":
             nivel = perfil.get("nivel_cliente")
@@ -971,6 +1010,8 @@ def bloque_equipo(equipos, canal, perfil):
             try:
                 c = precios.cashea(p, nivel)
                 lineas.append(f"  Cashea: inicial ${c['inicial']} + 3 x ${c['monto_cuota']}")
+                lineas.append(f"  [solo si pide el precio del equipo o de contado] De contado: ${int(p)} "
+                              f"en divisas o ${precios.precio_bcv(p)} a tasa BCV")
             except ValueError:
                 lineas.append(f"  El nivel '{nivel}' no es válido para Cashea. "
                               f"Pídele que confirme: 1 Semilla, 2 Raíz, 3 Hoja, "
@@ -1172,8 +1213,10 @@ def texto_iphone_cashea(equipos, tipo):
     texto = ""
     if tipo == "recomendacion":
         nombres = "\n".join(f"• {nombre_completo(e)}" for e in equipos[:4])
-        texto = f"Ese modelo no lo tenemos disponible 😕 pero tenemos estos iPhone:\n{nombres}\n\n"
-    return texto + ("Con Krece nivel Azul el iPhone todavía no se habilita 🙏 pero te lo "
+        texto = f"Ese modelo no lo tenemos disponible 😕 pero tenemos estos:\n{nombres}\n\n"
+    solo_iphone = all(e["marca"].lower() == "iphone" for e in equipos[:4])
+    return texto + ("Con Krece nivel Azul " + ("el iPhone todavía no se habilita" if solo_iphone
+                    else "los Hotwav todavía no se habilitan") + " 🙏 pero te lo "
                     "puedes llevar con *Cashea* en 3 cuotas.\n\n"
                     "¿Tienes Cashea? Si es así, dime tu nivel: 1 Semilla, 2 Raíz, 3 Hoja, "
                     "4 Tronco, 5 Árbol o 6 Araguaney.\n"
@@ -1220,8 +1263,12 @@ def filtros_listas(perfil):
     """Lo que no se le muestra al cliente en las listas: iPhone (Krece Azul o
     CrediTienda) y las marcas que Krece no aprueba (Logic y ZTE)."""
     perfil = perfil or {}
-    return {"excluir_iphone": sin_iphone(perfil),
-            "excluir_marcas": MARCAS_NO_KRECE if es_krece(perfil) else ()}
+    excluir = set()
+    if es_krece(perfil):
+        excluir |= MARCAS_NO_KRECE
+        if perfil.get("nivel_cliente") == "azul":
+            excluir |= MARCAS_LINEA_DISPONIBLE - {"iphone"}   # Hotwav: desde Plata, como el iPhone
+    return {"excluir_iphone": sin_iphone(perfil), "excluir_marcas": excluir}
 
 
 PIDE_PROMO = re.compile(r"promo|oferta|descuento", re.IGNORECASE)
@@ -1262,7 +1309,7 @@ def inicial_corta(eq, canal, perfil):
                 return None
             nivel, linea = perfil.get("nivel_cliente"), perfil.get("linea_krece")
             tipo = "celular"
-            if eq["marca"].lower() == "iphone":   # iPhone: va por la Línea disponible
+            if va_por_disponible(eq):   # iPhone y Hotwav: van por la Línea disponible
                 linea, tipo = perfil.get("_linea_disponible"), "otros"
                 if not nivel or not linea:
                     return None
@@ -2340,7 +2387,7 @@ def get_system_prompt_celulares(info_equipo, perfil, rangos, lista_corta, promos
     if perfil.get("linea_krece"):
         datos.append(f"línea para celulares ${float(perfil['linea_krece']):.0f}")
     if perfil.get("_linea_disponible") is not None:
-        datos.append(f"Línea disponible ${float(perfil['_linea_disponible']):.0f} (para iPhone)")
+        datos.append(f"Línea disponible ${float(perfil['_linea_disponible']):.0f} (para iPhone y Hotwav)")
     if perfil.get("nombre"):
         datos.append(f"se llama {perfil['nombre']}")
     if perfil.get("modelo_interes"):
@@ -2373,6 +2420,10 @@ def get_system_prompt_celulares(info_equipo, perfil, rangos, lista_corta, promos
                       "primera respuesta con: 'Si no estás registrado en Krece, nosotros te registramos "
                       "y entras en nivel Azul 😊'. No digas 'como aún no tienes Krece' ni menciones "
                       "cédula, mayoría de edad ni 'sujeto a aprobación': solo si él lo pregunta.")
+    if perfil.get("_sin_cuenta"):
+        conocidos += (f" OJO: ya te dijo «{perfil['_sin_cuenta']}». No le vuelvas a preguntar si tiene "
+                      "cuenta, ni su nivel o su línea: en la tienda le hacemos el registro y los "
+                      "montos de EQUIPO CONSULTADO son aproximados (nivel de entrada).")
     if perfil.get("_krece_supuesto"):
         conocidos += (" OJO: él NO te dio nivel ni línea; tú supusiste Azul con $300 en Celulares. "
                       "Cotiza con los montos de EQUIPO CONSULTADO sin pedirle esos datos. "
@@ -2381,8 +2432,8 @@ def get_system_prompt_celulares(info_equipo, perfil, rangos, lista_corta, promos
     if perfil.get("_disponible_dudosa"):
         conocidos += (f" OJO: te dio ${float(perfil['_disponible_dudosa']):.0f} como Línea disponible; "
                       "Krece casi nunca da tanto ahí: suele ser su línea de Celulares (Android). "
-                      "NO cotices el iPhone con ese monto. Explícale que ese monto es para Android, "
-                      "que para el iPhone se usa la *Línea disponible* (el número grande arriba en la "
+                      "NO cotices el iPhone ni el Hotwav con ese monto. Explícale que ese monto es para los demás equipos, "
+                      "que para el iPhone y los Hotwav se usa la *Línea disponible* (el número grande arriba en la "
                       "app) y pregúntale cuánto le sale ahí o que te mande captura.")
     if perfil.get("_linea_recien"):
         conocidos += (f" OJO: te acaba de dar su línea de Celulares: ${float(perfil['linea_krece']):.0f}. "
@@ -2432,7 +2483,7 @@ LO PRIMERO: ENTENDER QUÉ QUIERE
 - Compra de celular -> lo atiendes tú
 - Si pregunta si compramos su iPhone o lo recibimos como parte de pago -> lo atiendes tú (ver IPHONE DEL CLIENTE)
 - Servicio técnico, reparación, pantallas o repuestos -> responde exactamente: DERIVAR_TECNICO
-- Accesorios o cualquier otra cosa -> responde exactamente: DERIVAR_OTROS
+- Accesorios (audífonos, cargadores, forros, protectores, cables, relojes; aunque lo escriba con errores como "udifono" o diga que es para su teléfono) o cualquier otra cosa -> responde exactamente: DERIVAR_OTROS. Si pregunta si el equipo TRAE cargador o audífonos, eso es del equipo: respóndelo tú.
 Si ya dijo lo que quiere en su primer mensaje, no se lo preguntes de nuevo.
 
 IPHONE DEL CLIENTE (venderlo o dejarlo como parte de pago)
@@ -2495,6 +2546,8 @@ los montos de inicial y cuota que aparecen en EQUIPO CONSULTADO. Salvo ese
 NUNCA digas cuántas cuotas son antes de tener el cálculo: varía entre 3 y 12.
 Si el cliente te da nivel y línea pero todavía no dijo qué equipo quiere,
 pregúntaselo: "¿Qué modelo tienes en mente?"
+Los Hotwav con Krece van igual que los iPhone: desde nivel Plata y con su Línea disponible
+(sigue lo que dice EQUIPO CONSULTADO); con Krece Azul no se habilitan: ofrécele Cashea o contado.
 Los iPhone con Krece solo aplican de nivel Plata en adelante y se pagan con su
 Línea disponible: si la inicial sale alta, explícale que es porque lo que le queda
 libre en esa línea es menor que el equipo. Si el cliente es
@@ -2601,6 +2654,7 @@ PUNTO DE ENTREGA EN CHARALLAVE: si vive en Cúa, Ocumare o zonas cercanas a Char
 CARACAS: no tenemos local en Caracas. Hacemos entregas programadas 2 veces por semana. Los días varían y el horario depende del día en que se haga la compra. NUNCA inventes días ni horas: dile que un asesor le confirma el día y la hora según cuándo concrete la compra. Las entregas se hacen en Sabana Grande y otras zonas céntricas de Caracas: si pregunta por su zona, dile eso y que el asesor le da más detalles. No prometas entrega en una zona específica.
 OTRAS ZONAS: no prometas envíos. Dile que un asesor le confirma las opciones.
 No menciones costos de entrega: si pregunta, un asesor se lo confirma.
+QUÉ SE PAGA AL RETIRAR: si pregunta qué tiene que pagar al llegar, al retirar o al llevarse el equipo (en la tienda o en el punto de entrega, él u otra persona), respóndelo tú, sin mandarlo al asesor: con Krece, Cashea o CrediTienda paga SOLO la inicial que le diste, en bolívares a tasa BCV, y las cuotas se pagan después por la app de su financiamiento (cada 15 días; Cashea cada 2 semanas). Si su plan dice "sin inicial", al retirar no paga nada. De contado paga el precio completo. Si te pregunta por un monto que es la cuota ("¿tengo que entregar 26$?"), aclárale que eso es la cuota y que al retirar solo da la inicial.
 
 SI FALTA UN DATO
 Si EQUIPO CONSULTADO dice que falta un dato del cliente (nivel o línea), pídeselo
@@ -2991,6 +3045,12 @@ def atender_celulares(from_number, numero_limpio, body):
         perfil["nombre"] = nombre_dicho
         guardar_perfil(numero_limpio, nombre=nombre_dicho)
     cambios = {}
+    if detectar_sin_cuenta(body):
+        sin_cuenta_financ[numero_limpio] = body.strip()[:80]
+    elif detectar_nivel_krece(body) or detectar_nivel_cashea_claro(body):
+        sin_cuenta_financ.pop(numero_limpio, None)   # dio su nivel: sí tiene cuenta
+    if numero_limpio in sin_cuenta_financ:
+        perfil["_sin_cuenta"] = sin_cuenta_financ[numero_limpio]   # solo en memoria
     if (numero_limpio in krece_supuesto and perfil.get("nivel_cliente") == "azul"
             and float(perfil.get("linea_krece") or 0) == 300):
         perfil["_krece_supuesto"] = True   # sigue con el Azul/$300 supuesto
@@ -3070,8 +3130,8 @@ def atender_celulares(from_number, numero_limpio, body):
 
     # Llega por Krece sin nivel ni línea: 95% de los casos son Azul/$300.
     # Si pide iPhone no se asume (Azul no aplica): se le pregunta nivel y línea.
-    pide_iphone = ("iphone" in body.lower()
-                   or "iphone" in (perfil.get("modelo_interes") or "").lower())
+    pide_iphone = (nombra_disponible(body)   # iPhone o Hotwav: van por la Línea disponible
+                   or nombra_disponible(perfil.get("modelo_interes")))
     if (canal == "krece" and canal_anterior != "krece" and not pide_iphone
             and not perfil.get("nivel_cliente") and not perfil.get("linea_krece")):
         cambios["nivel_cliente"] = "azul"
@@ -3104,7 +3164,7 @@ def atender_celulares(from_number, numero_limpio, body):
         # monto suelto cuando le interesa un iPhone y no habla de "celulares"
         disponible = detectar_linea_disponible(body)
         if (disponible is None and pide_iphone and "celular" not in body.lower()
-                and ("iphone" in body.lower() or not bot_pidio_celulares(numero_limpio))):
+                and (nombra_disponible(body) or not bot_pidio_celulares(numero_limpio))):
             # Si el bot acababa de pedir la línea de Celulares, el monto es esa (chat 0714)
             # Para el iPhone, el monto que dé ("150", "plata 150", "mi línea es 40") es su Línea disponible
             m = re.fullmatch(r"\s*\$?\s*(\d{1,5})\s*(?:\$|d[oó]lares|usd)?\s*", body.lower())
@@ -3304,7 +3364,9 @@ def atender_celulares(from_number, numero_limpio, body):
     # Cliente sin cuenta en Krece o Cashea: se cotiza con el nivel de entrada
     # (el registro se lo hacemos en la tienda con su cédula laminada)
     if canal in ("krece", "cashea") and (detectar_sin_cuenta(body) or es_anuncio_29800(body)
-                                         or es_no_corto(canal, perfil, body)):
+                                         or es_no_corto(canal, perfil, body)
+                                         or (perfil.get("_sin_cuenta") and (not perfil.get("nivel_cliente")
+                                                                         or perfil.get("_krece_supuesto")))):
         if canal == "krece":
             cambios.update(nivel_cliente="azul", linea_krece=300)
             perfil.update(nivel_cliente="azul", linea_krece=300)
@@ -3350,7 +3412,7 @@ def atender_celulares(from_number, numero_limpio, body):
     if (canal == "krece" and perfil.get("nivel_cliente") == "azul"
             and not perfil.get("_krece_supuesto") and not perfil.get("canal_extra")
             and equipos and tipo_resultado in ("exacto", "recomendacion")
-            and all(e["marca"].lower() == "iphone" for e in equipos)):
+            and all(va_por_disponible(e) for e in equipos)):
         canal = "cashea"
         cambios.update(canal_pago="cashea", nivel_cliente=None, linea_krece=None)
         perfil.update(canal_pago="cashea", nivel_cliente=None, linea_krece=None)
@@ -3361,7 +3423,7 @@ def atender_celulares(from_number, numero_limpio, body):
     if (canal == "krece" and perfil.get("nivel_cliente") not in (None, "azul")
             and perfil.get("_linea_disponible") is not None
             and equipos and tipo_resultado in ("exacto", "recomendacion")
-            and all(e["marca"].lower() == "iphone" and iphone_sin_linea(e, perfil)
+            and all(va_por_disponible(e) and iphone_sin_linea(e, perfil)
                     for e in equipos)):
         perfil["_iphone_sin_linea"] = True   # solo para este mensaje
 
@@ -3453,7 +3515,8 @@ def atender_celulares(from_number, numero_limpio, body):
         perfil_extra = dict(perfil)
         # el nivel guardado es del primer canal; si en este mensaje dio claro su nivel
         # de Cashea ("krece azul y cashea nivel 2"), se cotiza con ese
-        perfil_extra["nivel_cliente"] = nivel_c if canal_extra == "cashea" else None
+        perfil_extra["nivel_cliente"] = ((nivel_c or ("1" if perfil.get("_sin_cuenta") else None))
+                                         if canal_extra == "cashea" else None)
         info += (f"\n\nLOS MISMOS EQUIPOS CON {canal_extra.upper()}:"
                  + bloque_equipo(equipos, canal_extra, perfil_extra))
 
@@ -3825,11 +3888,11 @@ def _admin_cotizar(eq, c):
 
     if canal == "krece":
         nivel, linea = c["nivel"], c["linea"]
-        if eq["marca"].lower() == "iphone" and nivel == "azul":
-            lineas.append("   Krece: los iPhone requieren nivel Plata o superior")
+        if va_por_disponible(eq) and nivel == "azul":
+            lineas.append("   Krece: los iPhone y Hotwav requieren nivel Plata o superior")
             return "\n".join(lineas)
-        # iPhone: la línea que dan es su Línea disponible (tipo "Otros" del portal)
-        tipo = "otros" if eq["marca"].lower() == "iphone" else "celular"
+        # iPhone y Hotwav: la línea que dan es su Línea disponible (tipo "Otros" del portal)
+        tipo = "otros" if va_por_disponible(eq) else "celular"
         nombre_linea = "Línea disponible" if tipo == "otros" else "línea"
         lineas.append(f"   Krece {nivel.capitalize()}, {nombre_linea} ${int(linea)}:")
         hubo = False
@@ -4142,7 +4205,7 @@ def webhook():
                         continue
                     if es_krece:
                         send_whapi_message(from_number,
-                            "No pude leer bien la captura. ¿Me confirmas por escrito tu nivel y el monto que te aparece en *" + ("Línea disponible" if "iphone" in (perfil_img.get("modelo_interes") or "").lower() else "Celulares") + "*?")
+                            "No pude leer bien la captura. ¿Me confirmas por escrito tu nivel y el monto que te aparece en *" + ("Línea disponible" if nombra_disponible(perfil_img.get("modelo_interes")) else "Celulares") + "*?")
                         continue
                     # No es una captura de Krece: sigue abajo como cualquier otra foto
 
@@ -4188,6 +4251,7 @@ def webhook():
                     consultas_admin.pop(numero_limpio, None)
                     memoria_admin_ia.pop(numero_limpio, None)
                     krece_supuesto.discard(numero_limpio)
+                    sin_cuenta_financ.pop(numero_limpio, None)
                     krece_linea_disponible.pop(numero_limpio, None)
                     opciones_previas.pop(numero_limpio, None)
                     NOMBRE_PERFIL.pop(numero_limpio, None)
