@@ -775,13 +775,14 @@ def disponible_dudosa(numero_limpio, disponible, linea_celulares):
     return False
 
 
-def texto_disponible_dudosa(monto, nivel_dicho=None):
+def texto_disponible_dudosa(monto, nivel_dicho=None, quien="el *iPhone*"):
     """Respuesta fija: el monto que dio como Línea disponible parece el de Celulares."""
     inicio = f"¡Perfecto, nivel {nivel_dicho.capitalize()}! 🙌" if nivel_dicho else "¡Gracias! 🙌"
     return (f"{inicio}\n\n"
-            f"Ojo: ese monto de *${float(monto):.0f}* casi siempre es tu línea para *celulares Android* "
+            f"Ojo: ese monto de *${float(monto):.0f}* casi siempre es tu línea para "
+            + ("los demás *celulares* " if "Hotwav" in quien else "*celulares Android* ") +
             "(la que sale debajo del ícono \"Celulares\").\n\n"
-            "Para el *iPhone*, Krece usa otra: la *Línea disponible*, que es el número grande que "
+            f"Para {quien}, Krece usa otra: la *Línea disponible*, que es el número grande que "
             "aparece arriba al abrir la app. Ese monto suele ser menor, porque se va usando con otras "
             "compras.\n\n"
             "¿Me confirmas cuánto te sale ahí? Si quieres, mándame una captura de esa pantalla y lo "
@@ -3593,7 +3594,9 @@ def atender_celulares(from_number, numero_limpio, body):
     elif perfil.get("_disponible_dudosa") and len(body.split()) <= 12:
         # Respuesta fija, sin IA: la "Línea disponible" que escribió parece la de Celulares
         reply = texto_disponible_dudosa(perfil["_disponible_dudosa"],
-                                        perfil.get("nivel_cliente") if perfil.get("_nivel_recien") else None)
+                                        perfil.get("nivel_cliente") if perfil.get("_nivel_recien") else None,
+                                        "el *Hotwav*" if "hotwav" in str(perfil.get("modelo_interes")).lower()
+                                        else "el *iPhone*")
     else:
         respuesta = client.messages.create(
             model=MODELO_CELULARES,
