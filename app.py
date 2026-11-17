@@ -9,6 +9,7 @@ import threading
 import xmlrpc.client
 import json
 import re
+import difflib
 import random
 from datetime import datetime, timedelta
 import pytz
@@ -1728,6 +1729,7 @@ REGLAS ESTRICTAS:
 def buscar_referencia(todos, ref):
     ref = expandir_abreviacion(ref)
     palabras_clave, _ = extraer_palabras_clave(ref)
+    palabras_clave = corregir_con_inventario(todos, palabras_clave)
     if not palabras_clave:
         return None, None, None
 
@@ -1777,6 +1779,29 @@ def buscar_referencia(todos, ref):
     # Paso 5: similares
     similares = buscar_similares(todos, palabras_clave)
     return None, None, similares
+
+
+def corregir_con_inventario(todos, palabras_clave):
+    """Corrige tipeos ("spar" -> "spark") comparando con las palabras reales de Odoo. Sin IA."""
+    vocab = set()
+    for p in todos:
+        vocab.update(normalizar_texto(p['name']).split())
+        notas = limpiar_html(p.get('description') or "")
+        for parte in re.split(r'compatible:', notas, flags=re.IGNORECASE)[1:]:
+            vocab.update(normalizar_texto(parte).split())
+    candidatas = [v for v in vocab if not re.search(r'\d', v) and len(v) >= 3]
+    corregidas = []
+    for p in palabras_clave:
+        if p in vocab or re.search(r'\d', p) or len(p) < 3:
+            corregidas.append(p)
+            continue
+        parecida = difflib.get_close_matches(p, candidatas, n=1, cutoff=0.8)
+        if parecida:
+            print(f"Corrección por inventario: '{p}' -> '{parecida[0]}'")
+            corregidas.append(parecida[0])
+        else:
+            corregidas.append(p)
+    return corregidas
 
 
 # ── Modelo bien escrito que no tenemos: "no disponible" directo, sin lista ni IA ──
@@ -1852,6 +1877,7 @@ def consultar_odoo(mensaje):
 
         mensaje = expandir_abreviacion(mensaje)
         palabras_clave, _ = extraer_palabras_clave(mensaje)
+        palabras_clave = corregir_con_inventario(todos, palabras_clave)
         if not palabras_clave:
             return None, None, None
 
