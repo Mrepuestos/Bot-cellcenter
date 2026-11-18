@@ -3143,6 +3143,7 @@ def atender_celulares(from_number, numero_limpio, body):
     if (not detectado and canal_previo == "contado" and perfil.get("_anuncio_29800")
             and re.search(r"\binicial\b|\bcuotas?\b", body.lower())):
         detectado = "krece"
+        perfil["_vuelve_krece"] = True   # solo en memoria: primero los montos, no INTENCION_COMPRA
     canal = detectado or perfil.get("canal_pago")
     canal_anterior = perfil.get("canal_pago")
     if not canal and re.search(r"\bnivel\s*(1|uno)\b", body.lower()):
@@ -3604,6 +3605,9 @@ def atender_celulares(from_number, numero_limpio, body):
                  "contado. No le des precio de contado: pregúntale en una frase con cuál lo quiere "
                  "ver: Krece, Cashea o CrediTienda (si es iPhone: Krece o Cashea).")
 
+    if perfil.pop("_vuelve_krece", None):
+        info += ("\n\nOJO: todavía NO le has dado la inicial y las cuotas con Krece. Dáselas ahora "
+                 "con los montos de arriba. Todavía no es INTENCION_COMPRA.")
     print(f"INFO AL MODELO [{numero_limpio}] -> " + info[:2000].replace("\n", " / "))
 
     # Si llegó otro mensaje mientras se interpretaba este, se responden juntos
