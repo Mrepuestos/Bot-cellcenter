@@ -3106,7 +3106,9 @@ def atender_celulares(from_number, numero_limpio, body):
         perfil["_krece_supuesto"] = True   # sigue con el Azul/$300 supuesto
     if numero_limpio in krece_linea_disponible:
         perfil["_linea_disponible"] = krece_linea_disponible[numero_limpio]
-    if es_anuncio_29800(body):
+    # "la inicial de 38" o "38 mil" también es el anuncio (si Render reinició y se perdió la marca)
+    if es_anuncio_29800(body) or (re.search(r"\binicial\s+de\s+38\b(?![.,]?\d)|\b38\s*mil\b", body.lower())
+                                  and datetime.now(pytz.timezone("America/Caracas")).strftime("%Y-%m-%d") <= "2026-11-30"):
         anuncio_29800.add(numero_limpio)
     if numero_limpio in anuncio_29800:
         perfil["_anuncio_29800"] = True
@@ -3136,6 +3138,11 @@ def atender_celulares(from_number, numero_limpio, body):
         if not re.search(r"inicial|cuota", body.lower()):
             perfil["canal_extra"] = "contado"
             cambios["canal_extra"] = "contado"
+    # Vino del anuncio de 38.900 Bs (Krece), pasó a contado ("¿tienen Zelle?") y ahora
+    # habla de inicial o cuotas: vuelve a Krece (chat 6103)
+    if (not detectado and canal_previo == "contado" and perfil.get("_anuncio_29800")
+            and re.search(r"\binicial\b|\bcuotas?\b", body.lower())):
+        detectado = "krece"
     canal = detectado or perfil.get("canal_pago")
     canal_anterior = perfil.get("canal_pago")
     if not canal and re.search(r"\bnivel\s*(1|uno)\b", body.lower()):
