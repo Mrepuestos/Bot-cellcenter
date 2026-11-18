@@ -931,6 +931,13 @@ def bloque_equipo(equipos, canal, perfil):
                 else:
                     falta = (f"su línea aprobada (su nivel {nivel} ya está anotado: no se lo "
                              f"pidas ni lo menciones)")
+                # Si está en promo con su nivel, decírselo ya (chat 0064: dijo que el A57 no estaba en promo)
+                promo_f = promo_krece(eq, nivel) if nivel else None
+                if promo_f:
+                    ini_f = "sin inicial" if promo_f["inicial"] == 0 else f"{promo_f['inicial'] * 100:.0f}% de inicial"
+                    lineas.append(f"  🔥 Este equipo SÍ está en PROMO KRECE: con nivel {nivel.capitalize()}, {ini_f} "
+                                  f"(si su línea alcanza), hasta {max(promo_f['factores'])} cuotas. Los montos se "
+                                  f"calculan cuando dé su línea.")
                 lineas.append(f"  El equipo SÍ tiene precio, pero para cotizar Krece falta "
                               f"{falta}. Pídeselo en una frase. NO respondas DERIVAR_PRECIO.")
                 # Si pregunta el precio, que la IA lo tenga (antes decía "no tengo el precio", chat 0064)
@@ -3583,6 +3590,13 @@ def atender_celulares(from_number, numero_limpio, body):
                  "habilita. Díselo en una frase amable y cotízale con *CrediFacil* (montos de "
                  "arriba). No le hables de subir de nivel ni de Cashea.")
 
+    # Canal contado pero habla de inicial y cuotas: quiere financiamiento (chat 6103)
+    if (canal in (None, "contado") and not detectado
+            and re.search(r"\binicial\b|\bcuotas?\b", body.lower())):
+        info += ("\n\nOJO: pregunta por inicial o cuotas, o sea que quiere financiamiento, no "
+                 "contado. No le des precio de contado: pregúntale en una frase con cuál lo quiere "
+                 "ver: Krece, Cashea o CrediTienda (si es iPhone: Krece o Cashea).")
+
     print(f"INFO AL MODELO [{numero_limpio}] -> " + info[:2000].replace("\n", " / "))
 
     # Si llegó otro mensaje mientras se interpretaba este, se responden juntos
@@ -3737,6 +3751,8 @@ def atender_celulares(from_number, numero_limpio, body):
     # Expresiones de otros países que a veces se escapan
     for malo, bueno in (("¿qué te late?", "¿qué te parece?"), ("te late", "te gusta"), ("Te late", "Te gusta")):
         reply = reply.replace(malo, bueno)
+    # "en promo con sin inicial" -> "en promo sin inicial"
+    reply = reply.replace("con sin inicial", "sin inicial").replace("Con sin inicial", "Sin inicial")
     # Saludo según la hora de Venezuela (la IA a veces dice "buen día" de noche)
     _h = datetime.now(pytz.timezone("America/Caracas")).hour
     if _h >= 18:
