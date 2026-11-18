@@ -720,6 +720,17 @@ def sin_numeros_de_modelo(texto):
                   r"|\b\d+\s*(?:gb|g|tb)\b|[^\W\d_]+\d+\w*", " ", texto.lower())
 
 
+def sin_numeros_que_no_son_linea(texto):
+    """Quita los números que NO pueden ser la línea de Krece: la inicial ("inicial de 38"),
+    el precio de un equipo ("ese de 143"), un porcentaje ("0 %") o pulgadas ("tv de 32\"").
+    Así el respaldo con IA no se activa por ellos (revisión 18/11)."""
+    return re.sub(r"inicial(?:\s+de)?\s*\$?\s*\d+(?:[.,]\d+)?"
+                  r"|\$?\s*\d+(?:[.,]\d+)?\s*\$?\s*de\s+inicial"
+                  r"|\b(?:el|ese|este|uno)\s+de\s+\$?\s*\d+"
+                  r"|\d+(?:[.,]\d+)?\s*(?:%|por\s*ciento|pulgadas|pulg\b|\"|”)",
+                  " ", texto, flags=re.IGNORECASE)
+
+
 def linea_por_ia(numero_limpio, texto):
     """Respaldo: la IA lee la línea de Krece cuando Python no la entendió.
     Siempre deja la marca RESPALDO en el log para la revisión diaria."""
@@ -922,6 +933,9 @@ def bloque_equipo(equipos, canal, perfil):
                              f"pidas ni lo menciones)")
                 lineas.append(f"  El equipo SÍ tiene precio, pero para cotizar Krece falta "
                               f"{falta}. Pídeselo en una frase. NO respondas DERIVAR_PRECIO.")
+                # Si pregunta el precio, que la IA lo tenga (antes decía "no tengo el precio", chat 0064)
+                lineas.append(f"  [solo si pide el precio del equipo o de contado] De contado: ${int(p)} "
+                              f"en divisas o ${precios.precio_bcv(p)} a tasa BCV")
                 continue
             if va_por_disponible(eq) and nivel == "azul" and eq["marca"].lower() != "iphone":
                 q = eq["marca"].capitalize()
@@ -1008,6 +1022,8 @@ def bloque_equipo(equipos, canal, perfil):
             if not nivel:
                 lineas.append("  El equipo SÍ tiene precio, pero falta el nivel de Cashea "
                               "del cliente. Pídeselo. NO respondas DERIVAR_PRECIO.")
+                lineas.append(f"  [solo si pide el precio del equipo o de contado] De contado: ${int(p)} "
+                              f"en divisas o ${precios.precio_bcv(p)} a tasa BCV")
                 continue
             try:
                 c = precios.cashea(p, nivel)
@@ -3182,7 +3198,7 @@ def atender_celulares(from_number, numero_limpio, body):
             linea = detectar_linea_suelta(body)
         # Respaldo con IA: ya tiene nivel, espera la línea y Python no encontró el monto
         if (not linea and not pide_iphone and len(body) <= 80
-                and re.search(r"\d", sin_numeros_de_modelo(body))
+                and re.search(r"\d{2,}", sin_numeros_de_modelo(sin_numeros_que_no_son_linea(body)))
                 and not es_anuncio_29800(body)
                 and (nivel or perfil.get("nivel_cliente"))
                 and (not perfil.get("linea_krece") or perfil.get("_krece_supuesto"))):
