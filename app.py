@@ -2415,8 +2415,9 @@ def get_system_prompt_celulares(info_equipo, perfil, rangos, lista_corta, promos
             proxima = "MAÑANA domingo de 9:00am a 2:00pm"
         else:
             proxima = "MAÑANA de 8:30am a 5:30pm"
-        linea_apertura = (f"\nPróxima apertura: {proxima}. Si lo invitas a venir, "
-                          f"usa SOLO esto (nunca digas 'hoy abrimos' si es mañana).")
+        linea_apertura = (f"\nPróxima apertura: {proxima}. Este dato es solo para cuando pregunte "
+                          f"el horario o quiera venir (usa SOLO esto, nunca 'hoy abrimos' si es mañana); "
+                          f"en los demás mensajes responde sin hablar de horario.")
 
     canal = perfil.get("canal_pago")
     canal_extra = perfil.get("canal_extra")
@@ -3601,8 +3602,9 @@ def atender_celulares(from_number, numero_limpio, body):
     iphone_a_cashea = perfil.pop("_iphone_a_cashea", None)
     if perfil.pop("_iphone_a_credifacil", None):
         info += ("\n\nEl cliente es Krece nivel Azul y con Krece Azul el iPhone todavía no se "
-                 "habilita. Díselo en una frase amable y cotízale con *CrediFacil* (montos de "
-                 "arriba). No le hables de subir de nivel ni de Cashea.")
+                 "habilita. Díselo en una frase amable y ofrécele como alternativa *CrediFacil*, nuestro "
+                 "financiamiento propio para iPhone 12 en adelante (es una opción nueva para él), "
+                 "con los montos de arriba. No le hables de subir de nivel ni de Cashea.")
 
     # Canal contado pero habla de inicial y cuotas: quiere financiamiento (chat 6103)
     if (canal in (None, "contado") and not detectado
