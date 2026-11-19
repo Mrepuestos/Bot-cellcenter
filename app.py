@@ -1407,6 +1407,8 @@ def extraer_palabras_clave(mensaje):
     # "moto" = Motorola ("moto g20" -> "motorola g20"); si ya dijo motorola se deja igual
     if "moto" in palabras and "motorola" not in palabras:
         palabras = ["motorola" if p == "moto" else p for p in palabras]
+    # "psmart" = "p smart" (Huawei P Smart), como queda el nombre de Odoo normalizado
+    palabras = [x for p in palabras for x in (["p", "smart"] if p == "psmart" else [p])]
     print(f"Mensaje normalizado: '{normalizado}' | Palabras clave: {palabras}")
     return palabras, normalizado
 
