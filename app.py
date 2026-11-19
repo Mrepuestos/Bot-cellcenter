@@ -1715,11 +1715,12 @@ REGLAS ESTRICTAS:
     try:
         response = client.messages.create(
             model="claude-haiku-5-5",
-            max_tokens=50,
+            max_tokens=300,
             messages=[{"role": "user", "content": prompt}],
         )
         resultado = texto_respuesta(response).strip()
         registrar_uso("repuestos-rescate-ia", response)
+        print(f"Rescate IA: stop={response.stop_reason} resultado='{resultado}'")
         if not resultado or resultado.upper() == "NINGUNO":
             return None
         # Validación dura 1: solo aceptar si coincide con un repuesto real
