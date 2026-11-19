@@ -1404,6 +1404,9 @@ def bloque_rangos(perfil=None):
 def extraer_palabras_clave(mensaje):
     normalizado = normalizar_texto(mensaje)
     palabras = [p for p in normalizado.split() if p not in PALABRAS_IGNORAR]
+    # "moto" = Motorola ("moto g20" -> "motorola g20"); si ya dijo motorola se deja igual
+    if "moto" in palabras and "motorola" not in palabras:
+        palabras = ["motorola" if p == "moto" else p for p in palabras]
     print(f"Mensaje normalizado: '{normalizado}' | Palabras clave: {palabras}")
     return palabras, normalizado
 
