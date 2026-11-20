@@ -159,9 +159,12 @@ MENSAJE_KRECE = "quiero comprar con krece"
 MARCAS_NO_KRECE = {"logic", "zte"}
 # "Ya me dirijo a la tienda", "voy saliendo", "estoy llegando" (chat 4666)
 VA_A_TIENDA = re.compile(r"\b(?:me dirijo|me voy|voy|vamos|salgo|saliendo|llegando|en camino|paso|pasar[eé]|ir[eé])\b[^.?!¿]{0,30}\b(?:tienda|local)\b"
-                         r"|\b(?:voy|vamos|salgo|estoy) (?:saliendo|en camino|llegando)\b", re.I)
+                         r"|\b(?:voy|vamos|salgo|estoy) (?:saliendo|en camino|llegando)\b"
+                         r"|\b(?:paso|pasar[eé]|voy|ir[eé]|vamos|caigo|vengo)\s+(?:hoy|ma[nñ]ana|ahorita|ahora|m[aá]s tarde|en la tarde|en la ma[nñ]ana|en un rato|el (?:lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo))\b"
+                         r"|\b(?:hoy|ma[nñ]ana|ahorita|m[aá]s tarde|en la tarde)\s+(?:paso|pasar[eé]|voy|ir[eé]|caigo)\b", re.I)
 # Negaciones o preguntas de dirección/horario: eso lo responde la IA
-NO_VA_A_TIENDA = re.compile(r"\bno (?:voy|puedo|creo|me da|alcanzo|paso|sé)\b|\bd[oó]nde\b|direcci[oó]n|ubicaci[oó]n|horario|\bhora\b|\bcierra|\babre", re.I)
+NO_VA_A_TIENDA = re.compile(r"\bno (?:voy|puedo|creo|me da|alcanzo|paso|sé)\b|\bd[oó]nde\b|direcci[oó]n|ubicaci[oó]n|horario|\bhora\b|\bcierra|\babre"
+                            r"|otro d[ií]a|\b(?:te|le|se lo) paso\b|\bsi puedo\b|\ba ver si\b|\bcapaz\b|\btal vez\b|\bquiz[aá]s?\b|\bcreo que\b|\bpensar", re.I)
 
 # ── Marcas que en Krece van por la "Línea disponible" (tipo Otros), desde nivel Plata ──
 MARCAS_LINEA_DISPONIBLE = {"iphone", "hotwav"}
@@ -2831,6 +2834,9 @@ mensaje. Si EQUIPO CONSULTADO ya trae equipos para lo que pidió, muestra
 esos con sus montos y no uses la LISTA CORTA.
 Nunca afirmes que un equipo es "el más económico/barato que tenemos" si
 EQUIPO CONSULTADO no trae otros para comparar: muéstrale las opciones de menor inicial.
+Si compara entre equipos que ya vio ("¿cuál de los dos es más barato?") y EQUIPO
+CONSULTADO trae uno solo, ese es el que gana: dilo directo ("El más económico de los
+dos es el …") con sus montos, sin decir que solo consultaste uno.
 "Lo voy a pensar" u "otro día" -> con calidez: que con gusto, que aquí estás
 cuando quiera. Sin preguntas, sin prisa y sin decir que los equipos se acaban.
 "En otra tienda está más barato" -> garantía, soporte directo y financiamiento.
