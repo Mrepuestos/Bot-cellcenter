@@ -1272,6 +1272,20 @@ def equipos_de_interes(modelo_interes):
     return ordenar_equipos(equipos) if equipos else []
 
 
+def solo_por_pedido(modelo_interes):
+    """Equipos de interés si TODOS llegan en 24 a 48 horas (si alguno está en tienda, vacía)."""
+    if not modelo_interes:
+        return []
+    from sheets_celulares import _cargar
+    nombres = [n.strip() for n in str(modelo_interes).split(" / ")]
+    eqs = [eq for eq in _cargar()
+           if nombre_completo(eq) in nombres
+           and eq["precio_verificado"] and eq["precio_paralelo"]]
+    if not eqs or any(eq["inmediato"] for eq in eqs):
+        return []
+    return eqs
+
+
 def sin_iphone(perfil):
     """True si al cliente no se le muestran iPhone: Krece Azul o CrediTienda."""
     if perfil.get("canal_pago") == "creditienda":
@@ -2781,6 +2795,8 @@ Si dice "llega en 24 a 48 horas", NO lo invites a verlo (no está en tienda):
 "Este equipo lo pedimos y llega a la tienda en 24 a 48 horas 📦 ¿Quieres que te
 lo apartemos? Un asesor te avisa apenas llegue para que pases a buscarlo."
 Si dice que sí, es INTENCION_COMPRA.
+Si el equipo llega en 24 a 48 horas y el cliente dice que va o ya va camino a la
+tienda, eso también es INTENCION_COMPRA. Nunca le digas que confirme la fecha en la tienda.
 Si pregunta dónde quedan o si son de algún lugar (ej. "¿son de Santa Teresa?"), escribe ENVIAR_UBICACION (el sistema le manda la foto de la tienda, la dirección y el mapa) y una frase corta que responda ("¡Sí, estamos en Santa Teresa del Tuy! 😊"). Si todavía no sabes qué busca, puedes preguntarle qué equipo le interesa. Si ya vio uno, no le preguntes cuándo va a ir. No digas que un vendedor lo espera ni te despidas: solo quería saber dónde quedan. Si en ese mismo mensaje pregunta otra cosa (por ejemplo si aceptan Krece o Cashea), respóndela en una frase corta junto con ENVIAR_UBICACION. Excepción: si pide la dirección o la ubicación en Charallave, NO escribas ENVIAR_UBICACION ni digas que no hay local allá: usa lo de PUNTO DE ENTREGA EN CHARALLAVE.
 Si EQUIPO CONSULTADO trae cuotas de varios equipos, NO preguntes cuál quiere antes de dar números: da de cada uno, en una línea, la inicial y la cuota del plazo más largo, y al final pregunta cuál le gusta. Una sola pregunta por mensaje.
 Si en esa comparación algún equipo dice "llega en 24 a 48 horas", añade en la misma línea de ese equipo "(llega en 24 a 48 horas)"; los que dicen "disponible ya" no llevan aclaración.
@@ -2808,6 +2824,8 @@ de la LISTA CORTA que tengan la inicial más baja que la que ya vio. Si le
 dices que hay opciones más económicas, SIEMPRE las muestras en ese mismo
 mensaje. Si EQUIPO CONSULTADO ya trae equipos para lo que pidió, muestra
 esos con sus montos y no uses la LISTA CORTA.
+Nunca afirmes que un equipo es "el más económico/barato que tenemos" si
+EQUIPO CONSULTADO no trae otros para comparar: muéstrale las opciones de menor inicial.
 "Lo voy a pensar" u "otro día" -> con calidez: que con gusto, que aquí estás
 cuando quiera. Sin preguntas, sin prisa y sin decir que los equipos se acaban.
 "En otra tienda está más barato" -> garantía, soporte directo y financiamiento.
@@ -2994,6 +3012,10 @@ REGLAS:
   "el más barato", "el de 6 de RAM"), elige solo entre esos, con tipo
   "exacto". Devuelve UNO solo: si empatan en lo que pide, desempata por
   más RAM y luego por más almacenamiento.
+- Si pregunta por lo más económico DE LA TIENDA ("¿es el más económico que
+  tiene?", "¿qué es lo más barato que hay?"), es un criterio de presupuesto:
+  elige los 3 de menor inicial o precio de TODO el catálogo. Esta regla manda
+  sobre la anterior.
 - Si nombra DOS O MÁS modelos y alguno NO está en el catálogo, devuelve solo los
   que sí están, con tipo "exacto", y pon en "no_hay" el nombre de los que faltan
   tal como los escribió el cliente. Esta regla manda sobre la de "recomendacion".
@@ -3755,6 +3777,16 @@ def atender_celulares(from_number, numero_limpio, body):
             reply = ("¡Perfecto! Ya le pasé tu solicitud a un asesor de ventas de la tienda. "
                      "Te escribirá mañana a partir de las 6:00 am desde el número oficial de "
                      "Cell Center: 0412-609-3756 🙌")
+        if not online:
+            por_pedido = solo_por_pedido(perfil.get("modelo_interes"))
+            if por_pedido:
+                nombres_pp = ", ".join(f"*{nombre_completo(e)}*" for e in por_pedido[:2])
+                if len(por_pedido) > 1:
+                    reply += (f"\n\nOjo: los {nombres_pp} todavía no están en la tienda, llegan en "
+                              "24 a 48 horas; el asesor te confirma cuándo pasar 📦")
+                else:
+                    reply += (f"\n\nOjo: el {nombres_pp} todavía no está en la tienda, llega en "
+                              "24 a 48 horas; el asesor te confirma cuándo pasar 📦")
 
     enviar_ubicacion = "ENVIAR_UBICACION" in reply
     if enviar_ubicacion:
@@ -4217,6 +4249,14 @@ def webhook():
                 continue
 
             msg_type = msg.get("type", "")
+            # Mensaje editado por el cliente: se atiende el texto nuevo (chat 4666)
+            if msg_type == "action" and (msg.get("action") or {}).get("type") == "edit":
+                _ed = (msg.get("action") or {}).get("edited_content") or {}
+                nuevo = (_ed.get("body") or (_ed.get("text") or {}).get("body") or "").strip()
+                if nuevo:
+                    print(f"✏️ Mensaje editado de {from_number}: {nuevo[:80]}")
+                    msg = {**msg, "type": "text", "text": {"body": nuevo}}
+                    msg_type = "text"
 
             msg_timestamp = msg.get("timestamp", 0)
             ahora = time.time()
