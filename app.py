@@ -157,6 +157,11 @@ MENSAJE_KRECE = "quiero comprar con krece"
 
 # ── Marcas que Krece no aprueba (no les puede instalar su seguridad) ──────────
 MARCAS_NO_KRECE = {"logic", "zte"}
+# "Ya me dirijo a la tienda", "voy saliendo", "estoy llegando" (chat 4666)
+VA_A_TIENDA = re.compile(r"\b(?:me dirijo|me voy|voy|vamos|salgo|saliendo|llegando|en camino|paso|pasar[eé]|ir[eé])\b[^.?!¿]{0,30}\b(?:tienda|local)\b"
+                         r"|\b(?:voy|vamos|salgo|estoy) (?:saliendo|en camino|llegando)\b", re.I)
+# Negaciones o preguntas de dirección/horario: eso lo responde la IA
+NO_VA_A_TIENDA = re.compile(r"\bno (?:voy|puedo|creo|me da|alcanzo|paso|sé)\b|\bd[oó]nde\b|direcci[oó]n|ubicaci[oó]n|horario|\bhora\b|\bcierra|\babre", re.I)
 
 # ── Marcas que en Krece van por la "Línea disponible" (tipo Otros), desde nivel Plata ──
 MARCAS_LINEA_DISPONIBLE = {"iphone", "hotwav"}
@@ -3712,6 +3717,13 @@ def atender_celulares(from_number, numero_limpio, body):
     if perfil.get("nombre"):   # ya sabes su nombre: nunca se lo preguntes
         reply = re.sub(r"\s*(?:Por cierto,?\s*)?¿[^?¿]*con qui[eé]n tengo el gusto[^?]*\?\s*(?:😊|🙂)?", "", reply, flags=re.I).strip()
     reply = marcas_nombre(numero_limpio, reply)
+
+    # Va camino a la tienda por un equipo que ya vio: siempre es intención (chat 4666)
+    if (perfil.get("modelo_interes") and perfil.get("canal_pago") != "creditienda"
+            and not re.search(r"DERIVAR_|INTENCION_COMPRA", reply)
+            and VA_A_TIENDA.search(body) and not NO_VA_A_TIENDA.search(body)):
+        print(f"Va a la tienda ({numero_limpio}): se fuerza INTENCION_COMPRA")
+        reply = "INTENCION_COMPRA"
 
     # ── Marcadores ────────────────────────────────────────────────────────────
     if "DERIVAR_TECNICO" in reply and tecnico_celulares.pop(numero_limpio, None):
